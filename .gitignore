@@ -32,3 +32,6 @@ go.work.sum
 # SSH host keys
 config/*.pem
 config/*.key
+config/hostkey*
+config/hostkey
+config/hostkey.pub
