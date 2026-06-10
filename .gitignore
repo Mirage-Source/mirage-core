@@ -29,3 +29,6 @@ go.work.sum
 # .idea/
 # .vscode/
 
+# SSH host keys
+config/*.pem
+config/*.key
