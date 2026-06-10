@@ -56,16 +56,40 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig) {
 		return
 	}
 	log.Printf("Client Version: %s", sshConn.ClientVersion())
-
 	go ssh.DiscardRequests(reqs)
-	go handleChannels(chans)
+	handleChannels(chans)
 }
 
 func handleChannels(chans <-chan ssh.NewChannel) {
 	for newChannel := range chans {
-		newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
+		log.Printf("New channel type: %s", newChannel.ChannelType())
+		switch newChannel.ChannelType() {
+			case "session":
+				channel, requests, err := newChannel.Accept()
+				if err != nil {
+					log.Printf("Could not accept channel: %v", err)
+					continue
+				}
+				go handleSessionRequests(channel, requests)
+			default:
+				newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
+		}
 	}
 }
 
+func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request) {
+	defer channel.Close()
+
+	log.Printf("Session started.")
+
+	for req := range requests {
+		log.Printf("Recieved session request type %s", req.Type)
+
+		if req.WantReply {
+			req.Reply(true, nil)
+		}
+	}
+	log.Printf("Session ended.")
+}
 
 
