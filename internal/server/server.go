@@ -9,6 +9,11 @@ import (
 	"io"
 	"fmt"
 	"errors"
+	"time"
+	"github.com/google/uuid"
+	"github.com/mirage-source/mirage-core/internal/session"
+	"strings"
+	"encoding/base64"
 )
 
 func Start(addr string) {
@@ -44,11 +49,22 @@ func Start(addr string) {
 			log.Printf("Error accepting connection: %v", err)
 			continue
 		}
-		go handleConnection(conn, config)	//this will handle the connection concurrently
+		sess := session.Session{
+			SessionID: uuid.New().String(),
+			SchemaVersion: "1.0",
+			NodeID: "Ubuntu",
+			Protocol: session.ProtocolSSH,
+			Outcome: session.OutcomeActive,
+			BaitEvents: []session.BaitEvent{},
+			Timing: session.Timing{
+				StartMS: time.Now().UnixMilli(),
+			},
+		}
+		go handleConnection(conn, config, &sess)	//this will handle the connection concurrently
 	}
 }
 
-func handleConnection(conn net.Conn, config *ssh.ServerConfig) {
+func handleConnection(conn net.Conn, config *ssh.ServerConfig, sess *session.Session) {
 	defer conn.Close()
 
 	//log remote address
@@ -58,12 +74,24 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig) {
 		log.Printf("Failed to handshake: %v", err)
 		return
 	}
+	remoteAddr := conn.RemoteAddr()
+
+	sess.Network.SSHClientBanner = string(sshConn.ClientVersion())
+
+	if tcpAddr, ok := remoteAddr.(*net.TCPAddr); ok {
+		sess.Network.ClientIP = tcpAddr.IP.String()
+		sess.Network.ClientPort = tcpAddr.Port
+	}
+
+	if tcpAddr, ok := conn.LocalAddr().(*net.TCPAddr); ok {
+		sess.Network.ServerPort = tcpAddr.Port
+	}
 	log.Printf("Client Version: %s", sshConn.ClientVersion())
 	go ssh.DiscardRequests(reqs)
-	handleChannels(chans)
+	handleChannels(chans, sess)
 }
 
-func handleChannels(chans <-chan ssh.NewChannel) {
+func handleChannels(chans <-chan ssh.NewChannel, sess *session.Session) {
 	for newChannel := range chans {
 		log.Printf("New channel type: %s", newChannel.ChannelType())
 		switch newChannel.ChannelType() {
@@ -73,14 +101,14 @@ func handleChannels(chans <-chan ssh.NewChannel) {
 					log.Printf("Could not accept channel: %v", err)
 					continue
 				}
-				go handleSessionRequests(channel, requests)
+				go handleSessionRequests(channel, requests, sess)
 			default:
 				newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
 		}
 	}
 }
 
-func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request) {
+func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, sess *session.Session) {
 	defer channel.Close()
 	var inputBuffer []byte
 	log.Printf("Session started.")
@@ -121,12 +149,43 @@ func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request) {
 					}
 
 					cli := string(inputBuffer)
-					inputBuffer = inputBuffer[:0]
+					now := time.Now().UnixMilli()
+
+					var delay *int64
+					if len(sess.Commands) > 0 {
+						prev := now - sess.Commands[len(sess.Commands)-1].TimestampMS
+						delay = &prev
+					}
+
+					raw := base64.StdEncoding.EncodeToString(inputBuffer)
+
+					words := strings.Fields(cli)
+					var parsedCommand string
+					var parsedArgs []string
+					if len(words) > 0 {
+						parsedCommand = words[0]
+						parsedArgs = words[1:]
+					}
+
+					cmd := session.Command{
+						EventID: uuid.New().String(),
+						SequenceNumber: len(sess.Commands),
+						TimestampMS: now,
+						InterCommandDelayMS: delay,
+						RawInputB64: raw,
+						ParsedCommand: parsedCommand,
+						ParsedArgs: parsedArgs,
+						WorkingDirectory: "/home/ubuntu",
+						ResponseSource: session.ResponseSourceHardcoded,
+					}
+					sess.Commands = append(sess.Commands, cmd)
 
 					if len(cli) > 0 {
 						response, code:= shell.Handle(cli)
+						inputBuffer = inputBuffer[:0]
 						if code == 257 {
 							fmt.Fprintf(channel, "logout\r\n")
+							log.Printf("Commands logged: %d", len(sess.Commands))
 							return
 						}
 						fmt.Fprintf(channel, "%s\r\n", response)
@@ -136,5 +195,6 @@ func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request) {
 				req.Reply(false, nil)
 			}
 		}
+
 		log.Printf("Session ended.")
 }
