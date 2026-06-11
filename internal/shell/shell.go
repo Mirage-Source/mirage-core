@@ -59,6 +59,8 @@ func Handle(input string) (string, int) {
 				return strings.ReplaceAll(content, "\n", "\r\n"), 0
 			}
 				return "cat: " + words[1] + ": No such file or directory", 1
+		case "exit":
+			return "", 257
 		default:
 			log.Printf("Unknown command: %s", words[0])
 			return "bash: " + words[0] + ": command not found", 127
