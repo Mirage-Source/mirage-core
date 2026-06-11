@@ -140,9 +140,19 @@ func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, se
 						if err != nil {
 							if errors.Is(err, io.EOF) {
 								log.Printf("Client closed the input stream.")
+								endMS := time.Now().UnixMilli()
+								duration := endMS - sess.Timing.StartMS
+								sess.Timing.EndMS = &endMS
+								sess.Timing.DurationMS = &duration
+								sess.Outcome = session.OutcomeCleanDisconnect
 								return
 							}
 							log.Printf("Read error on channel: %v", err)
+							endMS := time.Now().UnixMilli()
+							duration := endMS - sess.Timing.StartMS
+							sess.Timing.EndMS = &endMS
+							sess.Timing.DurationMS = &duration
+							sess.Outcome = session.OutcomeConnectionReset
 							return
 						}
 
@@ -193,7 +203,11 @@ func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, se
 						inputBuffer = inputBuffer[:0]
 						if code == 257 {
 							fmt.Fprintf(channel, "logout\r\n")
-							log.Printf("Auth attempts: %d, Commands: %d", len(sess.AuthAttempts), len(sess.Commands))
+							endMS := time.Now().UnixMilli()
+							duration := endMS - sess.Timing.StartMS
+							sess.Timing.EndMS = &endMS
+							sess.Timing.DurationMS = &duration
+							sess.Outcome = session.OutcomeCleanDisconnect
 							return
 						}
 						fmt.Fprintf(channel, "%s\r\n", response)
