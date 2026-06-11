@@ -1,0 +1,38 @@
+services:
+  mirage:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DB_PORT: 5432
+      DB_USER: mirage
+      DB_NAME: mirage
+    volumes:
+      - ./config/hostkey:/app/config/hostkey:ro
+    ports:
+      - "22:22"
+      - "2222:2222"
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    env_file: .env
+    environment:
+      POSTGRES_DB: mirage
+      POSTGRES_USER: mirage
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mirage -d mirage"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
