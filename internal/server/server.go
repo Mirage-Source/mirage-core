@@ -27,15 +27,6 @@ func Start(addr string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	config := &ssh.ServerConfig{
-		ServerVersion: "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6",
-		PasswordCallback: func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
-			username := conn.User()
-			pass := string(password)
-			log.Printf("User %s, password %s", username, pass)
-			return nil, nil
-		}, }
-	config.AddHostKey(parsedKey)
 
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -60,6 +51,23 @@ func Start(addr string) {
 				StartMS: time.Now().UnixMilli(),
 			},
 		}
+
+		config := &ssh.ServerConfig{
+			ServerVersion: "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6",
+			PasswordCallback: func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
+				username := conn.User()
+				pass := string(password)
+				sess.AuthAttempts = append(sess.AuthAttempts, session.AuthAttempt{
+					TimestampMS: time.Now().UnixMilli(),
+					Method: session.AuthMethodPassword,
+					Username: username,
+					Credential: pass,
+					Success: true,
+				})
+				log.Printf("User %s, password %s", username, pass)
+				return nil, nil
+			}, }
+		config.AddHostKey(parsedKey)
 		go handleConnection(conn, config, &sess)	//this will handle the connection concurrently
 	}
 }
@@ -185,7 +193,7 @@ func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, se
 						inputBuffer = inputBuffer[:0]
 						if code == 257 {
 							fmt.Fprintf(channel, "logout\r\n")
-							log.Printf("Commands logged: %d", len(sess.Commands))
+							log.Printf("Auth attempts: %d, Commands: %d", len(sess.AuthAttempts), len(sess.Commands))
 							return
 						}
 						fmt.Fprintf(channel, "%s\r\n", response)
