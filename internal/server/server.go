@@ -5,6 +5,10 @@ import (
 	"log"
 	"os"
 	"golang.org/x/crypto/ssh"
+	"github.com/mirage-source/mirage-core/internal/shell"
+	"io"
+	"fmt"
+	"errors"
 )
 
 func Start(addr string) {
@@ -25,8 +29,7 @@ func Start(addr string) {
 			pass := string(password)
 			log.Printf("User %s, password %s", username, pass)
 			return nil, nil
-		},
-	}
+		}, }
 	config.AddHostKey(parsedKey)
 
 	listener, err := net.Listen("tcp", addr)
@@ -79,17 +82,55 @@ func handleChannels(chans <-chan ssh.NewChannel) {
 
 func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request) {
 	defer channel.Close()
-
+	var inputBuffer []byte
 	log.Printf("Session started.")
 
 	for req := range requests {
 		log.Printf("Recieved session request type %s", req.Type)
 
-		if req.WantReply {
-			req.Reply(true, nil)
+		switch req.Type {
+			case "pty-req":
+				req.Reply(true, nil)
+			case "shell", "exec":
+				req.Reply(true, nil)
+				fmt.Fprintf(channel, "Welcome to Ubuntu 22.04.3 LTS\r\n")
+
+				for {
+					fmt.Fprintf(channel, "ubuntu@ip-172-31-14-52:~$ ")
+
+					for {
+						singleByte := make([]byte, 1)
+						_, err := channel.Read(singleByte)
+						if err != nil {
+							if errors.Is(err, io.EOF) {
+								log.Printf("Client closed the input stream.")
+								return
+							}
+							log.Printf("Read error on channel: %v", err)
+							return
+						}
+
+						b := singleByte[0]
+
+						if b == '\r' {
+							fmt.Fprintf(channel, "\r\n")
+							break
+						}
+						channel.Write(singleByte)
+						inputBuffer = append(inputBuffer, b)
+					}
+
+					cli := string(inputBuffer)
+					inputBuffer = inputBuffer[:0]
+
+					if len(cli) > 0 {
+						response, _ := shell.Handle(cli)
+						fmt.Fprintf(channel, "%s\r\n", response)
+					}
+				}
+			default:
+				req.Reply(false, nil)
+			}
 		}
-	}
-	log.Printf("Session ended.")
+		log.Printf("Session ended.")
 }
-
-
