@@ -124,7 +124,11 @@ func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request) {
 					inputBuffer = inputBuffer[:0]
 
 					if len(cli) > 0 {
-						response, _ := shell.Handle(cli)
+						response, code:= shell.Handle(cli)
+						if code == 257 {
+							fmt.Fprintf(channel, "logout\r\n")
+							return
+						}
 						fmt.Fprintf(channel, "%s\r\n", response)
 					}
 				}
