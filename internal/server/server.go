@@ -14,6 +14,8 @@ import (
 	"github.com/mirage-source/mirage-core/internal/session"
 	"strings"
 	"encoding/base64"
+	"github.com/mirage-source/mirage-core/internal/store"
+	"database/sql"
 )
 
 func Start(addr string) {
@@ -33,6 +35,12 @@ func Start(addr string) {
 		log.Fatal("Error listening:", err)
 	}
 	defer listener.Close()
+
+	db, err := store.Connect()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
 
 	for {
 		conn, err := listener.Accept()
@@ -68,11 +76,11 @@ func Start(addr string) {
 				return nil, nil
 			}, }
 		config.AddHostKey(parsedKey)
-		go handleConnection(conn, config, &sess)	//this will handle the connection concurrently
+		go handleConnection(conn, config, &sess, db)	//this will handle the connection concurrently
 	}
 }
 
-func handleConnection(conn net.Conn, config *ssh.ServerConfig, sess *session.Session) {
+func handleConnection(conn net.Conn, config *ssh.ServerConfig, sess *session.Session, db *sql.DB) {
 	defer conn.Close()
 
 	//log remote address
@@ -96,10 +104,10 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig, sess *session.Ses
 	}
 	log.Printf("Client Version: %s", sshConn.ClientVersion())
 	go ssh.DiscardRequests(reqs)
-	handleChannels(chans, sess)
+	handleChannels(chans, sess, db)
 }
 
-func handleChannels(chans <-chan ssh.NewChannel, sess *session.Session) {
+func handleChannels(chans <-chan ssh.NewChannel, sess *session.Session, db *sql.DB) {
 	for newChannel := range chans {
 		log.Printf("New channel type: %s", newChannel.ChannelType())
 		switch newChannel.ChannelType() {
@@ -109,14 +117,14 @@ func handleChannels(chans <-chan ssh.NewChannel, sess *session.Session) {
 					log.Printf("Could not accept channel: %v", err)
 					continue
 				}
-				go handleSessionRequests(channel, requests, sess)
+				go handleSessionRequests(channel, requests, sess, db)
 			default:
 				newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
 		}
 	}
 }
 
-func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, sess *session.Session) {
+func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, sess *session.Session, db *sql.DB) {
 	defer channel.Close()
 	var inputBuffer []byte
 	log.Printf("Session started.")
@@ -145,6 +153,9 @@ func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, se
 								sess.Timing.EndMS = &endMS
 								sess.Timing.DurationMS = &duration
 								sess.Outcome = session.OutcomeCleanDisconnect
+								if err := store.SaveSession(db, sess); err != nil {
+									log.Printf("Error saving session: %v", err)
+								}
 								return
 							}
 							log.Printf("Read error on channel: %v", err)
@@ -153,6 +164,9 @@ func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, se
 							sess.Timing.EndMS = &endMS
 							sess.Timing.DurationMS = &duration
 							sess.Outcome = session.OutcomeConnectionReset
+							if err := store.SaveSession(db, sess); err != nil {
+								log.Printf("Error saving session: %v", err)
+							}
 							return
 						}
 
@@ -208,6 +222,9 @@ func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, se
 							sess.Timing.EndMS = &endMS
 							sess.Timing.DurationMS = &duration
 							sess.Outcome = session.OutcomeCleanDisconnect
+							if err := store.SaveSession(db, sess); err != nil {
+								log.Printf("Error saving session: %v", err)
+							}
 							return
 						}
 						fmt.Fprintf(channel, "%s\r\n", response)
