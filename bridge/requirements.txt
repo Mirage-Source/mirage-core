@@ -1,0 +1,7 @@
+# Enrichment-bridge runtime dependencies.
+# (torch is installed separately in the Dockerfile from the CPU wheel index to
+#  avoid pulling CUDA; see bridge/Dockerfile.)
+
+psycopg2-binary>=2.9
+numpy>=1.23
+scikit-learn>=1.2

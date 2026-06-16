@@ -35,3 +35,5 @@ config/*.key
 config/hostkey*
 config/hostkey
 config/hostkey.pub
+
+artifacts/*.pt

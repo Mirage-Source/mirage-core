@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mirage-ml"
+version = "0.2.0"
+description = "MIRAGE -- machine-learning intelligence layer for an AI SSH honeypot (Phase 1 data + tokenizer, Phase 2 embeddings + trajectory analysis)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Devang" }]
+dependencies = [
+    "numpy>=1.23",
+]
+
+[project.optional-dependencies]
+# Phase-2 neural models, training, and visualization.
+models = [
+    "torch>=2.1",
+    "scikit-learn>=1.2",
+    "matplotlib>=3.6",
+]
+# Nicer 2-D embedding maps + experiment logging (both degrade gracefully if absent).
+viz = ["umap-learn>=0.5"]
+logging = ["wandb>=0.16"]
+# Parquet log ingestion.
+parquet = ["pandas>=1.5", "pyarrow>=10"]
+# Tests.
+dev = ["pytest>=7"]
+
+[project.scripts]
+mirage-session-stats = "mirage.analysis.session_stats:main"
+mirage-train = "mirage.training.train:main"
+mirage-visualize = "mirage.viz.visualize:main"
+
+[tool.setuptools.packages.find]
+include = ["mirage*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
