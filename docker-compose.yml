@@ -1,5 +1,21 @@
 services:
-  mirage:
+  postgres:
+    image: postgres:16-alpine
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${DB_NAME:-mirage}
+      POSTGRES_USER: ${DB_USER:-mirage}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-mirage} -d ${DB_NAME:-mirage}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  mirage-core:
     build:
       context: .
       dockerfile: Dockerfile
@@ -8,9 +24,10 @@ services:
         condition: service_healthy
     env_file: .env
     environment:
+      DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: mirage
-      DB_NAME: mirage
+      DB_USER: ${DB_USER:-mirage}
+      DB_NAME: ${DB_NAME:-mirage}
     volumes:
       - ./config/hostkey:/app/config/hostkey:ro
     ports:
@@ -18,21 +35,27 @@ services:
       - "2222:2222"
     restart: unless-stopped
 
-  postgres:
-    image: postgres:16-alpine
+  ml-worker:
+    build:
+      context: .
+      dockerfile: bridge/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
     env_file: .env
     environment:
-      POSTGRES_DB: mirage
-      POSTGRES_USER: mirage
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-mirage}
+      DB_NAME: ${DB_NAME:-mirage}
+      BRIDGE_POLL_INTERVAL_S: "10"
+      BRIDGE_BATCH_SIZE: "32"
+      # MIRAGE_MODEL_CHECKPOINT: /app/artifacts/embedder/best.pt
+      # MIRAGE_TOKENIZER_DIR: /app/artifacts/embedder/tokenizer
+      # MIRAGE_MODEL_VERSION: mirage-emb-v1
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mirage -d mirage"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - ./artifacts:/app/artifacts:ro
     restart: unless-stopped
 
 volumes:
   postgres_data:
-
