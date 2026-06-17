@@ -52,7 +52,7 @@ func Start(addr string) {
 		}
 		sess := session.Session{
 			SessionID: uuid.New().String(),
-			SchemaVersion: "1.0",
+			SchemaVersion: "1.1",
 			NodeID: "Ubuntu",
 			Protocol: session.ProtocolSSH,
 			Outcome: session.OutcomeActive,
@@ -143,6 +143,18 @@ func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, se
 				fmt.Fprintf(channel, "Welcome to Ubuntu 22.04.3 LTS\r\n")
 
 				for {
+					if len(sess.Commands) >= 500{
+						endMS := time.Now().UnixMilli()
+						duration := endMS - sess.Timing.StartMS
+						sess.Outcome = session.OutcomeCommandLimitReached
+						sess.Timing.EndMS = &endMS
+						sess.Timing.DurationMS = &duration
+						if err := store.SaveSession(db, sess); err != nil {
+							log.Printf("Error saving session: %v", err)
+						}
+						return
+					}
+
 					fmt.Fprintf(channel, "ubuntu@ip-172-31-14-52:~$ ")
 
 					for {
