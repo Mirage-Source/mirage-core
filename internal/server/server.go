@@ -18,6 +18,8 @@ import (
 	"database/sql"
 )
 
+const MaxInput = 255
+
 func Start(addr string) {
 
 	hostKey,err := os.ReadFile("config/hostkey")
@@ -124,6 +126,7 @@ func handleChannels(chans <-chan ssh.NewChannel, sess *session.Session, db *sql.
 	}
 }
 
+
 func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, sess *session.Session, db *sql.DB) {
 	defer channel.Close()
 	var inputBuffer []byte
@@ -175,6 +178,15 @@ func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, se
 						if b == '\r' {
 							fmt.Fprintf(channel, "\r\n")
 							break
+						} else if b == 0x7F || b == 0x08 {
+							if len(inputBuffer) > 0 {
+								inputBuffer = inputBuffer[:len(inputBuffer)-1]
+								channel.Write([]byte{'\x08',' ','\x08'})
+								continue
+							}
+						}
+						if(len(inputBuffer) >=MaxInput){
+							continue
 						}
 						channel.Write(singleByte)
 						inputBuffer = append(inputBuffer, b)
@@ -227,6 +239,7 @@ func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, se
 							}
 							return
 						}
+
 						fmt.Fprintf(channel, "%s\r\n", response)
 					}
 				}
