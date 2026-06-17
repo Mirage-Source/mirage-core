@@ -198,7 +198,7 @@ func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, se
 								continue
 							}
 						}
-						if len(inputBuffer) >= MaxInput {
+						if(len(inputBuffer) >=MaxInput){
 							continue
 						}
 						channel.Write(singleByte)
