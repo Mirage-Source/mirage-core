@@ -4,6 +4,7 @@ type Protocol string
 
 const (
 	ProtocolSSH Protocol = "ssh"
+	OutcomeCommandLimitReached Outcome = "command_limit_reached"
 )
 
 type Outcome string
