@@ -142,8 +142,9 @@ func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, se
 				req.Reply(true, nil)
 				fmt.Fprintf(channel, "Welcome to Ubuntu 22.04.3 LTS\r\n")
 
+				const maxCommandsPerSession = 500
 				for {
-					if len(sess.Commands) >= 500{
+					if len(sess.Commands) >= maxCommandsPerSession {
 						endMS := time.Now().UnixMilli()
 						duration := endMS - sess.Timing.StartMS
 						sess.Outcome = session.OutcomeCommandLimitReached
