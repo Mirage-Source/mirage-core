@@ -130,6 +130,7 @@ func handleChannels(chans <-chan ssh.NewChannel, sess *session.Session, db *sql.
 func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, sess *session.Session, db *sql.DB) {
 	defer channel.Close()
 	var inputBuffer []byte
+	var cwd string = "/home/ubuntu"
 	log.Printf("Session started.")
 
 	for req := range requests {
@@ -232,13 +233,15 @@ func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, se
 						RawInputB64: raw,
 						ParsedCommand: parsedCommand,
 						ParsedArgs: parsedArgs,
-						WorkingDirectory: "/home/ubuntu",
+						WorkingDirectory: cwd,
 						ResponseSource: session.ResponseSourceHardcoded,
 					}
 					sess.Commands = append(sess.Commands, cmd)
 
 					if len(cli) > 0 {
-						response, code:= shell.Handle(cli)
+						var response string
+						var code int
+						response, cwd, code = shell.Handle(cli, cwd)
 						inputBuffer = inputBuffer[:0]
 						if code == 257 {
 							fmt.Fprintf(channel, "logout\r\n")
