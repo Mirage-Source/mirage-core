@@ -58,5 +58,22 @@ services:
       - ./artifacts:/app/artifacts:ro
     restart: unless-stopped
 
+    mirage-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-mirage}
+      DB_NAME: ${DB_NAME:-mirage}
+    ports:
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped
+
 volumes:
   postgres_data:
