@@ -2,9 +2,11 @@ package store
 
 import (
 	"database/sql"
-
+	"encoding/json"
+	"fmt"
 	"github.com/lib/pq"
 	"github.com/mirage-source/mirage-core/internal/api"
+	"github.com/mirage-source/mirage-core/internal/session"
 )
 
 func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
@@ -345,4 +347,31 @@ func GetSessions(
 	}
 
 	return resp, nil
+}
+
+func GetSessionByID(
+	db *sql.DB,
+	sessionID string,
+) (*session.Session, error) {
+	var raw []byte
+
+	err := db.QueryRow(`
+		SELECT session_document
+		FROM sessions
+		WHERE session_id = $1
+	`, sessionID).Scan(&raw)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("session not found")
+		}
+		return nil, err
+	}
+
+	var sess session.Session
+
+	if err := json.Unmarshal(raw, &sess); err != nil {
+		return nil, fmt.Errorf("unmarshalling session document: %w", err)
+	}
+
+	return &sess, nil
 }
