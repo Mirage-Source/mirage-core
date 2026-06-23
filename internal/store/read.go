@@ -284,3 +284,65 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 
 	return stats, nil
 }
+
+func GetSessions(
+	db *sql.DB,
+	limit int,
+	offset int,
+) (*api.SessionsResponse, error) {
+	resp := &api.SessionsResponse{
+		Limit:  limit,
+		Offset: offset,
+	}
+
+	// Total session count
+	if err := db.QueryRow(`
+		SELECT COUNT(*)
+		FROM sessions
+	`).Scan(&resp.Total); err != nil {
+		return nil, err
+	}
+
+	rows, err := db.Query(`
+		SELECT
+			session_id,
+			client_ip,
+			outcome,
+			command_count,
+			start_ms,
+			duration_ms,
+			ssh_client_banner
+		FROM sessions
+		ORDER BY start_ms DESC
+		LIMIT $1
+		OFFSET $2
+	`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var session api.SessionSummary
+
+		if err := rows.Scan(
+			&session.SessionID,
+			&session.ClientIP,
+			&session.Outcome,
+			&session.CommandCount,
+			&session.StartMS,
+			&session.DurationMS,
+			&session.SSHBanner,
+		); err != nil {
+			return nil, err
+		}
+
+		resp.Sessions = append(resp.Sessions, session)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
