@@ -58,7 +58,7 @@ services:
       - ./artifacts:/app/artifacts:ro
     restart: unless-stopped
 
-    mirage-api:
+  mirage-api:
     build:
       context: .
       dockerfile: Dockerfile.api
