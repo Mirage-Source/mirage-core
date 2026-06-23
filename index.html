@@ -462,5 +462,36 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
   </div>
 </div>
 
+<script>
+async function loadStats() {
+  try {
+    const res = await fetch('./stats.json');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    // Update the four dim counters
+    const dims = document.querySelectorAll('.dim b');
+    if (dims.length >= 4) {
+      dims[0].textContent = data.total_sessions.toLocaleString() + '+';
+      dims[1].textContent = data.unique_ips.toLocaleString() + '+';
+      dims[2].textContent = '1';          // sensor count stays static
+      dims[3].textContent = 'Live';       // day count replaced with live indicator
+    }
+
+    // Update the dims-note to show when stats were last fetched
+    const note = document.querySelector('.dims-note');
+    if (note) {
+      const now = new Date();
+      note.textContent = `live figures · last updated ${now.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })} · updated daily`;
+    }
+
+  } catch (e) {
+    // fail silently — static fallback text remains visible
+  }
+}
+
+document.addEventListener('DOMContentLoaded', loadStats);
+</script>
+
 </body>
 </html>
