@@ -71,6 +71,7 @@ services:
       DB_PORT: 5432
       DB_USER: ${DB_USER:-mirage}
       DB_NAME: ${DB_NAME:-mirage}
+      API_KEY: ${API_KEY}
     ports:
       - "127.0.0.1:8080:8080"
     restart: unless-stopped
