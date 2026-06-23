@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -51,6 +52,55 @@ func main() {
 
 		if err := json.NewEncoder(w).Encode(stats); err != nil {
 			log.Printf("encoding stats response: %v", err)
+		}
+	})
+
+	r.Get("/api/sessions", func(w http.ResponseWriter, r *http.Request) {
+		limit := 50
+		offset := 0
+
+		if value := r.URL.Query().Get("limit"); value != "" {
+			if parsed, err := strconv.Atoi(value); err == nil {
+				limit = parsed
+			}
+		}
+
+		if value := r.URL.Query().Get("offset"); value != "" {
+			if parsed, err := strconv.Atoi(value); err == nil {
+				offset = parsed
+			}
+		}
+
+		if limit < 1 {
+			limit = 1
+		}
+
+		if limit > 100 {
+			limit = 100
+		}
+
+		if offset < 0 {
+			offset = 0
+		}
+
+		sessions, err := store.GetSessions(
+			db,
+			limit,
+			offset,
+		)
+		if err != nil {
+			http.Error(
+				w,
+				"failed to retrieve sessions",
+				http.StatusInternalServerError,
+			)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		if err := json.NewEncoder(w).Encode(sessions); err != nil {
+			log.Printf("encoding sessions response: %v", err)
 		}
 	})
 
