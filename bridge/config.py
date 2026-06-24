@@ -70,6 +70,12 @@ class BridgeConfig:
     max_length: int = 256
     standardize_timing: bool = True
 
+    # Phase-4 threat-intel summary: off by default (no network/cost). Set
+    # MIRAGE_INTEL_USE_LLM=1 (and ANTHROPIC_API_KEY) to generate Claude summaries;
+    # MIRAGE_INTEL_MODEL overrides the model (default claude-opus-4-8).
+    use_llm: bool = False
+    intel_model: str | None = None
+
     ensure_schema: bool = True
 
     def dsn(self) -> str:
@@ -98,5 +104,7 @@ def load_config() -> BridgeConfig:
         device=_env_opt("MIRAGE_DEVICE"),
         max_length=int(_env("MIRAGE_MAX_LENGTH", "256")),
         standardize_timing=_env("MIRAGE_STANDARDIZE_TIMING", "1") not in ("0", "false", "False"),
+        use_llm=_env("MIRAGE_INTEL_USE_LLM", "0") not in ("0", "false", "False"),
+        intel_model=_env_opt("MIRAGE_INTEL_MODEL"),
         ensure_schema=_env("BRIDGE_ENSURE_SCHEMA", "1") not in ("0", "false", "False"),
     )
