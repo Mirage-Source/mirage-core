@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mirage-ml"
 version = "0.2.0"
-description = "MIRAGE -- machine-learning intelligence layer for an AI SSH honeypot (Phase 1 data + tokenizer, Phase 2 embeddings + trajectory analysis)."
+description = "MIRAGE -- machine-learning intelligence layer for an AI SSH honeypot (Phase 1 data + tokenizer, Phase 2 embeddings + trajectory, Phase 3 contrastive re-ID, Phase 4 real-time intelligence, Phase 5 adaptive-deception RL)."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -21,6 +21,8 @@ models = [
     "scikit-learn>=1.2",
     "matplotlib>=3.6",
 ]
+# Phase-4 LLM threat-intel summaries (degrades to a template if absent).
+intel = ["anthropic>=0.40"]
 # Nicer 2-D embedding maps + experiment logging (both degrade gracefully if absent).
 viz = ["umap-learn>=0.5"]
 logging = ["wandb>=0.16"]
@@ -33,6 +35,8 @@ dev = ["pytest>=7"]
 mirage-session-stats = "mirage.analysis.session_stats:main"
 mirage-train = "mirage.training.train:main"
 mirage-visualize = "mirage.viz.visualize:main"
+mirage-reid = "mirage.reid.train:main"
+mirage-deception = "mirage.deception.train:main"
 
 [tool.setuptools.packages.find]
 include = ["mirage*"]

@@ -30,7 +30,6 @@ from .db import (
     write_enrichment,
 )
 from .enrich import Enricher
-from .schema_adapter import SchemaAdaptationError, core_session_to_ml
 
 __all__ = ["run", "main"]
 
@@ -51,20 +50,16 @@ def _process_batch(conn, enricher: Enricher, batch) -> int:
     written = 0
     for session_id, doc in batch:
         try:
-            session = core_session_to_ml(doc)
-            result = enricher.enrich(session)
+            result = enricher.enrich(doc)
             write_enrichment(conn, result)
             written += 1
             print(
                 f"[worker] {session_id[:8]} -> class={result.attacker_class} "
                 f"conf={result.classifier_confidence} tool={result.tool_signature} "
                 f"timing={result.timing_label} "
+                f"sev={result.extras.get('severity', '-')} "
                 f"embed={'yes' if result.embedding is not None else 'no'}"
             )
-        except SchemaAdaptationError as exc:
-            conn.rollback()
-            mark_failed(conn, session_id, f"schema: {exc}")
-            print(f"[worker] {session_id[:8]} adaptation failed: {exc}")
         except Exception as exc:  # noqa: BLE001 - isolate poison sessions
             conn.rollback()
             try:
@@ -93,8 +88,12 @@ def run(config: BridgeConfig | None = None, once: bool = False) -> None:
         f"batch={config.batch_size} poll={config.poll_interval_s}s"
     )
     enricher = Enricher(config)
-    mode = "full (timing + tool-signature + embeddings)" if enricher.has_model else "degraded (timing + tool-signature)"
-    print(f"[worker] enrichment mode: {mode}")
+    embed_mode = "with embeddings + trajectory" if enricher.has_model else "no embeddings"
+    summary_mode = "LLM" if config.use_llm else "template"
+    print(
+        f"[worker] enrichment: Phase-4 intelligence (classification + MITRE + "
+        f"{summary_mode} summary) {embed_mode}"
+    )
 
     conn = connect_with_retry(config)
     try:

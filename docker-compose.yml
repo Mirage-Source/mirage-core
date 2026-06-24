@@ -54,6 +54,10 @@ services:
       # MIRAGE_MODEL_CHECKPOINT: /app/artifacts/embedder/best.pt
       # MIRAGE_TOKENIZER_DIR: /app/artifacts/embedder/tokenizer
       # MIRAGE_MODEL_VERSION: mirage-emb-v1
+      # Phase-4 threat-intel summaries (off by default). To enable, uncomment and
+      # put ANTHROPIC_API_KEY in .env:
+      # MIRAGE_INTEL_USE_LLM: "1"
+      # MIRAGE_INTEL_MODEL: claude-opus-4-8
     volumes:
       - ./artifacts:/app/artifacts:ro
     restart: unless-stopped

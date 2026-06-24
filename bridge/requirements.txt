@@ -5,3 +5,6 @@
 psycopg2-binary>=2.9
 numpy>=1.23
 scikit-learn>=1.2
+# Phase-4 threat-intel summaries (only used when MIRAGE_INTEL_USE_LLM=1; the
+# summarizer imports it lazily and falls back to a template if absent).
+anthropic>=0.40
