@@ -66,9 +66,16 @@ class BridgeConfig:
     tokenizer_dir: str | None = None
     kmeans_artifact: str | None = None
     model_version: str = "mirage-emb-dev"
+    classifier_checkpoint: str | None = None
     device: str | None = None
     max_length: int = 256
     standardize_timing: bool = True
+
+    # Phase-4 threat-intel summary: off by default (no network/cost). Set
+    # MIRAGE_INTEL_USE_LLM=1 (and ANTHROPIC_API_KEY) to generate Claude summaries;
+    # MIRAGE_INTEL_MODEL overrides the model (default claude-opus-4-8).
+    use_llm: bool = False
+    intel_model: str | None = None
 
     ensure_schema: bool = True
 
@@ -95,8 +102,11 @@ def load_config() -> BridgeConfig:
         tokenizer_dir=_env_opt("MIRAGE_TOKENIZER_DIR"),
         kmeans_artifact=_env_opt("MIRAGE_KMEANS_ARTIFACT"),
         model_version=_env("MIRAGE_MODEL_VERSION", "mirage-emb-dev"),
+        classifier_checkpoint=_env_opt("MIRAGE_CLASSIFIER_CHECKPOINT"),
         device=_env_opt("MIRAGE_DEVICE"),
         max_length=int(_env("MIRAGE_MAX_LENGTH", "256")),
         standardize_timing=_env("MIRAGE_STANDARDIZE_TIMING", "1") not in ("0", "false", "False"),
+        use_llm=_env("MIRAGE_INTEL_USE_LLM", "0") not in ("0", "false", "False"),
+        intel_model=_env_opt("MIRAGE_INTEL_MODEL"),
         ensure_schema=_env("BRIDGE_ENSURE_SCHEMA", "1") not in ("0", "false", "False"),
     )
