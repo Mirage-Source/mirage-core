@@ -7,6 +7,8 @@
 -- (bridge/db.py::ML_SCHEMA_DDL), so the system is robust whether or not these
 -- migrations were applied manually. Keep the two in sync.
 
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS stix_bundle JSONB;
+
 CREATE TABLE IF NOT EXISTS session_embeddings (
     session_id TEXT PRIMARY KEY
         REFERENCES sessions(session_id) ON DELETE CASCADE,

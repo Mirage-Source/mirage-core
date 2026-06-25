@@ -359,6 +359,7 @@ func GetSessionByID(
 	var clusterID sql.NullString
 	var mitreTechniquesRaw []byte
 	var sessionSummary sql.NullString
+	var stixBundleRaw []byte
 
 	err := db.QueryRow(`
 		SELECT
@@ -367,7 +368,8 @@ func GetSessionByID(
 			classifier_confidence,
 			cluster_id,
 			mitre_techniques,
-			session_summary
+			session_summary,
+			stix_bundle
 		FROM sessions
 		WHERE session_id = $1
 	`, sessionID).Scan(
@@ -377,6 +379,7 @@ func GetSessionByID(
 		&clusterID,
 		&mitreTechniquesRaw,
 		&sessionSummary,
+		&stixBundleRaw,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -410,6 +413,12 @@ func GetSessionByID(
 	}
 	if sessionSummary.Valid {
 		sess.Intelligence.SessionSummary = &sessionSummary.String
+	}
+	if len(stixBundleRaw) > 0 {
+		var bundle json.RawMessage
+		if err := json.Unmarshal(stixBundleRaw, &bundle); err == nil {
+			sess.Intelligence.StixBundle = &bundle
+		}
 	}
 
 	return &sess, nil

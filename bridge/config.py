@@ -78,6 +78,7 @@ class BridgeConfig:
     intel_model: str | None = None
 
     ensure_schema: bool = True
+    stix_enabled: bool = False
 
     def dsn(self) -> str:
         """libpq DSN string (sslmode disabled, matching the core's local setup)."""
@@ -109,4 +110,5 @@ def load_config() -> BridgeConfig:
         use_llm=_env("MIRAGE_INTEL_USE_LLM", "0") not in ("0", "false", "False"),
         intel_model=_env_opt("MIRAGE_INTEL_MODEL"),
         ensure_schema=_env("BRIDGE_ENSURE_SCHEMA", "1") not in ("0", "false", "False"),
+        stix_enabled=_env("MIRAGE_STIX_ENABLED", "0") not in ("0", "false", "False"),
     )
