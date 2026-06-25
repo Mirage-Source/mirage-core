@@ -142,8 +142,21 @@ def map_mitre(prod: ProductionSession) -> list[TechniqueHit]:
 
     # Credential-access signals from auth attempts.
     distinct_creds = {a.credential for a in prod.auth_attempts}
-    if len(prod.auth_attempts) >= 3 and len(distinct_creds) >= 2:
-        add(BRUTE_FORCE, f"{len(prod.auth_attempts)} credential attempts")
+    distinct_users = {a.username for a in prod.auth_attempts}
+    password_attempts = [a for a in prod.auth_attempts if a.method == "password"]
+
+    if len(prod.auth_attempts) >= 1:
+        add(BRUTE_FORCE, f"{len(prod.auth_attempts)} credential attempt(s)")
+    if password_attempts:
+        add(
+            Technique("T1110.001", "Brute Force: Password Guessing", "Credential Access"),
+            f"{len(password_attempts)} password attempt(s)"
+        )
+    if len(distinct_users) >= 3:
+        add(
+            Technique("T1110.003", "Brute Force: Password Spraying", "Credential Access"),
+            f"{len(distinct_users)} distinct usernames targeted"
+        )
     if any(a.success for a in prod.auth_attempts):
         add(VALID_ACCOUNTS, "accepted credential (honeypot grants access)")
 
