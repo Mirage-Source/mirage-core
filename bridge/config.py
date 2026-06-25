@@ -66,6 +66,7 @@ class BridgeConfig:
     tokenizer_dir: str | None = None
     kmeans_artifact: str | None = None
     model_version: str = "mirage-emb-dev"
+    classifier_checkpoint: str | None = None
     device: str | None = None
     max_length: int = 256
     standardize_timing: bool = True
@@ -101,6 +102,7 @@ def load_config() -> BridgeConfig:
         tokenizer_dir=_env_opt("MIRAGE_TOKENIZER_DIR"),
         kmeans_artifact=_env_opt("MIRAGE_KMEANS_ARTIFACT"),
         model_version=_env("MIRAGE_MODEL_VERSION", "mirage-emb-dev"),
+        classifier_checkpoint=_env_opt("MIRAGE_CLASSIFIER_CHECKPOINT"),
         device=_env_opt("MIRAGE_DEVICE"),
         max_length=int(_env("MIRAGE_MAX_LENGTH", "256")),
         standardize_timing=_env("MIRAGE_STANDARDIZE_TIMING", "1") not in ("0", "false", "False"),
