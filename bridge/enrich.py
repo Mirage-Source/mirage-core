@@ -81,18 +81,22 @@ class Enricher:
         self.tokenizer = None
         self.analyzer = None
         self.device = None
-        self._centroids = None  # [k, D] numpy array for cluster assignment
+        self._centroids = None
         self._centroid_ids: list[str] = []
-        # The Phase-4 pipeline: no trained classifier yet -> weak labels; STIX off
-        # (not persisted by the worker); LLM summary gated behind config.use_llm.
+        self.classifier = None  # NEW: SessionClassifier, loaded below
+
+        self._maybe_load_model()
+        self._maybe_load_classifier()  # NEW: must run after _maybe_load_model (shares device)
+        self._maybe_load_centroids()
+
+        # Build pipeline AFTER loading so the real classifier is passed in when
+        # available. Falls back to weak labels (classifier=None) if not loaded.
         self._pipeline = IntelPipeline(
-            classifier=None,
+            classifier=self.classifier,
             use_llm=config.use_llm,
             model=config.intel_model,
             include_stix=False,
         )
-        self._maybe_load_model()
-        self._maybe_load_centroids()
 
     @property
     def has_model(self) -> bool:
@@ -139,6 +143,47 @@ class Enricher:
             print(f"[enrich] failed to load model ({exc}); continuing without embeddings.")
             self.model = None
             self.tokenizer = None
+
+    def _maybe_load_classifier(self) -> None:
+        """Load the trained SessionClassifier checkpoint if configured.
+
+        Requires _maybe_load_model() to have run first so self.device is set.
+        If loading fails for any reason, logs and continues with weak labels.
+        """
+        import os
+
+        ckpt = self.config.classifier_checkpoint
+        if not ckpt or not os.path.exists(ckpt):
+            print(
+                "[enrich] no classifier checkpoint configured or found; "
+                "using weak-label (heuristic) attacker classification."
+            )
+            return
+        try:
+            import torch
+
+            from mirage.intel.classifier import SessionClassifier, ClassifierConfig
+
+            # Resolve device: reuse embedder device if already set, else detect.
+            if self.device is None:
+                self.device = torch.device(
+                    self.config.device or ("cuda" if torch.cuda.is_available() else "cpu")
+                )
+
+            checkpoint = torch.load(ckpt, map_location=self.device)
+            clf_cfg = ClassifierConfig(**checkpoint["config"])
+            clf = SessionClassifier(clf_cfg).to(self.device)
+            clf.load_state_dict(checkpoint["state_dict"])
+            clf.eval()
+            self.classifier = clf
+            print(
+                f"[enrich] loaded classifier ({clf.num_parameters():,} params, "
+                f"input_dim={clf_cfg.input_dim}, n_classes={clf_cfg.n_classes}) "
+                f"on {self.device}."
+            )
+        except Exception as exc:  # noqa: BLE001 - degrade rather than crash
+            print(f"[enrich] failed to load classifier ({exc}); falling back to weak labels.")
+            self.classifier = None
 
     def _maybe_load_centroids(self) -> None:
         import os
