@@ -1,5 +1,7 @@
 package session
 
+import "encoding/json"
+
 type Protocol string
 
 const (
@@ -107,11 +109,12 @@ type BaitEvent struct {
 }
 
 type Intelligence struct {
-	AttackerClass        *string   `json:"attacker_class"`
-	ClassifierConfidence *float64  `json:"classifier_confidence"`
-	ClusterID            *string   `json:"cluster_id"`
-	MitreTechniques      []string  `json:"mitre_techniques"`
-	SessionSummary       *string   `json:"session_summary"`
+	AttackerClass        *string          `json:"attacker_class"`
+	ClassifierConfidence *float64         `json:"classifier_confidence"`
+	ClusterID            *string          `json:"cluster_id"`
+	MitreTechniques      []string         `json:"mitre_techniques"`
+	SessionSummary       *string          `json:"session_summary"`
+	StixBundle           *json.RawMessage `json:"stix_bundle"`
 }
 
 

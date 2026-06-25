@@ -61,6 +61,7 @@ class EnrichmentResult:
     model_version: str | None = None
     trajectory: dict[str, Any] | None = None
     extras: dict[str, Any] = field(default_factory=dict)
+    stix_bundle: dict | None = None
 
 
 class Enricher:
@@ -95,7 +96,7 @@ class Enricher:
             classifier=self.classifier,
             use_llm=config.use_llm,
             model=config.intel_model,
-            include_stix=False,
+            include_stix=config.stix_enabled,
         )
 
     @property
@@ -258,6 +259,7 @@ class Enricher:
             embedding_dim=embedding_dim,
             model_version=model_version,
             trajectory=trajectory,
+            stix_bundle=intel.stix_bundle,
             extras={
                 "severity": intel.severity,
                 "recommended_actions": intel.recommended_actions,

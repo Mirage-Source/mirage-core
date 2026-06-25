@@ -35,6 +35,8 @@ __all__ = [
 #: Idempotent DDL for the ML tables. Mirrors db/init/002_ml_intelligence.sql so
 #: the worker is self-sufficient even if the migration was never applied.
 ML_SCHEMA_DDL = """
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS stix_bundle JSONB;
+
 CREATE TABLE IF NOT EXISTS session_embeddings (
     session_id TEXT PRIMARY KEY
         REFERENCES sessions(session_id) ON DELETE CASCADE,
@@ -148,7 +150,8 @@ def write_enrichment(
                 classifier_confidence = %s,
                 cluster_id = %s,
                 mitre_techniques = %s::jsonb,
-                session_summary = %s
+                session_summary = %s,
+                stix_bundle = %s::jsonb
             WHERE session_id = %s
             """,
             (
@@ -157,6 +160,7 @@ def write_enrichment(
                 result.cluster_id,
                 json.dumps(result.mitre_techniques),
                 result.session_summary,
+                json.dumps(result.stix_bundle) if result.stix_bundle is not None else None,
                 result.session_id,
             ),
         )

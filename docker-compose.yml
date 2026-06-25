@@ -59,6 +59,7 @@ services:
       # put ANTHROPIC_API_KEY in .env:
       # MIRAGE_INTEL_USE_LLM: "1"
       # MIRAGE_INTEL_MODEL: claude-opus-4-8
+      # MIRAGE_STIX_ENABLED: "1"
     volumes:
       - ./artifacts:/app/artifacts:ro
     restart: unless-stopped
