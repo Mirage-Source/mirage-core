@@ -354,12 +354,30 @@ func GetSessionByID(
 	sessionID string,
 ) (*session.Session, error) {
 	var raw []byte
+	var attackerClass sql.NullString
+	var classifierConfidence sql.NullFloat64
+	var clusterID sql.NullString
+	var mitreTechniquesRaw []byte
+	var sessionSummary sql.NullString
 
 	err := db.QueryRow(`
-		SELECT session_document
+		SELECT
+			session_document,
+			attacker_class,
+			classifier_confidence,
+			cluster_id,
+			mitre_techniques,
+			session_summary
 		FROM sessions
 		WHERE session_id = $1
-	`, sessionID).Scan(&raw)
+	`, sessionID).Scan(
+		&raw,
+		&attackerClass,
+		&classifierConfidence,
+		&clusterID,
+		&mitreTechniquesRaw,
+		&sessionSummary,
+	)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("session not found")
@@ -368,9 +386,30 @@ func GetSessionByID(
 	}
 
 	var sess session.Session
-
 	if err := json.Unmarshal(raw, &sess); err != nil {
 		return nil, fmt.Errorf("unmarshalling session document: %w", err)
+	}
+
+	// Overlay the intelligence columns (written by the ML worker) onto the
+	// session document. The document itself never has these populated — they
+	// live in dedicated columns updated post-hoc by the enrichment pipeline.
+	if attackerClass.Valid {
+		sess.Intelligence.AttackerClass = &attackerClass.String
+	}
+	if classifierConfidence.Valid {
+		sess.Intelligence.ClassifierConfidence = &classifierConfidence.Float64
+	}
+	if clusterID.Valid {
+		sess.Intelligence.ClusterID = &clusterID.String
+	}
+	if len(mitreTechniquesRaw) > 0 {
+		var techniques []string
+		if err := json.Unmarshal(mitreTechniquesRaw, &techniques); err == nil {
+			sess.Intelligence.MitreTechniques = techniques
+		}
+	}
+	if sessionSummary.Valid {
+		sess.Intelligence.SessionSummary = &sessionSummary.String
 	}
 
 	return &sess, nil
