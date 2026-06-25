@@ -160,7 +160,7 @@ def parse_session_document(doc: dict[str, Any]) -> ProductionSession:
     commands: list[Command] = []
     working_dirs: list[str] = []
     response_sources: list[str] = []
-    for raw_cmd in doc.get("commands", []):
+    for raw_cmd in (doc.get("commands") or []):
         ts_ms = int(raw_cmd.get("timestamp_ms", start_ms))
         ms_offset = max(0, ts_ms - start_ms)
         commands.append(
@@ -196,7 +196,7 @@ def parse_session_document(doc: dict[str, Any]) -> ProductionSession:
             credential=a.get("credential", ""),
             success=bool(a.get("success", False)),
         )
-        for a in doc.get("auth_attempts", [])
+        for a in (doc.get("auth_attempts") or [])
     ]
 
     # The core serialises bait events under the JSON key "bait_interactions".
@@ -208,7 +208,7 @@ def parse_session_document(doc: dict[str, Any]) -> ProductionSession:
             access_type=b.get("access_type", ""),
             triggered_by_command_event_id=b.get("triggered_by_command_event_id", ""),
         )
-        for b in doc.get("bait_interactions", [])
+        for b in (doc.get("bait_interactions") or [])
     ]
 
     return ProductionSession(
