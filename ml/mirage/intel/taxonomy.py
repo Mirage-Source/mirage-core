@@ -105,6 +105,27 @@ def weak_label(
     if fd["n_auth_attempts"] >= 3 and n_cmd <= 2:
         return WeakLabel("automated_scanner", 0.6, "brute-force, little/no shell activity")
 
+    # Auth-only sessions (no commands) — classify from banner + auth signals.
+    if n_cmd == 0:
+        banner_automated = fd.get("banner_is_automated", 0.0) > 0
+        n_auth = fd["n_auth_attempts"]
+        distinct_users = fd["n_distinct_usernames"]
+        if banner_automated:
+            return WeakLabel(
+                "automated_scanner", 0.80,
+                "automated SSH banner, credential-only session"
+            )
+        if n_auth >= 1 and distinct_users <= 2:
+            return WeakLabel(
+                "automated_scanner", 0.65,
+                "credential-only session, narrow username target"
+            )
+        if n_auth >= 1:
+            return WeakLabel(
+                "automated_scanner", 0.55,
+                "credential-only session, bot-dominated prior"
+            )
+
     # Fallback: lean on timing, with a bot-dominated prior.
     if human:
         return WeakLabel("manual_recon", 0.5, "human timing, otherwise ambiguous")
