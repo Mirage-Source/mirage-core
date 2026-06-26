@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 	"github.com/lib/pq"
 	"github.com/mirage-source/mirage-core/internal/api"
 	"github.com/mirage-source/mirage-core/internal/session"
@@ -422,4 +423,61 @@ func GetSessionByID(
 	}
 
 	return &sess, nil
+}
+func GetSessionReport(
+	db *sql.DB,
+	sessionID string,
+) (*api.SessionReport, error) {
+	sess, err := GetSessionByID(db, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Derive severity from attacker class — mirrors the Python pipeline's logic.
+	severity := "low"
+	if sess.Intelligence.AttackerClass != nil {
+		switch *sess.Intelligence.AttackerClass {
+		case "script_kiddie":
+			severity = "medium"
+		case "manual_recon":
+			severity = "high"
+		case "apt":
+			severity = "critical"
+		}
+	}
+
+	var durationMS *int64
+	if sess.Timing.DurationMS != nil {
+		durationMS = sess.Timing.DurationMS
+	}
+
+	report := &api.SessionReport{
+		SessionID:   sess.SessionID,
+		GeneratedAt: fmt.Sprintf("%d", time.Now().UnixMilli()),
+		Profile: api.AttackerProfile{
+			Class:      sess.Intelligence.AttackerClass,
+			Confidence: sess.Intelligence.ClassifierConfidence,
+			ClusterID:  sess.Intelligence.ClusterID,
+			Severity:   severity,
+		},
+		Network: api.ReportNetwork{
+			ClientIP:  sess.Network.ClientIP,
+			SSHBanner: sess.Network.SSHClientBanner,
+			Outcome:   string(sess.Outcome),
+		},
+		Timeline: api.ReportTimeline{
+			StartMS:      sess.Timing.StartMS,
+			DurationMS:   durationMS,
+			AuthAttempts: len(sess.AuthAttempts),
+			Commands:     len(sess.Commands),
+			BaitHits:     len(sess.BaitEvents),
+		},
+		ThreatIntel: api.ReportThreatIntel{
+			MitreTechniques: sess.Intelligence.MitreTechniques,
+			Summary:         sess.Intelligence.SessionSummary,
+		},
+		StixBundle: sess.Intelligence.StixBundle,
+	}
+
+	return report, nil
 }
