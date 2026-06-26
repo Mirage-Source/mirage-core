@@ -74,10 +74,6 @@ func main() {
 
 	r := chi.NewRouter()
 
-	// Metrics - no API key, internal only
-
-	r.Handle("/metrics", promhttp.Handler())
-
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Header.Get("X-API-Key") != apiKey {
@@ -196,9 +192,12 @@ func main() {
         log.Printf("encoding report response: %v", err)
     }
 	})
-	log.Println("API server listening on :8080")
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/", r)
 
-	if err := http.ListenAndServe(":8080", r); err != nil {
+	log.Println("API server listening on :8080")
+	if err := http.ListenAndServe(":8080", mux); err != nil {
 		log.Fatalf("starting server: %v", err)
 	}
 }
