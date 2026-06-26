@@ -37,3 +37,4 @@ config/hostkey
 config/hostkey.pub
 
 artifacts/*.pt
+__pycache__/
