@@ -10,6 +10,8 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/mirage-source/mirage-core/internal/store"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -24,7 +26,57 @@ func main() {
 	}
 	defer db.Close()
 
+	// Prometheus metrics
+	var (
+		sessionsTotal = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "mirage_sessions_total",
+			Help: "Total SSH sessions captured.",
+		}, func() float64 {
+			var count float64
+			db.QueryRow(`SELECT COUNT(*) FROM sessions`).Scan(&count)
+			return count
+		})
+		sessions24h = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "mirage_sessions_24h",
+			Help: "Sessions in the last 24 hours.",
+		}, func() float64 {
+			var count float64
+			db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE start_ms >= (EXTRACT(EPOCH FROM NOW() - INTERVAL '24 hours') * 1000)`).Scan(&count)
+			return count
+		})
+		uniqueIPs = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "mirage_unique_ips_total",
+			Help: "Unique attacker IPs observed.",
+		}, func() float64 {
+			var count float64
+			db.QueryRow(`SELECT COUNT(DISTINCT client_ip) FROM sessions`).Scan(&count)
+			return count
+		})
+		authAttempts = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "mirage_auth_attempts_total",
+			Help: "Total authentication attempts.",
+		}, func() float64 {
+			var count float64
+			db.QueryRow(`SELECT COUNT(*) FROM auth_attempts`).Scan(&count)
+			return count
+		})
+		enrichedSessions = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "mirage_enriched_sessions_total",
+			Help: "Sessions with ML intelligence populated.",
+		}, func() float64 {
+			var count float64
+			db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE attacker_class IS NOT NULL`).Scan(&count)
+			return count
+		})
+	)
+
+	prometheus.MustRegister(sessionsTotal, sessions24h, uniqueIPs, authAttempts, enrichedSessions)
+
 	r := chi.NewRouter()
+
+	// Metrics - no API key, internal only
+
+	r.Handle("/metrics", promhttp.Handler())
 
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
