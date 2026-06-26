@@ -1,21 +1,23 @@
 package server
 
 import (
-	"net"
-	"log"
-	"os"
-	"golang.org/x/crypto/ssh"
-	"github.com/mirage-source/mirage-core/internal/shell"
-	"io"
-	"fmt"
+	"math/rand"
+	"database/sql"
+	"encoding/base64"
 	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net"
+	"os"
+	"strings"
 	"time"
+
 	"github.com/google/uuid"
 	"github.com/mirage-source/mirage-core/internal/session"
-	"strings"
-	"encoding/base64"
+	"github.com/mirage-source/mirage-core/internal/shell"
 	"github.com/mirage-source/mirage-core/internal/store"
-	"database/sql"
+	"golang.org/x/crypto/ssh"
 )
 
 const MaxInput = 255
@@ -75,6 +77,9 @@ func Start(addr string) {
 					Success: true,
 				})
 				log.Printf("User %s, password %s", username, pass)
+
+				delay := time.Duration(500+rand.Intn(2500)) * time.Millisecond
+				time.Sleep(delay)
 				return nil, nil
 			}, }
 		config.AddHostKey(parsedKey)
