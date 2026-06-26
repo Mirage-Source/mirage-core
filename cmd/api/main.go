@@ -124,6 +124,26 @@ func main() {
 			log.Printf("encoding session response: %v", err)
 		}
 	})
+	r.Get("/api/sessions/{id}/report", func(w http.ResponseWriter, r *http.Request) {
+    sessionID := chi.URLParam(r, "id")
+    if sessionID == "" {
+        http.Error(w, "missing session id", http.StatusBadRequest)
+        return
+    }
+    report, err := store.GetSessionReport(db, sessionID)
+    if err != nil {
+        if err.Error() == "session not found" {
+            http.Error(w, "session not found", http.StatusNotFound)
+            return
+        }
+        http.Error(w, "failed to generate report", http.StatusInternalServerError)
+        return
+    }
+    w.Header().Set("Content-Type", "application/json")
+    if err := json.NewEncoder(w).Encode(report); err != nil {
+        log.Printf("encoding report response: %v", err)
+    }
+	})
 	log.Println("API server listening on :8080")
 
 	if err := http.ListenAndServe(":8080", r); err != nil {
