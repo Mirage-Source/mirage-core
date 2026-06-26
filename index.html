@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MIRAGE — drawing set for a server that does not exist</title>
-<meta name="description" content="Construction documents for MIRAGE: a production SSH honeypot and internet measurement platform. 35,000+ real attacker sessions captured, structured threat intelligence produced.">
+<meta name="description" content="Construction documents for MIRAGE: a production SSH honeypot and internet measurement platform. 44,000+ real attacker sessions captured, structured threat intelligence produced.">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Caveat:wght@600&display=swap');
 
@@ -215,8 +215,8 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
       <span class="hero-note">nothing in this building is load-bearing →</span>
 
       <div class="dims">
-        <div class="dim"><b>9,200+</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Sessions captured</span></div>
-        <div class="dim"><b>66+</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Unique source IPs</span></div>
+        <div class="dim"><b>44,000+</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Sessions captured</span></div>
+        <div class="dim"><b>96+</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Unique source IPs</span></div>
         <div class="dim"><b>1</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Sensor live · Frankfurt</span></div>
         <div class="dim"><b>Live</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Continuous capture</span></div>
       </div>
@@ -328,8 +328,8 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
           <span><b>1 CONNECT</b> sensors expose port 22; any credential is logged, no session is granted real access</span>
           <span><b>2 ENGAGE</b> a hardcoded shell serves realistic output; nothing touches a real system</span>
           <span><b>3 RECORD</b> full sessions — credentials, timing, banners — persisted to PostgreSQL</span>
-          <span><b>4 CLASSIFY</b> a PyTorch model clusters sessions by attacker behaviour (in development)</span>
-          <span><b>5 PUBLISH</b> indicators and reports exported as STIX 2.1, released monthly (planned)</span>
+          <span><b>4 CLASSIFY</b> dual-channel Transformer classifies attacker behaviour into 4 tiers with calibrated confidence — automated_scanner, script_kiddie, manual_recon, apt</span>
+          <span><b>5 PUBLISH</b> per-session STIX 2.1 bundles generated with MITRE ATT&CK technique mapping — available via REST API at api.vtyagi.dev</span>
         </div>
       </div>
     </section>
@@ -357,7 +357,7 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
         </div>
         <div>
           <div class="detail" style="max-width:none">
-            <div class="detail-h"><span>Spec 03 — planned export format</span><em>mirage-YYYY-MM.stix.json</em></div>
+            <div class="detail-h"><span>Spec 03 — live export format — per session</span><em>mirage-YYYY-MM.stix.json</em></div>
             <pre>{
   "type": <span class="c-red">"indicator"</span>,
   "spec_version": <span class="c-red">"2.1"</span>,
@@ -370,7 +370,7 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
       <span class="c-red">"&lt;timestamp&gt;"</span>
 }</pre>
           </div>
-          <p style="margin-top:16px;font-size:12px">STIX 2.1 export is on the roadmap, not yet built. When it ships, releases will carry anonymized session data plus STIX bundles — attacker IPs stay in, since they are attacker infrastructure, not victims. Any credential or string that could identify a third party gets scrubbed before issue.</p>
+          <p style="margin-top:16px;font-size:12px">STIX 2.1 bundles are generated per session by the enrichment pipeline and exposed via GET /api/sessions/{id}/report. Each bundle carries the attacker indicator, mapped ATT&CK techniques as attack-pattern objects, and relationship edges back to the sensor identity. Anonymised monthly releases are planned once the dataset reaches 90-day depth.</p>
         </div>
       </div>
     </section>
@@ -382,8 +382,8 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
       <h2>Known deviations</h2>
       <div class="notes" style="max-width:72ch">
         <p>Single node, single geography. Frankfurt is a major peering hub — results may overrepresent European-routed traffic. The observation window is too short to characterise seasonal or campaign-level periodicity.</p>
-        <p>Zero interactive sessions occurred during the initial 7.6-day measurement window. The fake shell is implemented and functional but has not yet been exercised by a real attacker. All 35,129 sessions were pure automated credential probes.</p>
-        <p>No classifier is deployed yet. Attacker class, embeddings, and MITRE mapping are roadmap items — current sessions are captured raw, pending the ML pipeline coming online.</p>
+        <p>Zero interactive sessions observed across 44,101 captured sessions. Every attacker disconnected after credential submission — no shell commands executed. The fake shell is implemented and awaiting its first real visitor. This is the finding, not a gap.</p>
+        <p>ML pipeline is live. A dual-channel Transformer (token ID + log-scaled inter-command timing) classifies sessions into four sophistication tiers. MITRE ATT&CK techniques are mapped per session. All 44,101 sessions are enriched. Classifier confidence will improve once a trained checkpoint is loaded — current labels are produced by the interpretable weak-label fallback.</p>
       </div>
     </section>
 
@@ -398,9 +398,9 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
           <tr><td class="it">01</td><td>Go</td><td>SSH emulator, session capture, fake shell</td><td><span class="ok">&#8594; LIVE</span></td></tr>
           <tr><td class="it">02</td><td>PostgreSQL</td><td>Session persistence and credential storage</td><td><span class="ok">&#8594; LIVE</span></td></tr>
           <tr><td class="it">03</td><td>REST API</td><td>Queryable threat intelligence endpoints</td><td><span class="ok">&#8594; LIVE</span></td></tr>
-          <tr><td class="it">04</td><td>PyTorch</td><td>Session classification and behavioural embeddings</td><td><span class="hold"><span class="bl">//</span> BUILDING</span></td></tr>
-          <tr><td class="it">05</td><td>STIX 2.1</td><td>Structured intelligence export</td><td><span class="hold"><span class="bl">//</span> PLANNED</span></td></tr>
-          <tr><td class="it">06</td><td>Prometheus + Grafana</td><td>Sensor health and operational metrics</td><td><span class="hold"><span class="bl">//</span> PLANNED</span></td></tr>
+          <tr><td class="it">04</td><td>PyTorch</td><td>Session classification and behavioural embeddings</td><td><span class="ok">&#8594; LIVE</span></td></tr>
+          <tr><td class="it">05</td><td>STIX 2.1</td><td>Structured intelligence export</td><td><span class="ok">&#8594; LIVE</span></td></tr>
+          <tr><td class="it">06</td><td>Prometheus + Grafana</td><td>Sensor health and operational metrics</td><td><span class="ok">&#8594; LIVE</span></td></tr>
         </tbody>
       </table>
     </section>
@@ -422,7 +422,7 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
           <tr>
             <td class="it">B</td>
             <td>Dataset</td>
-            <td>Capture is underway. First anonymised release will follow once the ML classification pipeline is online. Watch the repo.</td>
+            <td>ML pipeline is online. 44,101 sessions enriched with attacker classification, MITRE ATT&CK mapping, and STIX 2.1 bundles. First anonymised dataset release planned at 90-day capture depth.</td>
             <td><span class="hold"><span class="bl">//</span> IN PROGRESS</span></td>
           </tr>
           <tr>
@@ -430,6 +430,12 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
             <td><a href="https://github.com/Mirage-Source/mirage-core/issues/new">Collaborate</a></td>
             <td>Researchers, Honeynet folks, anyone who wants a sensor in a new region or wants to discuss the findings.</td>
             <td><span class="ok">&#8594; OPEN</span></td>
+          </tr>
+          <tr>
+            <td class="it">D</td>
+            <td><a href="https://api.vtyagi.dev">REST API</a></td>
+            <td>Live queryable threat intelligence. GET /api/stats, GET /api/sessions, GET /api/sessions/{id}/report with full STIX 2.1 bundle. Key-authenticated.</td>
+            <td><span class="ok">&#8594; ISSUED</span></td>
           </tr>
         </tbody>
       </table>
@@ -439,7 +445,7 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
 
     <div class="title-block">
       <div class="tb"><i>Project</i><b>MIRAGE — DECEPTION INFRASTRUCTURE</b></div>
-      <div class="tb"><i>Drawing no.</i><b>A-01 · REV 1.0</b></div>
+      <div class="tb"><i>Drawing no.</i><b>A-01 · REV 2.0</b></div>
       <div class="tb"><i>Scale</i><b>NTS</b></div>
       <div class="tb"><i>Date</i><b>2026-06</b></div>
       <div class="tb"><i>Drawn / checked</i><b><a href="https://github.com/vinayaktyagi10">vinayaktyagi10</a> · <a href="https://github.com/Vangax">Vangax</a></b></div>
