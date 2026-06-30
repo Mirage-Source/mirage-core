@@ -7,6 +7,8 @@ import (
 	"os"
 	_ "github.com/lib/pq"
 	"github.com/mirage-source/mirage-core/internal/session"
+	"github.com/mirage-source/mirage-core/internal/api"
+	"time"
 )
 
 func Connect() (*sql.DB, error) {
@@ -147,5 +149,93 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 	return nil
 }
 
+func GetExportData(db *sql.DB) (*api.ExportResponse, error) {
+	resp := &api.ExportResponse{
+		GeneratedAt: fmt.Sprintf("%d", time.Now().UnixMilli()),
+	}
 
+	rows, err := db.Query(`
+		SELECT
+			s.session_id,
+			s.node_id,
+			s.client_ip,
+			s.ssh_client_banner,
+			s.start_ms,
+			s.end_ms,
+			s.duration_ms,
+			s.outcome,
+			s.command_count,
+			s.bait_hit_count,
+			s.attacker_class,
+			s.classifier_confidence,
+			s.cluster_id,
+			s.mitre_techniques,
+			COALESCE(a.attempt_count, 0),
+			COALESCE(a.unique_usernames, 0),
+			a.top_username
+		FROM sessions s
+		LEFT JOIN LATERAL (
+			SELECT
+				COUNT(*) AS attempt_count,
+				COUNT(DISTINCT username) AS unique_usernames,
+				(
+					SELECT username
+					FROM auth_attempts aa2
+					WHERE aa2.session_id = s.session_id
+					GROUP BY username
+					ORDER BY COUNT(*) DESC
+					LIMIT 1
+				) AS top_username
+			FROM auth_attempts aa
+			WHERE aa.session_id = s.session_id
+		) a ON true
+		ORDER BY s.start_ms DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 
+	for rows.Next() {
+		var item api.ExportSession
+		var mitreRaw []byte
+
+		if err := rows.Scan(
+			&item.SessionID,
+			&item.NodeID,
+			&item.ClientIP,
+			&item.SSHClientBanner,
+			&item.StartMS,
+			&item.EndMS,
+			&item.DurationMS,
+			&item.Outcome,
+			&item.CommandCount,
+			&item.BaitHitCount,
+			&item.AttackerClass,
+			&item.ClassifierConfidence,
+			&item.ClusterID,
+			&mitreRaw,
+			&item.AuthAttemptCount,
+			&item.UniqueUsernamesTried,
+			&item.TopUsername,
+		); err != nil {
+			return nil, err
+		}
+
+		if len(mitreRaw) > 0 {
+			if err := json.Unmarshal(mitreRaw, &item.MitreTechniques); err != nil {
+				return nil, fmt.Errorf("unmarshalling mitre techniques: %w", err)
+			}
+		}
+
+		resp.Sessions = append(resp.Sessions, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	resp.SessionCount = len(resp.Sessions)
+
+	return resp, nil
+}
