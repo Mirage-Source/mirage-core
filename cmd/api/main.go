@@ -192,6 +192,25 @@ func main() {
         log.Printf("encoding report response: %v", err)
     }
 	})
+
+	r.Get("/api/export", func(w http.ResponseWriter, r *http.Request) {
+		export, err := store.GetExportData(db)
+		if err != nil {
+			http.Error(
+				w,
+				"failed to generate export",
+				http.StatusInternalServerError,
+			)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		if err := json.NewEncoder(w).Encode(export); err != nil {
+			log.Printf("encoding export response: %v", err)
+		}
+	})
+
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.Handle("/", r)
