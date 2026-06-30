@@ -38,3 +38,5 @@ config/hostkey.pub
 
 artifacts/*.pt
 __pycache__/
+
+dataset/
