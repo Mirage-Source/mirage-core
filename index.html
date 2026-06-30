@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MIRAGE — drawing set for a server that does not exist</title>
-<meta name="description" content="Construction documents for MIRAGE: a production SSH honeypot and internet measurement platform. 44,000+ real attacker sessions captured, structured threat intelligence produced.">
+<meta name="description" content="Construction documents for MIRAGE: a production SSH honeypot and internet measurement platform. 52,000+ real attacker sessions captured, structured threat intelligence produced.">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Caveat:wght@600&display=swap');
 
@@ -328,8 +328,8 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
           <span><b>1 CONNECT</b> sensors expose port 22; any credential is logged, no session is granted real access</span>
           <span><b>2 ENGAGE</b> a hardcoded shell serves realistic output; nothing touches a real system</span>
           <span><b>3 RECORD</b> full sessions — credentials, timing, banners — persisted to PostgreSQL</span>
-          <span><b>4 CLASSIFY</b> dual-channel Transformer classifies attacker behaviour into 4 tiers with calibrated confidence — automated_scanner, script_kiddie, manual_recon, apt</span>
-          <span><b>5 PUBLISH</b> per-session STIX 2.1 bundles generated with MITRE ATT&CK technique mapping — available via REST API at api.vtyagi.dev</span>
+          <span><b>4 CLASSIFY</b> sessions enriched with attacker classification and MITRE ATT&CK technique mapping — trained Transformer classifier in development</span>
+          <span><b>5 PUBLISH</b> per-session STIX 2.1 bundles generated with MITRE ATT&CK technique mapping — available via REST API on request</span>
         </div>
       </div>
     </section>
@@ -382,8 +382,8 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
       <h2>Known deviations</h2>
       <div class="notes" style="max-width:72ch">
         <p>Single node, single geography. Frankfurt is a major peering hub — results may overrepresent European-routed traffic. The observation window is too short to characterise seasonal or campaign-level periodicity.</p>
-        <p>Zero interactive sessions observed across 44,101 captured sessions. Every attacker disconnected after credential submission — no shell commands executed. The fake shell is implemented and awaiting its first real visitor. This is the finding, not a gap.</p>
-        <p>ML pipeline is live. A dual-channel Transformer (token ID + log-scaled inter-command timing) classifies sessions into four sophistication tiers. MITRE ATT&CK techniques are mapped per session. All 44,101 sessions are enriched. Classifier confidence will improve once a trained checkpoint is loaded — current labels are produced by the interpretable weak-label fallback.</p>
+        <p>Zero interactive sessions observed across all captured sessions. Every attacker disconnected after credential submission — no shell commands executed. The fake shell is implemented and awaiting its first real visitor. This is the finding, not a gap.</p>
+        <p>ML pipeline is live. MITRE ATT&CK techniques are mapped per session and all sessions are enriched with attacker classification. Current labels are produced by an interpretable weak-label fallback — a trained classifier checkpoint is in development and will replace these once deployed.</p>
       </div>
     </section>
 
@@ -421,9 +421,9 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
           </tr>
           <tr>
             <td class="it">B</td>
-            <td>Dataset</td>
-            <td>ML pipeline is online. 44,101 sessions enriched with attacker classification, MITRE ATT&CK mapping, and STIX 2.1 bundles. First anonymised dataset release planned at 90-day capture depth.</td>
-            <td><span class="hold"><span class="bl">//</span> IN PROGRESS</span></td>
+            <td><a href="https://github.com/Mirage-Source/mirage-core/blob/gh-pages/dataset/latest/REPORT.md">Dataset</a></td>
+            <td>52,000+ sessions with attacker classification, MITRE ATT&CK mapping, and STIX 2.1 bundles. Dataset updated weekly.</td>
+            <td><span class="ok">&#8594; ISSUED</span></td>
           </tr>
           <tr>
             <td class="it">C</td>
@@ -433,7 +433,7 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
           </tr>
           <tr>
             <td class="it">D</td>
-            <td><a href="https://api.vtyagi.dev">REST API</a></td>
+            <td>REST API</td>
             <td>Live queryable threat intelligence. GET /api/stats, GET /api/sessions, GET /api/sessions/{id}/report with full STIX 2.1 bundle. Key-authenticated.</td>
             <td><span class="ok">&#8594; ISSUED</span></td>
           </tr>
