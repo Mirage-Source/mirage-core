@@ -1,14 +1,27 @@
 # MIRAGE
 
-**AI-augmented SSH honeypot for attacker behavioral analysis and threat intelligence generation.**
+**Production SSH honeypot and threat intelligence platform for measuring automated attacker behaviour at scale.**
 
-MIRAGE exposes a convincing fake SSH server, lets attackers in, studies their behavior through an adaptive AI-generated shell environment, plants deliberate bait to extract intelligence, and produces structured threat intelligence output. It is a purely defensive research tool deployed on infrastructure we own.
+MIRAGE exposes a convincing fake SSH server, captures every credential attempt and session, and produces structured threat intelligence output. It is a purely defensive research tool deployed on infrastructure we own.
+
+---
+
+## Live findings
+
+MIRAGE has been running continuously since June 16, 2026 on a Frankfurt VPS. As of the latest snapshot:
+
+- **52,517 sessions** captured from **117 unique source IPs**
+- **100% of sessions executed zero commands** — every attacker disconnected after credential submission, none reached the interactive shell
+- **27-IP coordinated botnet** identified across 3 NL-registered ASNs, maintaining a precise 2:1 session-count ratio across all nodes (1,522 vs 761 sessions), consistent with centralised C2 orchestration
+- Persistent credential campaigns targeting blockchain infrastructure usernames (`node`, `solana`, `validator`, `eth-docker`) observed every day of the capture window
+
+→ [Published dataset and findings report](https://github.com/Mirage-Source/mirage-core/blob/gh-pages/dataset/latest/REPORT.md)
 
 ---
 
 ## How it works
 
-When an attacker connects to MIRAGE's SSH port, they are presented with a realistic Ubuntu 22.04 shell. Every keystroke, command, inter-command timing, and credential attempt is captured. A background ML pipeline enriches each session with behavioral embeddings, attacker classification, and MITRE ATT&CK technique mappings. The result is structured threat intelligence that goes beyond static indicators of compromise.
+When an attacker connects to MIRAGE's SSH port, they are accepted with any credential and presented with a stateful fake shell. Every auth attempt, SSH client banner, and session timing signal is captured and persisted to PostgreSQL. A background ML worker enriches each session with attacker classification and MITRE ATT&CK technique mappings. The result is structured threat intelligence queryable via a secured REST API.
 
 ```
 Attacker
@@ -16,15 +29,15 @@ Attacker
    │  SSH
    ▼
 Go Honeypot (mirage-core)
-   │  writes sessions
+   │  writes sessions + auth attempts
    ▼
 PostgreSQL
    │  polls unenriched sessions
    ▼
 Python ML Worker (ml-worker)
-   │  timing heuristics · tool signatures · transformer embeddings
+   │  banner heuristics · timing signals · weak-label classification
    ▼
-PostgreSQL  ←  enriched with attacker class + 128-d behavioral embedding
+PostgreSQL  ←  enriched with attacker_class, mitre_techniques, stix_bundle
 ```
 
 ---
@@ -33,43 +46,59 @@ PostgreSQL  ←  enriched with attacker class + 128-d behavioral embedding
 
 | Component | Language | Role |
 |-----------|----------|------|
-| `core/` | Go | SSH server, fake shell, session capture, PostgreSQL persistence |
+| `cmd/mirage/` | Go | SSH server entrypoint |
+| `cmd/api/` | Go | REST API entrypoint |
+| `internal/server/` | Go | SSH server, session lifecycle |
+| `internal/shell/` | Go | Stateful fake shell (ls, cd, cat, whoami, pwd, echo) |
+| `internal/session/` | Go | Session data model |
+| `internal/store/` | Go | PostgreSQL persistence |
 | `bridge/` | Python | Polling worker, schema adapter, ML pipeline orchestration |
-| `ml/` | Python / PyTorch | Dual-channel Transformer, timing heuristics, tool signature detection |
-| `db/` | SQL | PostgreSQL schema — core tables and ML intelligence tables |
+| `ml/` | Python / PyTorch | Classifier, timing heuristics, tool signature detection |
+| `db/init/` | SQL | PostgreSQL schema migrations |
+| `scripts/` | Python | Dataset export, geo enrichment, report generation |
+| `data/geo/` | CSV | Pinned DB-IP ASN/country snapshots for geo attribution |
 
-**Go core** handles all network I/O. It accepts any SSH credentials, presents a fake interactive shell, and captures structured session data including auth attempts, commands with sequence numbers and inter-command delays, and bait file interactions.
+**Go core** handles all network I/O. It accepts any SSH credentials, adds a randomised auth delay (500–3000ms) to slow credential stuffers, presents a fake interactive shell, and captures structured session data.
 
-**ML worker** runs asynchronously. It polls PostgreSQL for unenriched sessions and produces:
-- Coefficient of Variation of inter-command intervals (bot vs. human signal)
-- Regex-based tool signature detection (Mirai, XMRig, and others)
-- 128-dimensional behavioral embedding from a dual-channel Transformer encoder
-- Attacker classification: automated scanner · script kiddie · manual recon · APT-level
+**ML worker** runs asynchronously, polling PostgreSQL for unenriched sessions. It currently runs in heuristics-only mode (no trained checkpoint deployed yet), producing:
+- Interpretable weak-label attacker classification based on banner and auth signals
+- MITRE ATT&CK technique mappings (T1110, T1110.001, T1078)
+- STIX 2.1 bundle generation (gated behind `MIRAGE_STIX_ENABLED`)
 
-**Graceful degradation** — the ML worker runs in heuristics-only mode if no trained model checkpoint is present. Timing analysis and tool signatures still produce useful output without a GPU or pre-trained weights.
-
----
-
-## Attacker classification
-
-The Transformer treats an SSH session as a marked temporal point process. It receives two input channels simultaneously:
-
-- **Token channel** — tokenized command sequence
-- **Timing channel** — log-scaled inter-command intervals (ICI)
-
-This fusion allows the model to distinguish, for example, a bot running `wget` in 12ms from a human running the same command after a 3-second pause — even when the command content is identical.
+A dual-channel Transformer encoder (token sequence + log-scaled inter-command timing) is implemented and awaiting a trained checkpoint. Once deployed, it will replace the current weak-label fallback with calibrated behavioural classifications.
 
 ---
 
-## Threat intelligence output
+## Dataset
 
-Each enriched session produces:
+A versioned public dataset is published weekly from the live sensor. Each release includes:
 
-- Full session JSON with auth attempts, command trace, and timing data
-- Attacker class label and confidence
-- 128-d behavioral embedding for clustering and re-identification
-- MITRE ATT&CK technique mappings *(Milestone 5)*
-- STIX 2.1 bundle export *(Milestone 5)*
+- `sessions.csv` / `sessions.json` — full session export with ASN/country attribution
+- `stats_summary.json` — aggregate statistics
+- `REPORT.md` — findings narrative
+
+**Latest release:** https://github.com/Mirage-Source/mirage-core/blob/gh-pages/dataset/latest/REPORT.md
+
+Raw data: https://mirage-source.github.io/mirage-core/dataset/latest/sessions.csv
+
+Geo attribution: [DB-IP](https://db-ip.com), CC BY 4.0.
+
+---
+
+## REST API
+
+A secured REST API exposes the live dataset. All endpoints require an `X-API-Key` header.
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/stats` | Aggregate statistics, coordinated IP groups, hourly distribution |
+| `GET /api/sessions` | Paginated session list |
+| `GET /api/sessions/{id}` | Full session with ML intelligence overlay |
+| `GET /api/sessions/{id}/report` | Structured report with embedded STIX 2.1 bundle |
+| `GET /api/export` | Full session export (used by the weekly dataset job) |
+| `GET /metrics` | Prometheus metrics |
+
+API access is available to researchers on request.
 
 ---
 
@@ -89,7 +118,7 @@ cd mirage-core
 
 # 2. Configure environment
 cp .env.example .env
-# Edit .env with your database password
+# Edit .env with your database credentials and API key
 
 # 3. Generate SSH host key
 ./scripts/generate_hostkey.sh
@@ -99,50 +128,22 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The honeypot listens on port `22` (production) and `2222` (testing). PostgreSQL is internal only.
+The honeypot listens on port `22` (production) and `2222` (testing/management). PostgreSQL is internal only.
 
-### With ML model (optional)
+### With ML classifier (optional)
 
-To enable 128-d embeddings, place trained artifacts in `./artifacts/`:
-
-```
-artifacts/
-└── embedder/
-    ├── best.pt
-    └── tokenizer/
-```
-
-Then uncomment the model environment variables in `docker-compose.yml`.
-
----
-
-## Repository structure
-
-```
-mirage-core/
-├── core/               # Go SSH honeypot
-│   ├── cmd/mirage/     # Entrypoint
-│   ├── internal/server # SSH server and session lifecycle
-│   ├── internal/shell  # Fake shell state machine
-│   ├── internal/session# Session data model
-│   └── internal/store  # PostgreSQL persistence
-├── bridge/             # Python ML worker
-├── ml/                 # PyTorch models and analysis pipeline
-├── db/init/            # PostgreSQL schema migrations
-├── scripts/            # Host key generation utilities
-├── tests/              # Python test suite
-└── artifacts/          # Model checkpoints (not committed)
-```
+To enable trained classification, place a checkpoint at the path referenced by `MIRAGE_CLASSIFIER_CHECKPOINT` in your `.env`. Without it, the ML worker runs in heuristics-only mode — timing analysis and weak-label classification still produce useful output.
 
 ---
 
 ## Ethical and legal notice
 
-MIRAGE is deployed exclusively on infrastructure owned by the authors. It is designed for defensive security research. Do not deploy on infrastructure you do not own or have explicit written authorization to operate on.
+MIRAGE is deployed exclusively on infrastructure owned by the authors. It is designed for defensive security research and does not scan, probe, or retaliate against any observed IP. Do not deploy on infrastructure you do not own or have explicit written authorisation to operate on.
 
 ---
 
 ## Authors
 
-**Vinayak** — Go infrastructure, SSH layer, session pipeline
-**Devang** — ML pipeline, behavioral embeddings, attacker classification
+**Vinayak Tyagi** — Go infrastructure, SSH server, session pipeline, REST API, DevOps, deployment
+
+**Devang Verma** — ML pipeline, behavioural classification, PyTorch models
