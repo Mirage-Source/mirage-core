@@ -37,3 +37,15 @@ To refresh:
 
 Update the "File" section above with the new download date and
 source month after refreshing.
+
+## Country file
+`dbip-country-lite.csv` — downloaded 2026-06-30, sourced from the
+2026-06 monthly release:
+https://download.db-ip.com/free/dbip-country-lite-2026-06.csv.gz
+
+Format: range_start,range_end,country_code (3 columns, no header).
+"ZZ" denotes unallocated/reserved ranges and is treated as unknown
+rather than a real country in geo_lookup.py.
+
+Same license (CC BY 4.0) and refresh policy as the ASN file above —
+refresh both together when you refresh one.
