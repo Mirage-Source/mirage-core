@@ -1,0 +1,73 @@
+name: Publish Dataset
+
+permissions:
+  contents: write
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+jobs:
+  publish-dataset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main (scripts + pinned geo data)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main
+
+      - name: Checkout gh-pages (publish target)
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install -r main/scripts/requirements.txt
+
+      - name: Determine next version number
+        id: version
+        run: |
+          mkdir -p gh-pages/dataset
+          last=$(ls gh-pages/dataset | grep -E '^v[0-9]+$' | sed 's/v//' | sort -n | tail -1 || true)
+          next=$(( ${last:-0} + 1 ))
+          echo "version=v${next}" >> "$GITHUB_OUTPUT"
+
+      - name: Run export
+        working-directory: main
+        run: |
+          python3 scripts/export_dataset.py \
+            --api-url "${{ secrets.API_URL }}" \
+            --api-key "${{ secrets.API_KEY }}" \
+            --geo-asn-csv data/geo/dbip-asn-lite.csv \
+            --geo-country-csv data/geo/dbip-country-lite.csv \
+            --out-dir ../gh-pages/dataset \
+            --version "${{ steps.version.outputs.version }}"
+
+      - name: Generate report
+        working-directory: main
+        run: |
+          python3 scripts/generate_report.py \
+            --dataset-dir "../gh-pages/dataset/${{ steps.version.outputs.version }}"
+
+      - name: Update "latest" pointer
+        working-directory: gh-pages/dataset
+        run: |
+          rm -rf latest
+          cp -r "${{ steps.version.outputs.version }}" latest
+
+      - name: Commit and push
+        working-directory: gh-pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dataset/
+          git diff --cached --quiet || git commit -m "chore: publish dataset ${{ steps.version.outputs.version }} [skip ci]"
+          git push
