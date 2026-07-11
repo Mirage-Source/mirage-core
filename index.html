@@ -390,6 +390,42 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
 
     <hr class="rule-h">
 
+    <section id="observations">
+      <span class="sec-tab">Sheet A-03</span>
+      <h2>Field observations</h2>
+      <div class="two-col">
+        <div>
+          <div class="detail-h" style="border:1px solid var(--hairline);border-bottom:0"><span>Top credential pairs</span><em>by attempt count</em></div>
+          <table>
+            <thead><tr><th>Credential</th><th>Count</th></tr></thead>
+            <tbody id="top-credentials"><tr><td colspan="2" class="c-faint">loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div>
+          <div class="detail-h" style="border:1px solid var(--hairline);border-bottom:0"><span>SSH client banners</span><em>by session count</em></div>
+          <table>
+            <thead><tr><th>Banner</th><th>Count</th></tr></thead>
+            <tbody id="ssh-banners"><tr><td colspan="2" class="c-faint">loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="margin-top:40px">
+        <div class="detail-h" style="border:1px solid var(--hairline);border-bottom:0"><span>Coordinated campaigns</span><em>same credential + client + 5-min window, 3+ source IPs</em></div>
+        <table>
+          <thead><tr><th>IPs</th><th>Credential</th><th>Client</th><th>Window (UTC)</th></tr></thead>
+          <tbody id="coordinated-ips"><tr><td colspan="4" class="c-faint">loading…</td></tr></tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:40px">
+        <div class="detail-h" style="border:1px solid var(--hairline);border-bottom:0"><span>Activity by hour</span><em>UTC, all-time</em></div>
+        <div id="hourly-chart" style="border:1px solid var(--hairline);border-top:0;padding:20px 16px 8px;display:flex;align-items:flex-end;gap:3px;height:120px"></div>
+      </div>
+    </section>
+
+    <hr class="rule-h">
+
     <section id="bom">
       <span class="sec-tab">Bill of materials</span>
       <h2>As built</h2>
@@ -480,9 +516,61 @@ async function loadStats() {
       note.textContent = `live figures · last updated ${generated.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })} · updated daily`;
     }
 
+    fillTable('top-credentials', data.top_credentials, (row) =>
+      [`${escapeHtml(row.username)}:${escapeHtml(row.password)}`, row.count.toLocaleString()]);
+
+    fillTable('ssh-banners', data.ssh_banners, (row) =>
+      [escapeHtml(row.banner), row.count.toLocaleString()]);
+
+    fillTable('coordinated-ips', data.coordinated_ips, (row) => [
+      row.ips.map(escapeHtml).join(', '),
+      `${escapeHtml(row.username)}:${escapeHtml(row.credential)}`,
+      escapeHtml(row.ssh_client_banner),
+      new Date(row.window_start_ms).toISOString().replace('T', ' ').slice(0, 16),
+    ], 'No 3+ IP campaigns sharing a credential/client/5-min window observed yet.');
+
+    renderHourlyChart(data.hourly_distribution);
+
   } catch (e) {
     // fail silently — static fallback text remains visible
   }
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+function fillTable(bodyId, rows, toCells, emptyMessage) {
+  const tbody = document.getElementById(bodyId);
+  if (!tbody) return;
+  const colspan = tbody.closest('table').querySelectorAll('th').length;
+
+  if (!rows || rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="${colspan}" class="c-faint">${emptyMessage || 'No data yet.'}</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.slice(0, 10).map((row) => {
+    const cells = toCells(row);
+    return `<tr>${cells.map((c) => `<td>${c}</td>`).join('')}</tr>`;
+  }).join('');
+}
+
+function renderHourlyChart(hourly) {
+  const el = document.getElementById('hourly-chart');
+  if (!el || !hourly || hourly.length === 0) return;
+
+  const byHour = new Array(24).fill(0);
+  for (const h of hourly) byHour[h.hour] = h.count;
+  const max = Math.max(...byHour, 1);
+
+  el.innerHTML = byHour.map((count, hour) => {
+    const pct = Math.max(2, Math.round((count / max) * 100));
+    return `<div title="${String(hour).padStart(2, '0')}:00 UTC — ${count.toLocaleString()} sessions" ` +
+      `style="flex:1;height:${pct}%;background:var(--chalk);opacity:.85"></div>`;
+  }).join('');
 }
 
 document.addEventListener('DOMContentLoaded', loadStats);
