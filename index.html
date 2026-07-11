@@ -420,7 +420,7 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
 
       <div style="margin-top:40px">
         <div class="detail-h" style="border:1px solid var(--hairline);border-bottom:0"><span>Activity by hour</span><em>UTC, all-time</em></div>
-        <div id="hourly-chart" style="border:1px solid var(--hairline);border-top:0;padding:20px 16px 8px;display:flex;align-items:flex-end;gap:3px;height:120px"></div>
+        <div id="hourly-chart" style="border:1px solid var(--hairline);border-top:0;padding:20px 16px 8px;display:flex;align-items:stretch;gap:3px;height:140px"></div>
       </div>
     </section>
 
@@ -520,7 +520,7 @@ async function loadStats() {
       [`${escapeHtml(row.username)}:${escapeHtml(row.password)}`, row.count.toLocaleString()]);
 
     fillTable('ssh-banners', data.ssh_banners, (row) =>
-      [escapeHtml(row.banner), row.count.toLocaleString()]);
+      [escapeHtml(row.banner) || '<span class="c-faint">(unknown — rejected sessions recorded before this was tracked)</span>', row.count.toLocaleString()]);
 
     fillTable('coordinated-ips', data.coordinated_ips, (row) => [
       row.ips.map(escapeHtml).join(', '),
@@ -568,8 +568,12 @@ function renderHourlyChart(hourly) {
 
   el.innerHTML = byHour.map((count, hour) => {
     const pct = Math.max(2, Math.round((count / max) * 100));
+    const label = hour % 3 === 0 ? String(hour).padStart(2, '0') : '';
     return `<div title="${String(hour).padStart(2, '0')}:00 UTC — ${count.toLocaleString()} sessions" ` +
-      `style="flex:1;height:${pct}%;background:var(--chalk);opacity:.85"></div>`;
+      `style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end">` +
+      `<div style="width:100%;height:${pct}%;background:var(--chalk);opacity:.85;min-height:2px"></div>` +
+      `<div style="margin-top:6px;font:400 8.5px/1 var(--mono);color:var(--chalk);opacity:.7;letter-spacing:.04em">${label}</div>` +
+      `</div>`;
   }).join('');
 }
 
