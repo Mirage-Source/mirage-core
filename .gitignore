@@ -40,3 +40,4 @@ artifacts/*.pt
 __pycache__/
 
 dataset/
+*.egg-info/

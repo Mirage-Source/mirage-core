@@ -228,7 +228,7 @@ class ContrastiveReIDModel(nn.Module):
         Returns:
             A :class:`ContrastiveReIDModel` with a warm-started backbone.
         """
-        ckpt = torch.load(checkpoint_path, map_location=map_location)
+        ckpt = torch.load(checkpoint_path, map_location=map_location, weights_only=True)
         backbone_cfg = SessionEmbedderConfig(**ckpt["config"])
         model = cls(
             ReIDModelConfig(

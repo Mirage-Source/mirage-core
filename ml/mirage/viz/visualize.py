@@ -50,7 +50,7 @@ __all__ = ["EmbeddedCorpus", "embed_corpus", "clustering_quality", "main"]
 
 def _load_model(checkpoint: Path, device: torch.device) -> SessionEmbedder:
     """Rebuild a :class:`SessionEmbedder` from a training checkpoint."""
-    ckpt = torch.load(checkpoint, map_location=device)
+    ckpt = torch.load(checkpoint, map_location=device, weights_only=True)
     model_cfg = SessionEmbedderConfig(**ckpt["config"])
     model = SessionEmbedder(model_cfg).to(device)
     model.load_state_dict(ckpt["state_dict"])

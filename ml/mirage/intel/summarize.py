@@ -21,7 +21,6 @@ frames the task as **defensive** threat intelligence over an owned honeypot.
 
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import dataclass, field
 from typing import Any
@@ -247,10 +246,17 @@ def _llm_summary(
         max_tokens=1024,
         system=_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_prompt}],
-        output_config={"format": {"type": "json_schema", "schema": _OUTPUT_SCHEMA}},
+        tools=[
+            {
+                "name": "submit_threat_intel_summary",
+                "description": "Submit the structured analyst summary for this session.",
+                "input_schema": _OUTPUT_SCHEMA,
+            }
+        ],
+        tool_choice={"type": "tool", "name": "submit_threat_intel_summary"},
     )
-    text = next((b.text for b in response.content if b.type == "text"), "")
-    data = json.loads(text)
+    tool_use = next(b for b in response.content if b.type == "tool_use")
+    data = tool_use.input
 
     severity = data.get("severity", fallback_severity)
     if severity not in _SEVERITIES:

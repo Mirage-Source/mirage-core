@@ -127,7 +127,7 @@ class Enricher:
             self.device = torch.device(
                 self.config.device or ("cuda" if torch.cuda.is_available() else "cpu")
             )
-            checkpoint = torch.load(ckpt, map_location=self.device)
+            checkpoint = torch.load(ckpt, map_location=self.device, weights_only=True)
             model_cfg = SessionEmbedderConfig(**checkpoint["config"])
             model = SessionEmbedder(model_cfg).to(self.device)
             model.load_state_dict(checkpoint["state_dict"])
@@ -171,7 +171,7 @@ class Enricher:
                     self.config.device or ("cuda" if torch.cuda.is_available() else "cpu")
                 )
 
-            checkpoint = torch.load(ckpt, map_location=self.device)
+            checkpoint = torch.load(ckpt, map_location=self.device, weights_only=True)
             clf_cfg = ClassifierConfig(**checkpoint["config"])
             clf = SessionClassifier(clf_cfg).to(self.device)
             clf.load_state_dict(checkpoint["state_dict"])

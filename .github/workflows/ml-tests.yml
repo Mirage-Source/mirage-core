@@ -1,0 +1,25 @@
+name: ML Tests
+
+on:
+  push:
+    branches: [main]
+    paths: ["ml/**", "bridge/**"]
+  pull_request:
+    paths: ["ml/**", "bridge/**"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install torch (CPU wheel)
+        run: pip install --index-url https://download.pytorch.org/whl/cpu torch
+      - name: Install mirage-ml with dev + intel extras
+        working-directory: ml
+        run: pip install -e ".[dev,intel]"
+      - name: Run tests
+        working-directory: ml
+        run: pytest -v
