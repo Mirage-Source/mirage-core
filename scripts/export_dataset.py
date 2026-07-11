@@ -19,7 +19,7 @@ import argparse
 import csv
 import json
 import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 
 import requests
@@ -54,6 +54,16 @@ FIELDNAMES = [
 def fetch_export(api_url: str, api_key: str) -> dict:
     resp = requests.get(
         f"{api_url.rstrip('/')}/api/export",
+        headers={"X-API-Key": api_key},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def fetch_stats(api_url: str, api_key: str) -> dict:
+    resp = requests.get(
+        f"{api_url.rstrip('/')}/api/stats",
         headers={"X-API-Key": api_key},
         timeout=60,
     )
@@ -107,7 +117,7 @@ def write_json(sessions_raw: list[dict], geo_lookups: dict[str, dict], path: Pat
         json.dump(out, f, indent=2)
 
 
-def compute_summary(rows: list[dict], unmatched_geo_count: int) -> dict:
+def compute_summary(rows: list[dict], unmatched_geo_count: int, coordinated_ip_groups: list[dict]) -> dict:
     total = len(rows)
     banner_counts = Counter(r["ssh_client_banner"] for r in rows)
     country_counts = Counter(r["country"] for r in rows if r["country"])
@@ -116,34 +126,20 @@ def compute_summary(rows: list[dict], unmatched_geo_count: int) -> dict:
     # Sessions with zero commands executed — the headline finding.
     zero_command_sessions = sum(1 for r in rows if r["command_count"] == 0)
 
-    # Coordinated IP groups: same logic as the Go /api/stats query —
-    # group by session count per IP, flag groups with >2 IPs sharing
-    # an identical count (signal of scripted/orchestrated behaviour).
-    ip_session_counts: dict[str, int] = defaultdict(int)
-    for r in rows:
-        ip_session_counts[r["client_ip"]] += 1
-
-    count_to_ips: dict[int, list[str]] = defaultdict(list)
-    for ip, count in ip_session_counts.items():
-        count_to_ips[count].append(ip)
-
-    coordinated_groups = [
-        {"session_count": count, "ip_count": len(ips), "ips": sorted(ips)}
-        for count, ips in count_to_ips.items()
-        if len(ips) > 2
-    ]
-    coordinated_groups.sort(key=lambda g: g["session_count"], reverse=True)
-
     return {
         "total_sessions": total,
-        "unique_ips": len(ip_session_counts),
+        "unique_ips": len(set(r["client_ip"] for r in rows)),
         "zero_command_sessions": zero_command_sessions,
         "zero_command_pct": round(100 * zero_command_sessions / total, 2) if total else 0,
         "geo_unmatched_ips": unmatched_geo_count,
         "ssh_banners": banner_counts.most_common(10),
         "top_countries": country_counts.most_common(10),
         "top_asns": asn_counts.most_common(10),
-        "coordinated_ip_groups": coordinated_groups,
+        # Sourced from /api/stats -- same shared-credential + shared-banner +
+        # 5-minute-window heuristic the live dashboard uses, not an
+        # independently (and differently) computed one. See internal/store/
+        # read.go's coordinated-IP query for the real definition.
+        "coordinated_ip_groups": coordinated_ip_groups,
     }
 
 
@@ -161,6 +157,10 @@ def main():
     export = fetch_export(args.api_url, args.api_key)
     sessions = export["sessions"]
     print(f"Got {len(sessions)} sessions (generated_at={export['generated_at']})", file=sys.stderr)
+
+    print(f"Fetching coordinated-IP groups from {args.api_url}/api/stats ...", file=sys.stderr)
+    stats = fetch_stats(args.api_url, args.api_key)
+    coordinated_ip_groups = stats.get("coordinated_ips", [])
 
     print(f"Loading geo data from {args.geo_asn_csv} and {args.geo_country_csv} ...", file=sys.stderr)
     geo = GeoLookup(args.geo_asn_csv, args.geo_country_csv)
@@ -187,7 +187,7 @@ def main():
     write_csv(enriched_rows, out_dir / "sessions.csv")
     write_json(sessions, geo_lookups, out_dir / "sessions.json")
 
-    summary = compute_summary(enriched_rows, unmatched_count)
+    summary = compute_summary(enriched_rows, unmatched_count, coordinated_ip_groups)
     summary["generated_at"] = export["generated_at"]
     summary["version"] = args.version
 

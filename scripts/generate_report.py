@@ -26,6 +26,13 @@ def load_sessions(dataset_dir: Path) -> list[dict]:
         return list(csv.DictReader(f))
 
 
+def _format_ms(ms) -> str:
+    try:
+        return datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    except (ValueError, TypeError):
+        return str(ms)
+
+
 def analyze_coordinated_groups(summary: dict, sessions: list[dict]) -> list[dict]:
     """
     For each coordinated IP group from the summary, look up each IP's
@@ -42,11 +49,6 @@ def analyze_coordinated_groups(summary: dict, sessions: list[dict]) -> list[dict
 
     analyzed = []
     for group in summary["coordinated_ip_groups"]:
-        # Skip the long tail of singleton-session groups (session_count == 1
-        # with many IPs is just "many scanners hit us once", not coordination)
-        if group["session_count"] == 1:
-            continue
-
         asn_breakdown = Counter()
         country_breakdown = Counter()
         unresolved = 0
@@ -87,13 +89,23 @@ def render_report(summary: dict, coordinated_analysis: list[dict], version: str)
     # --- Headline finding ---
     lines.append("## Headline finding")
     lines.append("")
-    lines.append(
-        f"**{summary['zero_command_sessions']:,} of {summary['total_sessions']:,} "
-        f"sessions ({summary['zero_command_pct']}%) executed zero commands** "
-        f"after authentication. Every captured session in this snapshot "
-        f"consists entirely of automated credential-stuffing attempts against "
-        f"the SSH auth layer — no attacker has reached the interactive shell."
-    )
+    if summary["zero_command_pct"] >= 99.5:
+        lines.append(
+            f"**{summary['zero_command_sessions']:,} of {summary['total_sessions']:,} "
+            f"sessions ({summary['zero_command_pct']}%) executed zero commands** "
+            f"after authentication — this snapshot is still almost entirely "
+            f"automated credential-stuffing against the SSH auth layer, with "
+            f"no attacker reaching the interactive shell."
+        )
+    else:
+        lines.append(
+            f"**{summary['zero_command_sessions']:,} of {summary['total_sessions']:,} "
+            f"sessions ({summary['zero_command_pct']}%) executed zero commands** "
+            f"after authentication. The remainder "
+            f"({100 - summary['zero_command_pct']:.2f}%) reached the interactive "
+            f"shell and executed real commands — the honeypot is no longer "
+            f"purely a credential-stuffing sink."
+        )
     lines.append("")
 
     # --- SSH client banners ---
@@ -102,7 +114,8 @@ def render_report(summary: dict, coordinated_analysis: list[dict], version: str)
     lines.append("| Banner | Sessions |")
     lines.append("|---|---|")
     for banner, count in summary["ssh_banners"]:
-        lines.append(f"| `{banner}` | {count:,} |")
+        label = f"`{banner}`" if banner else "*(unknown — rejected sessions recorded before this was tracked)*"
+        lines.append(f"| {label} | {count:,} |")
     lines.append("")
 
     # --- Coordinated infrastructure ---
@@ -111,18 +124,22 @@ def render_report(summary: dict, coordinated_analysis: list[dict], version: str)
 
     if coordinated_analysis:
         lines.append(
-            "Groups of source IPs sharing an identical session count — a "
-            "signal of scripted, centrally-orchestrated behaviour rather than "
-            "independent scanners hitting similar numbers by chance."
+            "Groups of 3+ distinct source IPs that authenticated with the "
+            "same credential via the same SSH client banner within the same "
+            "5-minute window — a real signal of a single script/botnet "
+            "driving multiple source IPs, not just IPs that happen to share "
+            "a lifetime session count."
         )
         lines.append("")
 
         for group in coordinated_analysis:
             lines.append(
-                f"### {group['ip_count']} IPs at exactly "
-                f"{group['session_count']:,} sessions each"
+                f"### {group['count']} IPs — `{group['username']}:{group['credential']}` "
+                f"via `{group['ssh_client_banner']}`"
             )
             lines.append("")
+            lines.append(f"- **Window:** {_format_ms(group['window_start_ms'])} (5-minute bucket)")
+            lines.append(f"- **IPs:** {', '.join(group['ips'])}")
 
             if group["asn_breakdown"]:
                 asn_parts = ", ".join(
@@ -144,7 +161,10 @@ def render_report(summary: dict, coordinated_analysis: list[dict], version: str)
 
             lines.append("")
     else:
-        lines.append("No coordinated groups (session_count > 1, ip_count > 2) found in this snapshot.")
+        lines.append(
+            "No coordinated campaigns (3+ IPs sharing a credential + client "
+            "banner within a 5-minute window) found in this snapshot."
+        )
         lines.append("")
 
     # --- Top ASNs / countries (whole dataset) ---
@@ -189,11 +209,7 @@ def render_report(summary: dict, coordinated_analysis: list[dict], version: str)
     lines.append("")
     generated_at_raw = summary.get("generated_at")
     if generated_at_raw:
-        try:
-            dt = datetime.fromtimestamp(int(generated_at_raw) / 1000, tz=timezone.utc)
-            generated_at_str = dt.strftime("%Y-%m-%d %H:%M UTC")
-        except (ValueError, TypeError):
-            generated_at_str = str(generated_at_raw)
+        generated_at_str = _format_ms(generated_at_raw)
     else:
         generated_at_str = "unknown"
     lines.append(f"*Generated {generated_at_str}. Dataset version: {version}.*")
