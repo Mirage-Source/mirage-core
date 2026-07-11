@@ -9,4 +9,4 @@ providers:
     updateIntervalSeconds: 30
     allowUiUpdates: true
     options:
-      path: /etc/grafana/provisioning/mirage-dashboards
+      path: /etc/grafana/mirage-dashboards
