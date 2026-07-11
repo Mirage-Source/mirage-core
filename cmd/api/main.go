@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -76,7 +77,7 @@ func main() {
 
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Header.Get("X-API-Key") != apiKey {
+			if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-API-Key")), []byte(apiKey)) != 1 {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
@@ -84,6 +85,8 @@ func main() {
 			next.ServeHTTP(w, r)
 		})
 	})
+
+	r.Handle("/metrics", promhttp.Handler())
 
 	r.Get("/api/stats", func(w http.ResponseWriter, r *http.Request) {
 		stats, err := store.GetStats(db)
@@ -211,12 +214,8 @@ func main() {
 		}
 	})
 
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
-	mux.Handle("/", r)
-
 	log.Println("API server listening on :8080")
-	if err := http.ListenAndServe(":8080", mux); err != nil {
+	if err := http.ListenAndServe(":8080", r); err != nil {
 		log.Fatalf("starting server: %v", err)
 	}
 }
