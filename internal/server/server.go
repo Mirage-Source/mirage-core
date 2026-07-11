@@ -144,7 +144,61 @@ func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, se
 		switch req.Type {
 			case "pty-req":
 				req.Reply(true, nil)
-			case "shell", "exec":
+			case "exec":
+				var payload struct {
+					Command string
+				}
+				if err := ssh.Unmarshal(req.Payload, &payload); err != nil {
+					log.Printf("Could not unmarshal exec payload: %v", err)
+					req.Reply(false, nil)
+					continue
+				}
+				req.Reply(true, nil)
+
+				log.Printf("Executing command: %s", payload.Command)
+				response, _, code := shell.Handle(payload.Command, cwd)
+				if response != "" {
+					fmt.Fprintf(channel, "%s\r\n", response)
+				}
+
+				now := time.Now().UnixMilli()
+				raw := base64.StdEncoding.EncodeToString([]byte(payload.Command))
+				words := strings.Fields(payload.Command)
+				var parsedCommand string
+				var parsedArgs []string
+				if len(words) > 0 {
+					parsedCommand = words[0]
+					parsedArgs = words[1:]
+				}
+
+				cmd := session.Command{
+					EventID:             uuid.New().String(),
+					SequenceNumber:      len(sess.Commands),
+					TimestampMS:         now,
+					InterCommandDelayMS: nil,
+					RawInputB64:         raw,
+					ParsedCommand:       parsedCommand,
+					ParsedArgs:          parsedArgs,
+					WorkingDirectory:    cwd,
+					ResponseSource:      session.ResponseSourceHardcoded,
+				}
+				sess.Commands = append(sess.Commands, cmd)
+
+				endMS := time.Now().UnixMilli()
+				duration := endMS - sess.Timing.StartMS
+				sess.Timing.EndMS = &endMS
+				sess.Timing.DurationMS = &duration
+				sess.Outcome = session.OutcomeCleanDisconnect
+
+				// Send exit status to notify client of success/failure
+				channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{Status: uint32(code)}))
+
+				log.Printf("Saving exec session to DB.")
+				if err := store.SaveSession(db, sess); err != nil {
+					log.Printf("Error saving session: %v", err)
+				}
+				return
+			case "shell":
 				req.Reply(true, nil)
 				fmt.Fprintf(channel, "Welcome to Ubuntu 22.04.3 LTS\r\n")
 
@@ -194,9 +248,17 @@ func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, se
 
 						b := singleByte[0]
 
-						if b == '\r' {
-							fmt.Fprintf(channel, "\r\n")
-							break
+						if b == '\r' || b == '\n' {
+							if len(inputBuffer) > 0 {
+								fmt.Fprintf(channel, "\r\n")
+								break
+							} else {
+								if b == '\r' {
+									fmt.Fprintf(channel, "\r\n")
+									break
+								}
+								continue
+							}
 						} else if b == 0x7F || b == 0x08 {
 							if len(inputBuffer) > 0 {
 								inputBuffer = inputBuffer[:len(inputBuffer)-1]
@@ -266,8 +328,7 @@ func handleSessionRequests(channel ssh.Channel, requests <-chan *ssh.Request, se
 				}
 			default:
 				req.Reply(false, nil)
-			}
 		}
-
-		log.Printf("Session ended.")
+	}
+	log.Printf("Session ended.")
 }
