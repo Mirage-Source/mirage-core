@@ -173,6 +173,18 @@ func Start(addr string) {
 				pass := string(password)
 				_, accepted := weakCreds[username+":"+pass]
 
+				// Captured here, not just after a successful handshake in
+				// handleConnection: ConnMetadata already has the client's
+				// version banner and remote address at auth time, and a
+				// rejected handshake never reaches handleConnection's
+				// post-handshake assignment, which used to leave every
+				// auth_failed session with a blank client_ip/banner.
+				sess.Network.SSHClientBanner = string(conn.ClientVersion())
+				if tcpAddr, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
+					sess.Network.ClientIP = tcpAddr.IP.String()
+					sess.Network.ClientPort = tcpAddr.Port
+				}
+
 				sess.AuthAttempts = append(sess.AuthAttempts, session.AuthAttempt{
 					TimestampMS: time.Now().UnixMilli(),
 					Method:      session.AuthMethodPassword,
