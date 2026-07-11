@@ -1,159 +1,382 @@
+// Package shell simulates just enough of an interactive Ubuntu bash session
+// to survive real-world attacker recon: a single filesystem tree (fs.go)
+// shared by every command, and a small tokenizer (tokenizer.go) that
+// understands `;`/`&&`/`||` chaining, quoting, and one level of `$(...)`
+// command substitution. It deliberately does not implement pipes, redirects,
+// or real subshell execution — see the project's honeypot-hardening plan for
+// why that line was drawn where it was.
 package shell
 
 import (
+	"fmt"
 	"log"
 	"strings"
-	"path"
+
+	"github.com/mirage-source/mirage-core/internal/session"
 )
 
-var fileContents = map[string]string{
-"/etc/passwd": `root:x:0:0:root:/root:/bin/bash
-daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
-ubuntu:x:1000:1000:Ubuntu:/home/ubuntu:/bin/bash
-www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin`,
-"/etc/os-release": `NAME="Ubuntu"
-VERSION="22.04.3 LTS (Jammy Jellyfish)"
-ID=ubuntu
-ID_LIKE=debian
-PRETTY_NAME="Ubuntu 22.04.3 LTS"
-VERSION_ID="22.04"
-HOME_URL="https://www.ubuntu.com/"`,
-"/proc/version": `Linux version 5.15.0-1031-aws (buildd@lcy02-amd64-059) (gcc (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #35-Ubuntu SMP Fri Feb 10 02:07:19 UTC 2023`,
-"/home/ubuntu/.bash_history": `sudo apt update
-sudo apt install python3-pip
-git clone https://github.com/company/django-app.git
-cd django-app
-pip3 install -r requirements.txt
-python3 manage.py migrate
-python3 manage.py runserver 0.0.0.0:8000
-sudo systemctl status nginx
-cat /etc/nginx/sites-enabled/default
-sudo nano /etc/nginx/sites-enabled/default
-sudo systemctl restart nginx
-ls -la
-cd /home/ubuntu
-cat .env`,
+const homeDir = "/home/ubuntu"
+
+// ExitRequested is the sentinel exit code returned when the attacker types
+// `exit` — the caller (server.go) uses this to end the session.
+const ExitRequested = 257
+
+const maxSubstitutionDepth = 3
+
+// BaitHit is reported when a command touches a planted lure so the caller
+// can record it against the session.
+type BaitHit struct {
+	BaitID     string
+	BaitType   session.BaitType
+	AccessType session.AccessType
 }
 
-var dirContents = map[string]string{
-"/home/ubuntu": `total 36
-drwxr-xr-x 5 ubuntu ubuntu 4096 May 29 14:02 .
-drwxr-xr-x 3 root   root   4096 Jan 12 09:11 ..
--rw------- 1 ubuntu ubuntu  220 Jan 12 09:11 .bash_history
--rw-r--r-- 1 ubuntu ubuntu 3526 Jan 12 09:11 .bashrc
-drwx------ 2 ubuntu ubuntu 4096 Jan 12 09:11 .cache
-drwxrwxr-x 8 ubuntu ubuntu 4096 May 29 13:44 django-app
--rw-rw-r-- 1 ubuntu ubuntu  312 May 29 13:51 .env
-drwx------ 2 ubuntu ubuntu 4096 Jan 12 09:11 .ssh
--rw-r--r-- 1 ubuntu ubuntu  675 Jan 12 09:11 .profile`,
-"/etc": `total 212
-drwxr-xr-x 80 root root  4096 May 29 14:01 .
-drwxr-xr-x 19 root root  4096 Jan 12 09:11 ..
--rw-r--r--  1 root root  2981 Jan 12 09:11 adduser.conf
-drwxr-xr-x  3 root root  4096 Jan 12 09:11 apt
--rw-r--r--  1 root root   367 Jan 12 09:11 bash.bashrc
-drwxr-xr-x  2 root root  4096 May 29 14:01 cron.d
--rw-r--r--  1 root root  1748 Jan 12 09:11 hosts
--rw-r--r--  1 root root   191 Jan 12 09:11 hostname
--rw-r--r--  1 root root   522 Jan 12 09:11 nsswitch.conf
--rw-r--r--  1 root root  1317 Jan 12 09:11 os-release
--rw-r--r--  1 root root   552 Jan 12 09:11 passwd
-drwxr-xr-x  2 root root  4096 Jan 12 09:11 nginx
-drwxr-xr-x  4 root root  4096 Jan 12 09:11 ssh
-drwxr-xr-x  3 root root  4096 Jan 12 09:11 systemd`,
-"/": `total 68
-drwxr-xr-x 19 root root  4096 Jan 12 09:11 .
-drwxr-xr-x 19 root root  4096 Jan 12 09:11 ..
-drwxr-xr-x  2 root root  4096 May 29 14:01 bin
-drwxr-xr-x  3 root root  4096 Jan 12 09:11 boot
-drwxr-xr-x  6 root root  4096 Jan 12 09:11 dev
-drwxr-xr-x 80 root root  4096 May 29 14:01 etc
-drwxr-xr-x  3 root root  4096 Jan 12 09:11 home
-drwxr-xr-x 13 root root  4096 Jan 12 09:11 lib
-drwxr-xr-x  2 root root  4096 Jan 12 09:11 lib64
-drwxr-xr-x  3 root root  4096 Jan 12 09:11 opt
-dr-xr-xr-x 96 root root     0 May 29 09:11 proc
-drwx------  4 root root  4096 Jan 12 09:11 root
-drwxr-xr-x 26 root root   820 May 29 14:01 run
-drwxr-xr-x  2 root root  4096 Jan 12 09:11 sbin
-drwxr-xr-x  6 root root  4096 Jan 12 09:11 srv
-drwxr-xr-x  2 root root  4096 May 29 14:01 tmp
-drwxr-xr-x 11 root root  4096 Jan 12 09:11 usr
-drwxr-xr-x 13 root root  4096 Jan 12 09:11 var`,
-"/var": `total 52
-drwxr-xr-x 13 root root  4096 Jan 12 09:11 .
-drwxr-xr-x 19 root root  4096 Jan 12 09:11 ..
-drwxr-xr-x  2 root root  4096 May 29 14:01 backups
-drwxr-xr-x 14 root root  4096 May 29 14:01 cache
-drwxrwxrwt  2 root root  4096 May 29 14:01 crash
-drwxr-xr-x 38 root root  4096 May 29 14:01 lib
-drwxrwsr-x  2 root root  4096 Jan 12 09:11 local
-drwxr-xr-x  2 root root  4096 May 29 14:01 log
-drwxrwsr-x  2 root root  4096 Jan 12 09:11 mail
-drwxr-xr-x  2 root root  4096 Jan 12 09:11 opt
-drwxr-xr-x  5 root root  4096 Jan 12 09:11 spool
-drwxrwxrwt  8 root root  4096 May 29 14:01 tmp
-drwxr-xr-x  3 root root  4096 Jan 12 09:11 www`,
+// Interpreter holds the state of one interactive session: its current
+// working directory and any exported environment variables. Create one per
+// SSH session and reuse it across commands so `cd` and `export` persist the
+// way they would in a real shell.
+type Interpreter struct {
+	Cwd string
+	Env map[string]string
 }
-func Handle(input string, cwd string) (string, string, int) {
-	trimmed := strings.TrimSpace(input)
 
-	words := strings.Fields(trimmed)
-	if len(words) == 0 {
-		return "", cwd, 0
+func NewInterpreter() *Interpreter {
+	return &Interpreter{Cwd: homeDir, Env: map[string]string{}}
+}
+
+// Prompt renders the current PS1-style prompt for this interpreter's cwd.
+func (s *Interpreter) Prompt() string {
+	return fmt.Sprintf("ubuntu@ip-172-31-14-52:%s$ ", displayPath(s.Cwd))
+}
+
+// Run executes one line of input (which may contain `;`/`&&`/`||`-chained
+// statements) and returns the combined output, the exit code of the last
+// statement that ran, and any bait interactions triggered along the way.
+func (s *Interpreter) Run(line string) (output string, code int, bait []BaitHit) {
+	out, code := s.evalLine(line, 0, &bait)
+	return out, code, bait
+}
+
+func (s *Interpreter) evalLine(line string, depth int, bait *[]BaitHit) (string, int) {
+	stmts := splitStatements(line)
+
+	var outputs []string
+	lastExit := 0
+
+	for i, st := range stmts {
+		if i > 0 {
+			switch st.Sep {
+			case "&&":
+				if lastExit != 0 {
+					continue
+				}
+			case "||":
+				if lastExit == 0 {
+					continue
+				}
+			}
+		}
+
+		words := tokenizeWords(st.Text)
+		resolved := make([]string, 0, len(words))
+		for _, w := range words {
+			resolved = append(resolved, s.substitute(w, depth, bait))
+		}
+		if len(resolved) == 0 {
+			continue
+		}
+
+		// A statement made up entirely of NAME=value words (e.g. the very
+		// common `uname=$(uname -a)` local-variable-assignment pattern) is
+		// an assignment, not a command invocation.
+		if isAssignmentOnly(resolved) {
+			for _, w := range resolved {
+				k, v, _ := strings.Cut(w, "=")
+				s.Env[k] = v
+			}
+			lastExit = 0
+			continue
+		}
+
+		out, code := s.execBuiltin(resolved[0], resolved[1:], bait)
+		lastExit = code
+		if out != "" {
+			outputs = append(outputs, out)
+		}
 	}
 
-	switch words[0] {
-		case "echo":
-			return strings.Join(words[1:], " "), cwd, 0
-		case "whoami":
-			return "ubuntu",cwd,0
-		case "pwd":
-			return cwd, cwd, 0
-		case "hostname":
-			return "ip-172-31-14-52", cwd, 0
-		case "cat":
-			if len(words) < 2 {
-				return "cat: missing operand", cwd, 1
-			}
-			content, exists := fileContents[words[1]]
-			if exists {
-				return strings.ReplaceAll(content, "\n", "\r\n"), cwd, 0
-			}
-			return "cat: " + words[1] + ": No such file or directory", cwd, 1
-		case "exit":
-			return "", cwd, 257
-		case "ls":
-			target := cwd
-			if len(words) >=2 && !strings.HasPrefix(words[len(words)-1], "-") {
-				target = words[len(words)-1]
-			}
-			content, exists := dirContents[target]
-			if !exists {
-				return "ls: cannot access '" + target + "': No such file or directory", cwd, 2
-			}
-			return strings.ReplaceAll(content, "\n", "\r\n"), cwd, 0
-		case "cd":
-			var target string
-			if len(words) < 2 {
-				target = "/home/ubuntu"
-			} else {
-				target = words[1]
-			}
+	return strings.Join(outputs, "\r\n"), lastExit
+}
 
-			var candidate string
-			if strings.HasPrefix(target, "/") {
-				candidate = path.Clean(target)
-			} else {
-				candidate = path.Clean(path.Join(cwd, target))
-			}
-			if _, exists := dirContents[candidate]; exists {
-				return "", candidate, 0
-			}
-			return "cd: "+ target + ": No such file or directory", cwd, 1
+// substitute resolves `$(...)` command substitutions and `$NAME`/`${NAME}`
+// variable interpolation inside a single word. Command substitutions nested
+// deeper than maxSubstitutionDepth collapse to an empty string rather than
+// erroring, same as a real shell running out of patience would look like
+// from the outside. Unset variables interpolate to "", matching bash.
+func (s *Interpreter) substitute(word string, depth int, bait *[]BaitHit) string {
+	var out strings.Builder
+	i := 0
+	for i < len(word) {
+		c := word[i]
 
-		default:
-			log.Printf("Unknown command: %s", words[0])
-			return "bash: " + words[0] + ": command not found", cwd, 127
+		if c == '$' && i+1 < len(word) && word[i+1] == '(' {
+			end := matchingParen(word, i+2)
+			if end == -1 {
+				out.WriteString(word[i:])
+				break
+			}
+			inner := word[i+2 : end]
+			var resolved string
+			if depth+1 <= maxSubstitutionDepth {
+				o, _ := s.evalLine(inner, depth+1, bait)
+				resolved = strings.TrimRight(o, "\r\n")
+			}
+			out.WriteString(resolved)
+			i = end + 1
+			continue
+		}
+
+		if c == '$' && i+1 < len(word) && word[i+1] == '{' {
+			closeIdx := strings.IndexByte(word[i+2:], '}')
+			if closeIdx == -1 {
+				out.WriteByte(c)
+				i++
+				continue
+			}
+			name := word[i+2 : i+2+closeIdx]
+			out.WriteString(s.Env[name])
+			i = i + 2 + closeIdx + 1
+			continue
+		}
+
+		if c == '$' && i+1 < len(word) && isIdentStart(word[i+1]) {
+			j := i + 1
+			for j < len(word) && isIdentPart(word[j]) {
+				j++
+			}
+			out.WriteString(s.Env[word[i+1:j]])
+			i = j
+			continue
+		}
+
+		out.WriteByte(c)
+		i++
 	}
+	return out.String()
+}
+
+func isAssignmentOnly(words []string) bool {
+	for _, w := range words {
+		eq := strings.IndexByte(w, '=')
+		if eq <= 0 || !isIdentStart(w[0]) {
+			return false
+		}
+		for i := 1; i < eq; i++ {
+			if !isIdentPart(w[i]) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isIdentStart(b byte) bool {
+	return b == '_' || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
+
+func isIdentPart(b byte) bool {
+	return isIdentStart(b) || (b >= '0' && b <= '9')
+}
+
+// matchingParen returns the index of the `)` matching the `(` implicitly
+// opened just before pos (pos is the index right after "$("), or -1.
+func matchingParen(s string, pos int) int {
+	depth := 1
+	for i := pos; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit) (string, int) {
+	switch cmd {
+	case "":
+		return "", 0
+
+	case "echo":
+		return strings.Join(args, " "), 0
+
+	case "whoami":
+		return "ubuntu", 0
+
+	case "pwd":
+		return s.Cwd, 0
+
+	case "hostname":
+		return "ip-172-31-14-52", 0
+
+	case "id":
+		return "uid=1000(ubuntu) gid=1000(ubuntu) groups=1000(ubuntu),27(sudo)", 0
+
+	case "uname":
+		return unameOutput(args), 0
+
+	case "export":
+		for _, a := range args {
+			if k, v, ok := strings.Cut(a, "="); ok {
+				s.Env[k] = v
+			}
+		}
+		return "", 0
+
+	case "test", "[":
+		return "", testBuiltin(s.Cwd, cmd, args)
+
+	case "cat":
+		return s.catBuiltin(args, bait)
+
+	case "ls":
+		return s.lsBuiltin(args)
+
+	case "cd":
+		return s.cdBuiltin(args)
+
+	case "exit":
+		return "", ExitRequested
+
+	default:
+		log.Printf("Unknown command: %s", cmd)
+		return "bash: " + cmd + ": command not found", 127
+	}
+}
+
+func unameOutput(args []string) string {
+	const (
+		sysname  = "Linux"
+		nodename = "ip-172-31-14-52"
+		release  = "5.15.0-1031-aws"
+		version  = "#35-Ubuntu SMP Fri Feb 10 02:07:19 UTC 2023"
+		machine  = "x86_64"
+	)
+
+	all := len(args) == 0
+	want := map[string]bool{}
+	for _, a := range args {
+		switch a {
+		case "-a", "--all":
+			all = true
+		case "-s", "--kernel-name":
+			want["s"] = true
+		case "-n", "--nodename":
+			want["n"] = true
+		case "-r", "--kernel-release":
+			want["r"] = true
+		case "-v", "--kernel-version":
+			want["v"] = true
+		case "-m", "--machine":
+			want["m"] = true
+		}
+	}
+
+	var fields []string
+	if all {
+		fields = []string{sysname, nodename, release, version, machine, machine, machine, "GNU/Linux"}
+	} else {
+		if want["s"] {
+			fields = append(fields, sysname)
+		}
+		if want["n"] {
+			fields = append(fields, nodename)
+		}
+		if want["r"] {
+			fields = append(fields, release)
+		}
+		if want["v"] {
+			fields = append(fields, version)
+		}
+		if want["m"] {
+			fields = append(fields, machine)
+		}
+		if len(fields) == 0 {
+			fields = []string{sysname}
+		}
+	}
+	return strings.Join(fields, " ")
+}
+
+// testBuiltin implements the handful of `test`/`[` checks attacker recon
+// scripts actually use: -f (regular file), -d (directory), -e (exists).
+func testBuiltin(cwd, cmd string, args []string) int {
+	if cmd == "[" && len(args) > 0 && args[len(args)-1] == "]" {
+		args = args[:len(args)-1]
+	}
+	if len(args) != 2 {
+		return 2
+	}
+	flag, target := args[0], args[1]
+	_, n := lookup(cwd, target)
+	switch flag {
+	case "-f":
+		if n != nil && n.Type == NodeFile {
+			return 0
+		}
+	case "-d":
+		if n != nil && n.Type == NodeDir {
+			return 0
+		}
+	case "-e":
+		if n != nil {
+			return 0
+		}
+	}
+	return 1
+}
+
+func (s *Interpreter) catBuiltin(args []string, bait *[]BaitHit) (string, int) {
+	if len(args) < 1 {
+		return "cat: missing operand", 1
+	}
+	_, n := lookup(s.Cwd, args[0])
+	if n == nil || n.Type != NodeFile {
+		return "cat: " + args[0] + ": No such file or directory", 1
+	}
+	if n.Bait != nil {
+		*bait = append(*bait, BaitHit{BaitID: n.Bait.BaitID, BaitType: n.Bait.BaitType, AccessType: session.AccessTypeRead})
+	}
+	return strings.ReplaceAll(n.Content, "\n", "\r\n"), 0
+}
+
+func (s *Interpreter) lsBuiltin(args []string) (string, int) {
+	target := s.Cwd
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			target = a
+		}
+	}
+	_, n := lookup(s.Cwd, target)
+	if n == nil || n.Type != NodeDir {
+		return "ls: cannot access '" + target + "': No such file or directory", 2
+	}
+	return lsListing(n), 0
+}
+
+func (s *Interpreter) cdBuiltin(args []string) (string, int) {
+	target := homeDir
+	if len(args) >= 1 {
+		target = args[0]
+	}
+	clean, n := lookup(s.Cwd, target)
+	if n == nil || n.Type != NodeDir {
+		return "cd: " + target + ": No such file or directory", 1
+	}
+	s.Cwd = clean
+	return "", 0
 }

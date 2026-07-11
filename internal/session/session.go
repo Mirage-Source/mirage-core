@@ -16,6 +16,7 @@ const (
 	OutcomeTimeout         Outcome = "timeout"
 	OutcomeConnectionReset Outcome = "connection_reset"
 	OutcomeActive          Outcome = "active"
+	OutcomeAuthFailed      Outcome = "auth_failed"
 )
 
 type AuthMethod string
