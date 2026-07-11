@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -142,7 +143,11 @@ func main() {
 
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-API-Key")), []byte(apiKey)) != 1 {
+			presented := r.Header.Get("X-API-Key")
+			if presented == "" {
+				presented = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+			}
+			if subtle.ConstantTimeCompare([]byte(presented), []byte(apiKey)) != 1 {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}

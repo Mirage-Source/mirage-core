@@ -87,10 +87,16 @@ services:
     volumes:
       - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
+    environment:
+      API_KEY: ${API_KEY}
+    entrypoint: ["/bin/sh", "-c"]
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time=30d'
+      - >
+        printf '%s' "$$API_KEY" > /prometheus/api_key_runtime &&
+        exec /bin/prometheus
+        --config.file=/etc/prometheus/prometheus.yml
+        --storage.tsdb.path=/prometheus
+        --storage.tsdb.retention.time=30d
     ports:
       - "127.0.0.1:9090:9090"
     restart: unless-stopped
