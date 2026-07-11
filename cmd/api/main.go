@@ -70,9 +70,73 @@ func main() {
 			db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE attacker_class IS NOT NULL`).Scan(&count)
 			return count
 		})
+		authAttemptsSuccessful = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "mirage_auth_attempts_successful_total",
+			Help: "Authentication attempts that matched a seeded weak credential.",
+		}, func() float64 {
+			var count float64
+			db.QueryRow(`SELECT COUNT(*) FROM auth_attempts WHERE success`).Scan(&count)
+			return count
+		})
+		baitInteractions = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "mirage_bait_interactions_total",
+			Help: "Bait files/credentials touched by attackers.",
+		}, func() float64 {
+			var count float64
+			db.QueryRow(`SELECT COUNT(*) FROM bait_interactions`).Scan(&count)
+			return count
+		})
+		commandsTotal = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "mirage_commands_total",
+			Help: "Shell commands executed across all sessions.",
+		}, func() float64 {
+			var count float64
+			db.QueryRow(`SELECT COUNT(*) FROM commands`).Scan(&count)
+			return count
+		})
+		sessionsByOutcome = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "mirage_sessions_by_outcome",
+			Help: "Sessions grouped by terminal outcome.",
+		}, []string{"outcome"})
 	)
 
-	prometheus.MustRegister(sessionsTotal, sessions24h, uniqueIPs, authAttempts, enrichedSessions)
+	prometheus.MustRegister(
+		sessionsTotal, sessions24h, uniqueIPs, authAttempts, enrichedSessions,
+		authAttemptsSuccessful, baitInteractions, commandsTotal, sessionsByOutcome,
+	)
+
+	refreshOutcomeGauge := func() {
+		rows, err := db.Query(`SELECT outcome, COUNT(*) FROM sessions GROUP BY outcome`)
+		if err != nil {
+			log.Printf("refreshing outcome gauge: %v", err)
+			return
+		}
+		defer rows.Close()
+
+		seen := map[string]float64{}
+		for rows.Next() {
+			var outcome string
+			var count float64
+			if err := rows.Scan(&outcome, &count); err != nil {
+				log.Printf("scanning outcome row: %v", err)
+				return
+			}
+			seen[outcome] = count
+		}
+
+		for _, outcome := range []string{"active", "clean_disconnect", "timeout", "connection_reset", "auth_failed", "command_limit_reached"} {
+			sessionsByOutcome.WithLabelValues(outcome).Set(seen[outcome])
+		}
+	}
+
+	refreshOutcomeGauge()
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			refreshOutcomeGauge()
+		}
+	}()
 
 	r := chi.NewRouter()
 
