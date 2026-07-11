@@ -61,26 +61,23 @@ def fetch_export(api_url: str, api_key: str) -> dict:
     return resp.json()
 
 
-def enrich_sessions(sessions: list[dict], geo: GeoLookup) -> tuple[list[dict], int]:
+def enrich_sessions(sessions: list[dict], geo_lookups: dict[str, dict]) -> list[dict]:
+    """Attach the already-resolved (deduplicated) per-IP geo data to each row."""
     enriched = []
-    unmatched_count = 0
 
     for s in sessions:
-        result = geo.lookup(s["client_ip"])
-
-        if not result.matched:
-            unmatched_count += 1
+        geo = geo_lookups[s["client_ip"]]
 
         row = dict(s)
-        row["asn"] = result.asn
-        row["asn_name"] = result.asn_name
-        row["country"] = result.country
+        row["asn"] = geo["asn"]
+        row["asn_name"] = geo["asn_name"]
+        row["country"] = geo["country"]
         # mitre_techniques arrives as a list, flatten for CSV row,
         # JSON output keeps it as a real list separately.
         row["mitre_techniques"] = ";".join(s.get("mitre_techniques") or [])
         enriched.append(row)
 
-    return enriched, unmatched_count
+    return enriched
 
 
 def write_csv(rows: list[dict], path: Path):
@@ -182,7 +179,7 @@ def main():
             if not result.matched:
                 unmatched_count += 1
 
-    enriched_rows, _ = enrich_sessions(sessions, geo)
+    enriched_rows = enrich_sessions(sessions, geo_lookups)
 
     out_dir = Path(args.out_dir) / args.version
     out_dir.mkdir(parents=True, exist_ok=True)

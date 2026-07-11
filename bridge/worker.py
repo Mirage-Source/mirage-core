@@ -96,12 +96,12 @@ def run(config: BridgeConfig | None = None, once: bool = False) -> None:
     )
 
     conn = connect_with_retry(config)
+    total = 0
     try:
         if config.ensure_schema:
             ensure_schema(conn)
             print("[worker] ML schema ensured.")
 
-        total = 0
         while not shutdown.stop:
             batch = fetch_pending(conn, config.batch_size, config.require_finished)
             if not batch:
