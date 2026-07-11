@@ -40,9 +40,17 @@ type BannerCounts struct {
 	Count  int    `json:"count"`
 }
 
+// CoordinatedIPGroup is a set of distinct IPs that authenticated with the
+// same credential and SSH client banner within the same 5-minute window --
+// a real signal of a single script/botnet driving multiple source IPs,
+// rather than two unrelated IPs that happen to have the same session count.
 type CoordinatedIPGroup struct {
-	Count int      `json:"count"`
-	IPs   []string `json:"ips"`
+	Count       int      `json:"count"`
+	IPs         []string `json:"ips"`
+	Username    string   `json:"username"`
+	Credential  string   `json:"credential"`
+	Banner      string   `json:"ssh_client_banner"`
+	WindowStart int64    `json:"window_start_ms"`
 }
 
 type HourlyDistribution struct {

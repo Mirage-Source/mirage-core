@@ -211,22 +211,34 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 		return nil, err
 	}
 
-	// Coordinated IP groups
+	// Coordinated IP groups: distinct IPs that used the same credential and
+	// SSH client banner within the same 5-minute window. That combination --
+	// same secret, same client fingerprint, tight time window, multiple
+	// source IPs -- is what an actual botnet/script-driven campaign looks
+	// like; unrelated IPs sharing a lifetime session count is not.
 	rows, err = db.Query(`
-		WITH ip_counts AS (
+		WITH attempts AS (
 			SELECT
-				client_ip,
-				COUNT(*) AS session_count
-			FROM sessions
-			GROUP BY client_ip
+				s.client_ip,
+				s.ssh_client_banner,
+				a.username,
+				a.credential,
+				(floor(s.start_ms / 1000.0 / 300) * 300000)::bigint AS window_start_ms
+			FROM sessions s
+			JOIN auth_attempts a ON a.session_id = s.session_id
 		)
 		SELECT
-			session_count,
-			ARRAY_AGG(client_ip ORDER BY client_ip)
-		FROM ip_counts
-		GROUP BY session_count
-		HAVING COUNT(*) > 2
-		ORDER BY session_count DESC
+			COUNT(DISTINCT client_ip) AS ip_count,
+			ARRAY_AGG(DISTINCT client_ip ORDER BY client_ip),
+			username,
+			credential,
+			ssh_client_banner,
+			window_start_ms
+		FROM attempts
+		GROUP BY window_start_ms, ssh_client_banner, username, credential
+		HAVING COUNT(DISTINCT client_ip) > 2
+		ORDER BY ip_count DESC, window_start_ms DESC
+		LIMIT 10
 	`)
 	if err != nil {
 		return nil, err
@@ -238,6 +250,10 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 		if err := rows.Scan(
 			&item.Count,
 			pq.Array(&item.IPs),
+			&item.Username,
+			&item.Credential,
+			&item.Banner,
+			&item.WindowStart,
 		); err != nil {
 			rows.Close()
 			return nil, err
