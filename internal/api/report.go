@@ -44,6 +44,7 @@ type ReportTimeline struct {
 }
 
 type ReportThreatIntel struct {
-	MitreTechniques []string `json:"mitre_techniques"`
-	Summary         *string  `json:"summary"`
+	MitreTechniques    []string `json:"mitre_techniques"`
+	Summary            *string  `json:"summary"`
+	RecommendedActions []string `json:"recommended_actions"`
 }

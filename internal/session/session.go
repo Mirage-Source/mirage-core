@@ -116,6 +116,8 @@ type Intelligence struct {
 	MitreTechniques      []string         `json:"mitre_techniques"`
 	SessionSummary       *string          `json:"session_summary"`
 	StixBundle           *json.RawMessage `json:"stix_bundle"`
+	Severity             *string          `json:"severity"`
+	RecommendedActions   []string         `json:"recommended_actions"`
 }
 
 

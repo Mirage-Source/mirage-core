@@ -377,6 +377,8 @@ func GetSessionByID(
 	var mitreTechniquesRaw []byte
 	var sessionSummary sql.NullString
 	var stixBundleRaw []byte
+	var severity sql.NullString
+	var recommendedActionsRaw []byte
 
 	err := db.QueryRow(`
 		SELECT
@@ -386,7 +388,9 @@ func GetSessionByID(
 			cluster_id,
 			mitre_techniques,
 			session_summary,
-			stix_bundle
+			stix_bundle,
+			severity,
+			recommended_actions
 		FROM sessions
 		WHERE session_id = $1
 	`, sessionID).Scan(
@@ -397,6 +401,8 @@ func GetSessionByID(
 		&mitreTechniquesRaw,
 		&sessionSummary,
 		&stixBundleRaw,
+		&severity,
+		&recommendedActionsRaw,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -437,6 +443,15 @@ func GetSessionByID(
 			sess.Intelligence.StixBundle = &bundle
 		}
 	}
+	if severity.Valid {
+		sess.Intelligence.Severity = &severity.String
+	}
+	if len(recommendedActionsRaw) > 0 {
+		var actions []string
+		if err := json.Unmarshal(recommendedActionsRaw, &actions); err == nil {
+			sess.Intelligence.RecommendedActions = actions
+		}
+	}
 
 	return &sess, nil
 }
@@ -449,9 +464,14 @@ func GetSessionReport(
 		return nil, err
 	}
 
-	// Derive severity from attacker class — mirrors the Python pipeline's logic.
+	// Severity: prefer the ML pipeline's own computation (considers bait
+	// escalation, not just attacker_class). Only sessions enriched before
+	// this was persisted (see db/init/002_ml_intelligence.sql) lack it, so
+	// fall back to a cruder class-only derivation for those.
 	severity := "low"
-	if sess.Intelligence.AttackerClass != nil {
+	if sess.Intelligence.Severity != nil {
+		severity = *sess.Intelligence.Severity
+	} else if sess.Intelligence.AttackerClass != nil {
 		switch *sess.Intelligence.AttackerClass {
 		case "script_kiddie":
 			severity = "medium"
@@ -489,8 +509,9 @@ func GetSessionReport(
 			BaitHits:     len(sess.BaitEvents),
 		},
 		ThreatIntel: api.ReportThreatIntel{
-			MitreTechniques: sess.Intelligence.MitreTechniques,
-			Summary:         sess.Intelligence.SessionSummary,
+			MitreTechniques:    sess.Intelligence.MitreTechniques,
+			Summary:            sess.Intelligence.SessionSummary,
+			RecommendedActions: sess.Intelligence.RecommendedActions,
 		},
 		StixBundle: sess.Intelligence.StixBundle,
 	}

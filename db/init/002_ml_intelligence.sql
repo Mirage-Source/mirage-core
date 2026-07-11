@@ -8,6 +8,8 @@
 -- migrations were applied manually. Keep the two in sync.
 
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS stix_bundle JSONB;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS severity TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS recommended_actions JSONB;
 
 CREATE TABLE IF NOT EXISTS session_embeddings (
     session_id TEXT PRIMARY KEY
@@ -62,6 +64,8 @@ SELECT
     s.cluster_id,
     s.mitre_techniques,
     s.session_summary,
+    s.severity,
+    s.recommended_actions,
     e.tool_signature,
     e.timing_label,
     e.timing_cv,
