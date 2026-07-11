@@ -382,7 +382,7 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
       <h2>Known deviations</h2>
       <div class="notes" style="max-width:72ch">
         <p>Single node, single geography. Frankfurt is a major peering hub — results may overrepresent European-routed traffic. The observation window is too short to characterise seasonal or campaign-level periodicity.</p>
-        <p>Zero interactive sessions observed across all captured sessions. Every attacker disconnected after credential submission — no shell commands executed. The fake shell is implemented and awaiting its first real visitor. This is the finding, not a gap.</p>
+        <p>Early sessions were all credential-stuffing with no shell interaction — a real gap in the sensor at the time, since it accepted any credential and couldn't be distinguished from a working login. The sensor now runs a seeded weak-credential allowlist and a simulated interactive shell, and attacker sessions do execute commands and trigger planted bait files (fake credentials, SSH keys) against it.</p>
         <p>ML pipeline is live. MITRE ATT&CK techniques are mapped per session and all sessions are enriched with attacker classification. Current labels are produced by an interpretable weak-label fallback — a trained classifier checkpoint is in development and will replace these once deployed.</p>
       </div>
     </section>
@@ -474,9 +474,9 @@ async function loadStats() {
     }
 
     const note = document.querySelector('.dims-note');
-    if (note) {
-      const now = new Date();
-      note.textContent = `live figures · last updated ${now.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })} · updated daily`;
+    if (note && data.generated_at) {
+      const generated = new Date(data.generated_at);
+      note.textContent = `live figures · last updated ${generated.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })} · updated daily`;
     }
 
   } catch (e) {
