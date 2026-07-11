@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,6 +28,91 @@ const maxCommandsPerSession = 500
 
 const defaultIdleTimeout = 120 * time.Second
 const defaultHandshakeTimeout = 20 * time.Second
+
+// sessionGuard makes a single *session.Session safe to share across the
+// multiple goroutines that can exist per SSH connection -- one per "session"
+// channel, since a single connection may open more than one. Without this,
+// concurrent channels racing to append to sess.Commands/BaitEvents (or each
+// independently calling SaveSession) corrupts the shared slices and causes a
+// primary-key collision in the DB, silently dropping whichever channel's
+// commands lost the race. See SESSION_NOTES.md for how this was found.
+type sessionGuard struct {
+	mu   sync.Mutex
+	sess *session.Session
+	once sync.Once
+}
+
+// appendCommand assigns SequenceNumber (and, if computeDelay, InterCommandDelayMS
+// relative to the previous command across ALL channels on this connection)
+// and appends atomically, so two channels can never be assigned the same
+// sequence number.
+func (g *sessionGuard) appendCommand(cmd session.Command, computeDelay bool) session.Command {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	cmd.SequenceNumber = len(g.sess.Commands)
+	if computeDelay && len(g.sess.Commands) > 0 {
+		prev := cmd.TimestampMS - g.sess.Commands[len(g.sess.Commands)-1].TimestampMS
+		cmd.InterCommandDelayMS = &prev
+	}
+	g.sess.Commands = append(g.sess.Commands, cmd)
+	return cmd
+}
+
+func (g *sessionGuard) appendBaitEvents(commandEventID string, hits []shell.BaitHit) {
+	if len(hits) == 0 {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	now := time.Now().UnixMilli()
+	for _, h := range hits {
+		g.sess.BaitEvents = append(g.sess.BaitEvents, session.BaitEvent{
+			EventID:                   uuid.New().String(),
+			TimestampMS:               now,
+			BaitID:                    h.BaitID,
+			BaitType:                  h.BaitType,
+			AccessType:                h.AccessType,
+			TriggeredByCommandEventID: commandEventID,
+		})
+	}
+}
+
+func (g *sessionGuard) commandCount() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return len(g.sess.Commands)
+}
+
+// recordOutcome sets the terminal outcome/timing once, on a first-wins basis:
+// whichever channel on this connection finishes first determines the
+// session's recorded outcome. Later channels calling this are no-ops.
+func (g *sessionGuard) recordOutcome(outcome session.Outcome) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.sess.Outcome != session.OutcomeActive {
+		return
+	}
+	endMS := time.Now().UnixMilli()
+	duration := endMS - g.sess.Timing.StartMS
+	g.sess.Timing.EndMS = &endMS
+	g.sess.Timing.DurationMS = &duration
+	g.sess.Outcome = outcome
+}
+
+// finalize persists the session exactly once, no matter how many channels
+// or goroutines call it -- callers should call this only after every
+// channel on the connection has finished (see handleChannels).
+func (g *sessionGuard) finalize(db *sql.DB) {
+	g.once.Do(func() {
+		g.recordOutcome(session.OutcomeConnectionReset) // fallback if no channel ever recorded one
+		if err := store.SaveSession(db, g.sess); err != nil {
+			log.Printf("Error saving session: %v", err)
+		}
+	})
+}
 
 func Start(addr string) {
 	hostKey, err := os.ReadFile("config/hostkey")
@@ -106,7 +192,8 @@ func Start(addr string) {
 			},
 		}
 		config.AddHostKey(parsedKey)
-		go handleConnection(conn, config, &sess, db, idleTimeout, handshakeTimeout) //this will handle the connection concurrently
+		guard := &sessionGuard{sess: &sess}
+		go handleConnection(conn, config, guard, db, idleTimeout, handshakeTimeout) //this will handle the connection concurrently
 	}
 }
 
@@ -146,7 +233,7 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 	return time.Duration(secs) * time.Second
 }
 
-func handleConnection(conn net.Conn, config *ssh.ServerConfig, sess *session.Session, db *sql.DB, idleTimeout, handshakeTimeout time.Duration) {
+func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGuard, db *sql.DB, idleTimeout, handshakeTimeout time.Duration) {
 	defer conn.Close()
 
 	log.Printf("New connection from %v", conn.RemoteAddr())
@@ -157,8 +244,9 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig, sess *session.Ses
 		log.Printf("Failed to handshake: %v", err)
 		// A rejected/abandoned handshake never opens a channel, so nothing
 		// would otherwise persist the credentials that were tried here.
-		if len(sess.AuthAttempts) > 0 {
-			finalizeSession(db, sess, session.OutcomeAuthFailed)
+		if len(guard.sess.AuthAttempts) > 0 {
+			guard.recordOutcome(session.OutcomeAuthFailed)
+			guard.finalize(db)
 		}
 		return
 	}
@@ -168,22 +256,27 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig, sess *session.Ses
 
 	remoteAddr := conn.RemoteAddr()
 
-	sess.Network.SSHClientBanner = string(sshConn.ClientVersion())
+	guard.sess.Network.SSHClientBanner = string(sshConn.ClientVersion())
 
 	if tcpAddr, ok := remoteAddr.(*net.TCPAddr); ok {
-		sess.Network.ClientIP = tcpAddr.IP.String()
-		sess.Network.ClientPort = tcpAddr.Port
+		guard.sess.Network.ClientIP = tcpAddr.IP.String()
+		guard.sess.Network.ClientPort = tcpAddr.Port
 	}
 
 	if tcpAddr, ok := conn.LocalAddr().(*net.TCPAddr); ok {
-		sess.Network.ServerPort = tcpAddr.Port
+		guard.sess.Network.ServerPort = tcpAddr.Port
 	}
 	log.Printf("Client Version: %s", sshConn.ClientVersion())
 	go ssh.DiscardRequests(reqs)
-	handleChannels(conn, idleTimeout, chans, sess, db)
+	handleChannels(conn, idleTimeout, chans, guard, db)
 }
 
-func handleChannels(conn net.Conn, idleTimeout time.Duration, chans <-chan ssh.NewChannel, sess *session.Session, db *sql.DB) {
+// handleChannels accepts every "session" channel on this connection and
+// waits for all of them to finish before finalizing -- a connection may open
+// more than one, and the session must only be persisted once, after every
+// channel has stopped mutating it.
+func handleChannels(conn net.Conn, idleTimeout time.Duration, chans <-chan ssh.NewChannel, guard *sessionGuard, db *sql.DB) {
+	var wg sync.WaitGroup
 	for newChannel := range chans {
 		log.Printf("New channel type: %s", newChannel.ChannelType())
 		switch newChannel.ChannelType() {
@@ -193,14 +286,20 @@ func handleChannels(conn net.Conn, idleTimeout time.Duration, chans <-chan ssh.N
 				log.Printf("Could not accept channel: %v", err)
 				continue
 			}
-			go handleSessionRequests(conn, idleTimeout, channel, requests, sess, db)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				handleSessionRequests(conn, idleTimeout, channel, requests, guard)
+			}()
 		default:
 			newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
 		}
 	}
+	wg.Wait()
+	guard.finalize(db)
 }
 
-func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh.Channel, requests <-chan *ssh.Request, sess *session.Session, db *sql.DB) {
+func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh.Channel, requests <-chan *ssh.Request, guard *sessionGuard) {
 	defer channel.Close()
 	var inputBuffer []byte
 	log.Printf("Session started.")
@@ -242,18 +341,16 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 			}
 
 			cmd := session.Command{
-				EventID:             uuid.New().String(),
-				SequenceNumber:      len(sess.Commands),
-				TimestampMS:         now,
-				InterCommandDelayMS: nil,
-				RawInputB64:         raw,
-				ParsedCommand:       parsedCommand,
-				ParsedArgs:          parsedArgs,
-				WorkingDirectory:    beforeCwd,
-				ResponseSource:      responseSourceFor(baitHits),
+				EventID:          uuid.New().String(),
+				TimestampMS:      now,
+				RawInputB64:      raw,
+				ParsedCommand:    parsedCommand,
+				ParsedArgs:       parsedArgs,
+				WorkingDirectory: beforeCwd,
+				ResponseSource:   responseSourceFor(baitHits),
 			}
-			sess.Commands = append(sess.Commands, cmd)
-			appendBaitEvents(sess, cmd.EventID, baitHits)
+			cmd = guard.appendCommand(cmd, false)
+			guard.appendBaitEvents(cmd.EventID, baitHits)
 
 			status := code
 			if status == shell.ExitRequested {
@@ -262,8 +359,8 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 			// Send exit status to notify client of success/failure
 			channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{Status: uint32(status)}))
 
-			log.Printf("Saving exec session to DB.")
-			finalizeSession(db, sess, session.OutcomeCleanDisconnect)
+			log.Printf("Exec channel done; session will be saved once the connection ends.")
+			guard.recordOutcome(session.OutcomeCleanDisconnect)
 			return
 		case "shell":
 			req.Reply(true, nil)
@@ -272,8 +369,8 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 			interp := shell.NewInterpreter()
 
 			for {
-				if len(sess.Commands) >= maxCommandsPerSession {
-					finalizeSession(db, sess, session.OutcomeCommandLimitReached)
+				if guard.commandCount() >= maxCommandsPerSession {
+					guard.recordOutcome(session.OutcomeCommandLimitReached)
 					return
 				}
 
@@ -286,16 +383,16 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 					if err != nil {
 						if errors.Is(err, io.EOF) {
 							log.Printf("Client closed the input stream.")
-							finalizeSession(db, sess, session.OutcomeCleanDisconnect)
+							guard.recordOutcome(session.OutcomeCleanDisconnect)
 							return
 						}
 						if ne, ok := err.(net.Error); ok && ne.Timeout() {
 							log.Printf("Connection idle timeout.")
-							finalizeSession(db, sess, session.OutcomeTimeout)
+							guard.recordOutcome(session.OutcomeTimeout)
 							return
 						}
 						log.Printf("Read error on channel: %v", err)
-						finalizeSession(db, sess, session.OutcomeConnectionReset)
+						guard.recordOutcome(session.OutcomeConnectionReset)
 						return
 					}
 
@@ -329,12 +426,6 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 				cli := string(inputBuffer)
 				now := time.Now().UnixMilli()
 
-				var delay *int64
-				if len(sess.Commands) > 0 {
-					prev := now - sess.Commands[len(sess.Commands)-1].TimestampMS
-					delay = &prev
-				}
-
 				raw := base64.StdEncoding.EncodeToString(inputBuffer)
 				inputBuffer = inputBuffer[:0]
 
@@ -350,22 +441,20 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 				response, code, baitHits := interp.Run(cli)
 
 				cmd := session.Command{
-					EventID:             uuid.New().String(),
-					SequenceNumber:      len(sess.Commands),
-					TimestampMS:         now,
-					InterCommandDelayMS: delay,
-					RawInputB64:         raw,
-					ParsedCommand:       parsedCommand,
-					ParsedArgs:          parsedArgs,
-					WorkingDirectory:    beforeCwd,
-					ResponseSource:      responseSourceFor(baitHits),
+					EventID:          uuid.New().String(),
+					TimestampMS:      now,
+					RawInputB64:      raw,
+					ParsedCommand:    parsedCommand,
+					ParsedArgs:       parsedArgs,
+					WorkingDirectory: beforeCwd,
+					ResponseSource:   responseSourceFor(baitHits),
 				}
-				sess.Commands = append(sess.Commands, cmd)
-				appendBaitEvents(sess, cmd.EventID, baitHits)
+				cmd = guard.appendCommand(cmd, true)
+				guard.appendBaitEvents(cmd.EventID, baitHits)
 
 				if code == shell.ExitRequested {
 					fmt.Fprintf(channel, "logout\r\n")
-					finalizeSession(db, sess, session.OutcomeCleanDisconnect)
+					guard.recordOutcome(session.OutcomeCleanDisconnect)
 					return
 				}
 
@@ -387,27 +476,3 @@ func responseSourceFor(bait []shell.BaitHit) session.ResponseSource {
 	return session.ResponseSourceHardcoded
 }
 
-func appendBaitEvents(sess *session.Session, commandEventID string, hits []shell.BaitHit) {
-	now := time.Now().UnixMilli()
-	for _, h := range hits {
-		sess.BaitEvents = append(sess.BaitEvents, session.BaitEvent{
-			EventID:                   uuid.New().String(),
-			TimestampMS:               now,
-			BaitID:                    h.BaitID,
-			BaitType:                  h.BaitType,
-			AccessType:                h.AccessType,
-			TriggeredByCommandEventID: commandEventID,
-		})
-	}
-}
-
-func finalizeSession(db *sql.DB, sess *session.Session, outcome session.Outcome) {
-	endMS := time.Now().UnixMilli()
-	duration := endMS - sess.Timing.StartMS
-	sess.Timing.EndMS = &endMS
-	sess.Timing.DurationMS = &duration
-	sess.Outcome = outcome
-	if err := store.SaveSession(db, sess); err != nil {
-		log.Printf("Error saving session: %v", err)
-	}
-}
