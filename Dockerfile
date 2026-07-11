@@ -15,10 +15,10 @@ RUN groupadd --system mirage && \
     --no-create-home \
     --shell /usr/sbin/nologin \
     mirage
-RUN mkdir -p /app/config
 WORKDIR /app
 COPY --from=builder /app/mirage /usr/local/bin/mirage
-RUN chown mirage /usr/local/bin/mirage
+COPY --from=builder /app/config /app/config
+RUN chown mirage /usr/local/bin/mirage && chown -R mirage /app/config
 USER mirage
 EXPOSE 22 2222
 ENTRYPOINT ["/usr/local/bin/mirage"]
