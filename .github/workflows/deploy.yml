@@ -25,7 +25,9 @@ jobs:
           key: ${{ secrets.DEPLOY_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
           script: |
+            set -euo pipefail
             cd ~/mirage-core
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
             docker compose up --build -d
             docker compose ps
