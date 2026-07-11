@@ -107,6 +107,8 @@ services:
       - prometheus
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/etc/grafana/provisioning/mirage-dashboards:ro
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-mirage}
       GF_USERS_ALLOW_SIGN_UP: "false"
