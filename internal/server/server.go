@@ -28,6 +28,7 @@ const maxCommandsPerSession = 500
 
 const defaultIdleTimeout = 120 * time.Second
 const defaultHandshakeTimeout = 20 * time.Second
+const defaultMaxConcurrentConnections = 500
 
 // sessionGuard makes a single *session.Session safe to share across the
 // multiple goroutines that can exist per SSH connection -- one per "session"
@@ -134,6 +135,16 @@ func Start(addr string) {
 
 	idleTimeout := envDuration("SSH_IDLE_TIMEOUT_SECONDS", defaultIdleTimeout)
 	handshakeTimeout := envDuration("SSH_HANDSHAKE_TIMEOUT_SECONDS", defaultHandshakeTimeout)
+	maxConnections := envInt("MAX_CONCURRENT_CONNECTIONS", defaultMaxConcurrentConnections)
+	log.Printf("Max concurrent connections: %d", maxConnections)
+
+	// Bounds the number of in-flight connections (and therefore goroutines
+	// and per-connection memory) a flood can force us to hold onto. Without
+	// this, an unbounded connection flood combined with the container's
+	// memory limit (docker-compose.yml) can OOM-kill the whole process
+	// instead of just refusing the excess connections, like a real
+	// overloaded sshd would.
+	connSlots := make(chan struct{}, maxConnections)
 
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -153,6 +164,15 @@ func Start(addr string) {
 			log.Printf("Error accepting connection: %v", err)
 			continue
 		}
+
+		select {
+		case connSlots <- struct{}{}:
+		default:
+			log.Printf("At max concurrent connections (%d); dropping connection from %v", maxConnections, conn.RemoteAddr())
+			conn.Close()
+			continue
+		}
+
 		sess := session.Session{
 			SessionID:     uuid.New().String(),
 			SchemaVersion: "1.1",
@@ -205,7 +225,10 @@ func Start(addr string) {
 		}
 		config.AddHostKey(parsedKey)
 		guard := &sessionGuard{sess: &sess}
-		go handleConnection(conn, config, guard, db, idleTimeout, handshakeTimeout) //this will handle the connection concurrently
+		go func() {
+			defer func() { <-connSlots }()
+			handleConnection(conn, config, guard, db, idleTimeout, handshakeTimeout)
+		}() //this will handle the connection concurrently, bounded by connSlots
 	}
 }
 
@@ -243,6 +266,18 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return time.Duration(secs) * time.Second
+}
+
+func envInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
 }
 
 func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGuard, db *sql.DB, idleTimeout, handshakeTimeout time.Duration) {
