@@ -16,6 +16,10 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
 
   mirage-core:
     build:
@@ -35,6 +39,10 @@ services:
     ports:
       - "22:2222"
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   ml-worker:
     build:
@@ -63,6 +71,10 @@ services:
     volumes:
       - ./artifacts:/app/artifacts:ro
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
 
   mirage-api:
     build:
@@ -81,6 +93,10 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   prometheus:
     image: prom/prometheus:v2.51.0
@@ -100,6 +116,10 @@ services:
     ports:
       - "127.0.0.1:9090:9090"
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   grafana:
     image: grafana/grafana:10.4.0
@@ -116,6 +136,10 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
 volumes:
   postgres_data:
