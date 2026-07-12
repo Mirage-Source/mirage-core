@@ -35,6 +35,10 @@ if [ -z "$latest" ]; then
     exit 1
 fi
 
+# Resolve to an absolute path *before* we cd into $OFFSITE_DIR below --
+# otherwise a relative LOCAL_BACKUP_DIR (the default) silently breaks.
+LOCAL_BACKUP_DIR=$(cd "$LOCAL_BACKUP_DIR" && pwd)
+
 if [ ! -d "$OFFSITE_DIR/.git" ]; then
     git -c "credential.helper=store --file=$CRED_FILE" clone "$OFFSITE_REPO_URL" "$OFFSITE_DIR"
 fi
