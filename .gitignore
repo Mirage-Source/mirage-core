@@ -41,3 +41,6 @@ __pycache__/
 
 dataset/
 *.egg-info/
+
+# local DB backups (scripts/backup_db.sh) -- never committed
+backups/
