@@ -36,7 +36,7 @@ if [ -z "$latest" ]; then
 fi
 
 if [ ! -d "$OFFSITE_DIR/.git" ]; then
-    git clone "$OFFSITE_REPO_URL" "$OFFSITE_DIR"
+    git -c "credential.helper=store --file=$CRED_FILE" clone "$OFFSITE_REPO_URL" "$OFFSITE_DIR"
 fi
 
 cd "$OFFSITE_DIR"
