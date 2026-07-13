@@ -8,12 +8,17 @@ MIRAGE exposes a convincing fake SSH server, captures every credential attempt a
 
 ## Live findings
 
-MIRAGE has been running continuously since June 16, 2026 on a Frankfurt VPS. As of the latest snapshot:
+MIRAGE has been running continuously on a Frankfurt VPS. As of the latest snapshot:
 
-- **52,517 sessions** captured from **117 unique source IPs**
-- **100% of sessions executed zero commands** — every attacker disconnected after credential submission, none reached the interactive shell
-- **27-IP coordinated botnet** identified across 3 NL-registered ASNs, maintaining a precise 2:1 session-count ratio across all nodes (1,522 vs 761 sessions), consistent with centralised C2 orchestration
-- Persistent credential campaigns targeting blockchain infrastructure usernames (`node`, `solana`, `validator`, `eth-docker`) observed every day of the capture window
+<!-- STATS:START -->
+- **86,689 sessions** captured from **428 unique source IPs** (10,845 in the last 24h)
+- Most repeated credential pair: `root` / `123456` (189 attempts)
+- **4 coordinated credential-stuffing windows** identified, across 6 distinct IPs sharing the same credential and SSH client banner within a 5-minute window
+
+_Last updated automatically: 2026-07-13T02:31:12Z_
+<!-- STATS:END -->
+
+The block above is regenerated automatically from the live dataset (see [Keeping this README current](#keeping-this-readme-current)). Sessions that authenticate against the seeded weak-credential list go on to interact with a stateful fake shell; the rest are rejected like a real, minimally hardened `sshd` would reject them.
 
 → [Published dataset and findings report](https://github.com/Mirage-Source/mirage-core/blob/gh-pages/dataset/latest/REPORT.md)
 
@@ -21,7 +26,7 @@ MIRAGE has been running continuously since June 16, 2026 on a Frankfurt VPS. As 
 
 ## How it works
 
-When an attacker connects to MIRAGE's SSH port, they are accepted with any credential and presented with a stateful fake shell. Every auth attempt, SSH client banner, and session timing signal is captured and persisted to PostgreSQL. A background ML worker enriches each session with attacker classification and MITRE ATT&CK technique mappings. The result is structured threat intelligence queryable via a secured REST API.
+When an attacker connects to MIRAGE's SSH port, their credentials are checked against a seeded list of real-world weak credentials; a match is accepted into a stateful fake shell, everything else is rejected like a real server would reject it. Every auth attempt, SSH client banner, and session timing signal is captured and persisted to PostgreSQL. A background ML worker enriches each session with attacker classification, MITRE ATT&CK technique mappings, and severity scoring. The result is structured threat intelligence queryable via a secured REST API.
 
 ```
 Attacker
@@ -49,7 +54,7 @@ PostgreSQL  ←  enriched with attacker_class, mitre_techniques, stix_bundle
 | `cmd/mirage/` | Go | SSH server entrypoint |
 | `cmd/api/` | Go | REST API entrypoint |
 | `internal/server/` | Go | SSH server, session lifecycle |
-| `internal/shell/` | Go | Stateful fake shell (ls, cd, cat, whoami, pwd, echo) |
+| `internal/shell/` | Go | Stateful fake shell, unified filesystem tree, `;`/`&&`/`||` chaining, `$(...)` substitution |
 | `internal/session/` | Go | Session data model |
 | `internal/store/` | Go | PostgreSQL persistence |
 | `bridge/` | Python | Polling worker, schema adapter, ML pipeline orchestration |
@@ -58,12 +63,13 @@ PostgreSQL  ←  enriched with attacker_class, mitre_techniques, stix_bundle
 | `scripts/` | Python | Dataset export, geo enrichment, report generation |
 | `data/geo/` | CSV | Pinned DB-IP ASN/country snapshots for geo attribution |
 
-**Go core** handles all network I/O. It accepts any SSH credentials, adds a randomised auth delay (500–3000ms) to slow credential stuffers, presents a fake interactive shell, and captures structured session data.
+**Go core** handles all network I/O. It checks SSH credentials against a seeded weak-credential list, adds a randomised auth delay (500–3000ms) to slow credential stuffers, presents a fake interactive shell backed by a single consistent filesystem tree (including bait files that generate real, recorded triggers when accessed), and captures structured session data.
 
 **ML worker** runs asynchronously, polling PostgreSQL for unenriched sessions. It currently runs in heuristics-only mode (no trained checkpoint deployed yet), producing:
 - Interpretable weak-label attacker classification based on banner and auth signals
 - MITRE ATT&CK technique mappings (T1110, T1110.001, T1078)
-- STIX 2.1 bundle generation (gated behind `MIRAGE_STIX_ENABLED`)
+- Severity scoring and recommended actions
+- STIX 2.1 bundle generation (enabled by default)
 
 A dual-channel Transformer encoder (token sequence + log-scaled inter-command timing) is implemented and awaiting a trained checkpoint. Once deployed, it will replace the current weak-label fallback with calibrated behavioural classifications.
 
@@ -133,6 +139,21 @@ The honeypot listens on port `22` (production) and `2222` (testing/management). 
 ### With ML classifier (optional)
 
 To enable trained classification, place a checkpoint at the path referenced by `MIRAGE_CLASSIFIER_CHECKPOINT` in your `.env`. Without it, the ML worker runs in heuristics-only mode — timing analysis and weak-label classification still produce useful output.
+
+---
+
+## Keeping this README current
+
+The **Live findings** block above is not hand-maintained. A scheduled workflow
+(`.github/workflows/update-stats.yml`) pulls `GET /api/stats` from the live
+API daily, publishes it as `stats.json` on `gh-pages`, and runs
+`scripts/update_readme_stats.py` to rewrite the marked block in the Live
+findings section on `main`, committing the result automatically. To run it
+by hand:
+
+```bash
+python3 scripts/update_readme_stats.py --stats path/to/stats.json --readme README.md
+```
 
 ---
 

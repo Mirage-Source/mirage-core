@@ -17,8 +17,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: gh-pages
+          path: gh-pages
+
+      - name: Checkout main (README + update script)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main
 
       - name: Fetch stats from API
+        working-directory: gh-pages
         run: |
           curl -s \
             -H "X-API-Key: ${{ secrets.API_KEY }}" \
@@ -27,10 +35,21 @@ jobs:
           jq --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '. + {generated_at: $t}' stats.json > stats.json.tmp
           mv stats.json.tmp stats.json
 
-      - name: Commit updated stats
+      - name: Commit updated stats (gh-pages)
+        working-directory: gh-pages
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add stats.json
           git diff --cached --quiet || git commit -m "chore: update public stats [skip ci]"
+          git push
+
+      - name: Update README live findings (main)
+        working-directory: main
+        run: |
+          python3 scripts/update_readme_stats.py --stats ../gh-pages/stats.json --readme README.md
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git diff --cached --quiet || git commit -m "chore: update README live findings [skip ci]"
           git push
