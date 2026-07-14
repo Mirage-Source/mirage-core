@@ -1,15 +1,3 @@
-"""Synthetic cowrie-format log generator for smoke tests and local dev.
-
-Writes a newline-delimited JSON event log in the same ``eventid`` schema
-:class:`~mirage.data.loader.DataLoader` reads (``cowrie.session.connect`` /
-``cowrie.command.input`` / ``cowrie.session.closed``), so ``--synthetic`` flags
-across the CLI tools (``mirage-session-stats``, ``mirage-train``,
-``mirage-visualize``) work with no real corpus on hand. Sessions are drawn from
-a few archetypal attacker behaviours (scanner, miner, dropper, recon, human) so
-downstream timing/vocab statistics look plausible -- this is a smoke-test
-fixture, not a claim about real-world attacker distributions.
-"""
-
 from __future__ import annotations
 
 import json
