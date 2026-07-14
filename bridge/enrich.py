@@ -1,25 +1,3 @@
-"""Run the MIRAGE ML stack on a single session -> an ``EnrichmentResult``.
-
-This is where the ML intelligence is applied to live honeypot data. It combines
-the **Phase-4 real-time intelligence layer** (calibrated attacker classification,
-MITRE ATT&CK mapping, and a threat-intel summary -- using the core's real bait /
-credential / banner signals) with the **Phase-2 behavioral embedding and
-trajectory** geometry, then writes everything back into the waiting intelligence
-columns plus the ``session_embeddings`` table.
-
-The pipeline degrades gracefully at every step:
-
-* **No trained attacker classifier** -> the interpretable weak label (4 intent
-  classes: automated_scanner / script_kiddie / manual_recon / apt).
-* **No embedder checkpoint** -> no 128-d embedding / trajectory (classification,
-  MITRE and summary still produced).
-* **No LLM / API key** (the default) -> a deterministic template summary instead
-  of a Claude-generated one.
-
-So the honeypot is informative on day one and only sharpens as a trained
-classifier, an embedder checkpoint, and (optionally) the LLM summarizer are
-switched on -- none of which requires a code change here.
-"""
 
 from __future__ import annotations
 
