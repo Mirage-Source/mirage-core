@@ -1,21 +1,3 @@
-"""End-to-end training for the contrastive re-identification model.
-
-Trains :class:`~mirage.reid.model.ContrastiveReIDModel` with NT-Xent (``tau=0.07``)
-on identity-preserving augmentations, then reports the re-ID protocol metrics
-(recall@k, mAP) on a held-out reconnection split. Training is **self-supervised**:
-positives are two augmentations of the *same* session, exactly as in Phase 2 --
-the identity labels are used only at *evaluation*, to test whether the learned
-metric re-identifies genuine reconnections it never saw paired. The backbone may
-be warm-started from a Phase-2 checkpoint (``--backbone-checkpoint``).
-
-Run::
-
-    # Smoke test on a synthetic identity corpus (no data needed):
-    python -m mirage.reid.train --synthetic --epochs 5 --n-identities 40
-
-    # Warm-start the backbone from a Phase-2 embedding checkpoint:
-    python -m mirage.reid.train --synthetic --backbone-checkpoint artifacts/embedder/best.pt
-"""
 
 from __future__ import annotations
 
