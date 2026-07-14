@@ -1,23 +1,3 @@
-"""Threat-intelligence summarization of an enriched session.
-
-Produces the ``session_summary`` the core leaves empty: a concise, analyst-grade
-natural-language characterization of what an attacker did and why it matters. Two
-backends, with the same graceful-degradation contract as the rest of MIRAGE:
-
-* **template** (always available, no dependencies) -- a deterministic, extractive
-  summary assembled from the structured intelligence (class, tools, MITRE, bait,
-  timing). Never makes a network call.
-* **LLM** (optional) -- a Claude-generated analyst summary via the official
-  ``anthropic`` SDK, returning a short narrative plus a severity rating and
-  recommended defensive actions. Falls back to the template automatically if the
-  SDK is absent, no API key is configured, or the call fails -- so the pipeline is
-  never blocked on an external service.
-
-The LLM path defaults to ``claude-opus-4-8`` (override via ``MIRAGE_INTEL_MODEL``
-for cost/latency, e.g. ``claude-haiku-4-5`` for high-volume enrichment). It uses
-structured outputs so the result is always valid JSON, and a system prompt that
-frames the task as **defensive** threat intelligence over an owned honeypot.
-"""
 
 from __future__ import annotations
 
