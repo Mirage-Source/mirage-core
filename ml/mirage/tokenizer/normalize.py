@@ -1,27 +1,3 @@
-"""Command-line normalization for the MIRAGE tokenizer.
-
-.. note::
-   **Reconstructed module.** The original ``normalize.py`` was not present in the
-   working tree when the Phase-2 / integration work was assembled, so this file
-   was rebuilt faithfully from the behavior documented in the tokenizer module
-   and the project README (see the examples below). It is intentionally small and
-   transparent; diff it against the canonical Phase-1 version and keep whichever
-   you trust -- the public surface (:func:`head_command`, :func:`normalize_full`)
-   is what the tokenizer depends on.
-
-Two normalization strategies, matching the tokenizer's two vocabulary modes:
-
-* :func:`head_command` -- the ``"command"`` mode. Reduce a full command line to
-  its **head verb**, discarding arguments, leading environment-variable
-  assignments, and common wrappers (``sudo``/``env``/...). This collapses
-  ``VAR=val sudo /bin/ls -la`` to ``ls`` so the vocabulary is the set of *verbs*
-  an attacker uses, not the (effectively infinite) set of full lines.
-
-* :func:`normalize_full` -- the ``"full"`` mode. Keep the whole command line but
-  **redact volatile tokens** (URLs, IPv4 addresses, hex blobs, numbers) to fixed
-  placeholders, so payload URLs and random ports/hashes do not explode the
-  vocabulary while the command *structure* is preserved.
-"""
 
 from __future__ import annotations
 
