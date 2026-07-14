@@ -1,18 +1,3 @@
-"""Corpus summary statistics for MIRAGE Phase-1 data.
-
-Loads a directory (or file) of honeypot logs and emits a single summary JSON
-describing the corpus: vocabulary size, median session length, session-duration
-statistics, bait-interaction rates, and the share of sessions that look
-automated vs. human under the inter-command timing heuristic.
-
-Usage:
-    python -m mirage.analysis.session_stats \
-        --input data/cowrie/ --output summary.json --mode command --top-k 500
-
-    # Bootstrap a synthetic corpus if you have no real logs yet:
-    python -m mirage.analysis.session_stats --synthetic --output summary.json
-"""
-
 from __future__ import annotations
 
 import argparse
