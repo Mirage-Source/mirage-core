@@ -1,14 +1,3 @@
-"""PostgreSQL access for the enrichment bridge.
-
-Reads un-enriched sessions the Go core has written and writes the ML results
-back into the waiting intelligence columns plus the ``session_embeddings`` table.
-Uses ``psycopg2`` (the same database the Go core's ``lib/pq`` writes to).
-
-A session is considered *pending* when its ``attacker_class`` is still ``NULL``.
-Once we write any class (including the ``"error"`` sentinel for a poison session),
-it is no longer re-fetched -- so the worker makes monotonic progress and never
-loops on a bad row.
-"""
 
 from __future__ import annotations
 
