@@ -1,23 +1,3 @@
-"""Real-time attacker classifier with calibrated confidence.
-
-A small MLP over the behavioural feature vector (optionally concatenated with the
-128-d Phase-2 embedding) that predicts one of the four attacker classes. It is
-trained to **distil the weak labels** (``mirage.intel.taxonomy.weak_label``) into a
-smooth model that generalises across sessions and -- crucially for a threat-intel
-product -- emits a **calibrated confidence**.
-
-Calibration matters here. A raw softmax is over-confident, so a "0.97 APT" would
-be untrustworthy. We apply **temperature scaling** (Guo et al., 2017): after
-training, a single scalar ``T`` is fit on a held-out split to minimise NLL, and
-inference divides the logits by ``T``. The reported confidence then actually means
-what it says -- an analyst can threshold on it. We report Expected Calibration
-Error (ECE) before and after to show the effect.
-
-Feature standardisation (z-scoring per feature) is learned on the training split
-and stored as buffers, so the saved model is self-contained: feed it a raw feature
-vector and it normalises internally.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
