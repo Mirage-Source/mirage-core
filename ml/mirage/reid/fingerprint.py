@@ -1,33 +1,3 @@
-"""Behavioural fingerprint analysis: what makes an attacker re-identifiable.
-
-Three questions the paper needs answered, each implemented here:
-
-1. **Where does identity live in the command stream?** -- the *mutual information*
-   between the token at each position and the identity label, plus which
-   individual commands and bigrams are most identity-revealing. This is the
-   information-theoretic counterpart of asking *which time bins of a neural
-   response carry the most information about stimulus identity* (Bialek-style
-   stimulus reconstruction): we localise the discriminative structure rather than
-   treating the session as a bag of commands.
-
-2. **Does timing rhythm generalise independently of content?** -- re-ID under
-   *channel ablation*: embed with only the timing channel (tokens masked to
-   ``<oov>``) vs only the content channel (timing zeroed) vs both. If timing-only
-   re-ID beats chance, an attacker's **cadence is a biometric** that survives even
-   when the commands are hidden -- the ICI-statistics-as-identity hypothesis,
-   directly analogous to identifying a neuron from its ISI distribution alone.
-
-3. **Can we fingerprint the toolkit rather than the individual?** -- a linear
-   probe and an unsupervised clustering of the embeddings against the *toolkit*
-   label (e.g. Metasploit vs Cobalt Strike on real captures; the simulated
-   toolkits here). High probe accuracy means the representation also encodes the
-   coarse "cell type", not only the individual -- a separable, lower-resolution
-   fingerprint usable when per-individual re-ID is not the goal.
-
-The MI routines are sklearn-only (no model needed); the ablation and toolkit
-routines consume a trained :class:`~mirage.reid.model.ContrastiveReIDModel`.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
