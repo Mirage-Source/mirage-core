@@ -1,32 +1,4 @@
-"""Channel-aware session augmentations for contrastive learning.
 
-A contrastive objective is only as good as its augmentations: the two views of a
-session must be *different enough* that the encoder cannot cheat, yet preserve
-the session's behavioral identity (its tool signature) so the positive pair
-remains semantically valid. Standard NLP token augmentations ignore the timing
-channel; ours operate on **both aligned channels at once** so the dual-channel
-contract (one timing value per token) is never broken.
-
-Four augmentations, each with a neuroscience-flavored rationale:
-
-* **temporal crop** -- keep a contiguous sub-window of commands. Analogous to
-  taking a random time-window of a spike train: a tool's behavior is
-  approximately stationary, so a sub-window is still recognizably the same tool.
-* **command dropout** -- delete a random subset of (token, timing) positions.
-  Like dropping spikes / subsampling units; forces the encoder to rely on the
-  overall pattern, not any single command.
-* **span mask** -- replace a contiguous run of tokens with ``<oov>`` while
-  *keeping their timing*. Tests whether the timing channel alone carries the
-  cadence signature when content is hidden.
-* **timing jitter** -- add small Gaussian noise to the log-ICI channel. Models
-  natural variation in inter-command latency (network RTT, scheduler jitter)
-  without changing which commands ran.
-
-Special tokens (``<pad>``, ``<bos>``, ``<eos>``) are protected from dropout and
-masking so structural anchors survive; timing jitter applies to all positions.
-This module is stdlib-only (operates on Python lists) so it is unit-testable
-without torch or the Phase-1 stack.
-"""
 
 from __future__ import annotations
 
