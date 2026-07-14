@@ -11,9 +11,7 @@ CREATE TABLE IF NOT EXISTS session_embeddings (
     -- Provenance of the embedding (which trained model produced it).
     model_version TEXT,
     embedding_dim INTEGER,
-    -- The 128-d behavioral vector. Stored as a JSON array for portability; for
-    -- Phase-3 nearest-neighbour attacker re-identification at scale, migrate this
-    -- to a pgvector `vector(128)` column and add an ivfflat/hnsw index.
+
     embedding JSONB,
 
     -- Weak labels / Phase-1 timing summary (always populated, even in degraded mode).
@@ -29,8 +27,7 @@ CREATE TABLE IF NOT EXISTS session_embeddings (
     trajectory_straightness DOUBLE PRECISION,
     trajectory_convergence_step INTEGER,
     intent_shift_count INTEGER,
-    -- [resample_points x dim] translation/scale-normalized trajectory-shape
-    -- descriptor, for cross-session shape comparison (Phase-2 hypothesis).
+
     shape_signature JSONB,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -41,8 +38,7 @@ CREATE INDEX IF NOT EXISTS idx_session_embeddings_tool
 CREATE INDEX IF NOT EXISTS idx_session_embeddings_timing
     ON session_embeddings(timing_label);
 
--- Convenience view: the core session intelligence joined to the ML embedding row.
--- Handy for dashboards and for Phase-3 clustering queries.
+
 CREATE OR REPLACE VIEW enriched_sessions AS
 SELECT
     s.session_id,
