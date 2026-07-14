@@ -1,25 +1,3 @@
-"""Ingest the live core's ``session_document`` JSON into ML-ready objects.
-
-The Go core (``mirage-core``) serialises each captured session as a rich JSON
-document (the ``session.Session`` struct) and stores it in the ``sessions``
-table's ``session_document`` column, also exposed via the API at
-``/api/sessions/{id}``. That document carries far more than the Phase-1 Cowrie
-schema: per-command sequence numbers, working directory and *response source*;
-structured **bait interactions** with an access type (read → copy → exfil); auth
-attempts with credentials; and the SSH client banner.
-
-This module parses that document into
-
-* a Phase-1 :class:`~mirage.data.schema.Session` (command + timing channels) that
-  the existing tokenizer / embedder / trajectory stack consumes unchanged, and
-* a :class:`ProductionSession` wrapper carrying the *extra* production signals
-  (bait, auth, banner, working dirs, response sources) that Phase-4 intelligence
-  needs but the Phase-1 schema does not model.
-
-Keeping the two separate means none of the Phase-1/2/3 code has to change: the
-embedder still sees a plain ``Session``, while the intelligence layer reads the
-richer fields off the wrapper.
-"""
 
 from __future__ import annotations
 
