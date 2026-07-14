@@ -1,28 +1,3 @@
-"""Attacker taxonomy and programmatic weak labels.
-
-The live honeypot has **no ground-truth attacker labels** -- nobody annotates who
-each connection was. So, exactly as Phase 1 did for timing and tool signatures, we
-generate **weak labels** programmatically from interpretable signals, then train a
-smooth, embedding-aware classifier to distil and generalise them (with calibrated
-confidence). This is the Snorkel-style weak-supervision pattern: cheap, noisy,
-transparent labels in; a better-calibrated learned model out.
-
-The four classes (the README's taxonomy), ordered by hands-on sophistication:
-
-* **automated_scanner** -- a bot: fast/regular cadence, shallow, often brute-force
-  or a one-shot scripted payload drop. The bulk of internet background radiation.
-* **script_kiddie** -- ran a recognisable offensive *toolkit* they did not write
-  (dropper / miner / DDoS botnet) but with some interaction.
-* **manual_recon** -- a human exploring by hand: bursty/slow cadence, enumeration,
-  no automated payload.
-* **apt** -- high-intent / hands-on-keyboard: bait **copy/exfil**, persistence +
-  defence-evasion, multi-stage. The sessions worth waking someone up for.
-
-The labelling function is deliberately auditable -- every label carries a short
-rationale string -- so the weak supervision can be inspected and swept for the
-paper, never a black box.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
