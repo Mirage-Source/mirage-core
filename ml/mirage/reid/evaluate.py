@@ -1,23 +1,3 @@
-"""Re-identification evaluation: recall@k, mAP, and t-SNE geometry.
-
-These are the standard **open/closed-set re-identification** metrics, transferred
-directly from their use in person/vehicle re-ID (and identical in spirit to
-cross-session neuron matching): enrol a **gallery** of known-identity sessions,
-then for each held-out **probe** (a genuine later reconnection) rank the gallery
-by embedding similarity and ask whether a same-identity session surfaces near the
-top.
-
-* **recall@k** (a.k.a. CMC top-k hit rate) -- fraction of probes for which *at
-  least one* same-identity gallery session appears in the top ``k`` neighbours.
-  ``recall@1`` is the strict "nearest neighbour is the same attacker" rate.
-* **mAP** -- mean average precision, which (unlike recall@k) rewards ranking
-  *all* of an identity's gallery sessions highly, not just the first hit. It is
-  the more honest summary when identities have several gallery sessions.
-
-Retrieval is in the model's projection space ``z`` by default (the unit-sphere
-metric the NT-Xent loss actually shaped), with cosine similarity. The t-SNE
-helpers produce the paper's "before vs after contrastive training" figure.
-"""
 
 from __future__ import annotations
 
