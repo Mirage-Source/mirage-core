@@ -1,9 +1,4 @@
 """Environment-driven configuration for the enrichment bridge.
-
-The database variables intentionally reuse the **same names the Go core uses**
-(``DB_HOST``/``DB_PORT``/``DB_USER``/``DB_PASSWORD``/``DB_NAME``; see
-``core/internal/store/store.go``) so both services read one ``.env`` file and hit
-the same database with no duplicated configuration.
 """
 
 from __future__ import annotations
