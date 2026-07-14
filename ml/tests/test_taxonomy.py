@@ -1,7 +1,3 @@
-"""The weak-label heuristic is what actually classifies every session in
-production today (no trained classifier is deployed) -- these lock in its
-documented decision order so a refactor can't silently change it.
-"""
 
 from __future__ import annotations
 
