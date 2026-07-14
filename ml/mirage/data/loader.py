@@ -1,27 +1,3 @@
-"""Ingestion of public SSH-honeypot corpora into MIRAGE ``Session`` objects.
-
-Supports the cowrie JSON event log format (used by the Honeynet Project and by
-SANS ISC / DShield sensors, which run a cowrie fork and emit the same
-``eventid`` schema). Input may be:
-
-* newline-delimited JSON (``.json`` / ``.jsonl``), optionally gzip-compressed;
-* Parquet (``.parquet``), one event per row, columns named like the JSON keys.
-
-The loader is **event-stream oriented**: cowrie logs interleave events from many
-concurrent sessions, so we accumulate per-session state across a full pass and
-emit a :class:`~mirage.data.schema.Session` once the file is exhausted.
-
-Relevant cowrie eventids (see https://docs.cowrie.org/en/latest/OUTPUT.html):
-
-* ``cowrie.session.connect``  -> session start, ``src_ip``/``src_port``
-* ``cowrie.command.input``    -> a command line, field ``input``
-* ``cowrie.command.failed``   -> a command that errored, field ``input``
-* ``cowrie.session.closed``   -> field ``duration`` (seconds)
-
-Neuroscience note: producing ``ms_offset`` for each command is exactly the
-"align events to a common t=0" step done when extracting spike times relative to
-trial onset. ``ms_offset`` is the event time of the marked point process.
-"""
 
 from __future__ import annotations
 
