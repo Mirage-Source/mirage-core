@@ -1,18 +1,4 @@
-"""The MIRAGE enrichment worker: a long-running poll-enrich-write loop.
 
-    while running:
-        batch = fetch sessions with NULL attacker_class
-        for each: adapt (core->ML) -> enrich (ML stack) -> write back
-        sleep if the batch was empty
-
-This is the only process that connects the Go honeypot to the Python ML layer,
-and it does so entirely through the shared Postgres database -- no code changes to
-the core, no synchronous coupling. Run it as a sidecar container next to the core
-(see ../docker-compose.yml) or standalone:
-
-    python -m bridge.worker            # uses environment / .env for config
-    python -m bridge.worker --once     # single pass then exit (useful for tests/cron)
-"""
 
 from __future__ import annotations
 
