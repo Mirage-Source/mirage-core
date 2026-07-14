@@ -1,25 +1,3 @@
-"""End-to-end training loop for MIRAGE Phase-2 session embeddings.
-
-Trains :class:`~mirage.models.embedding.SessionEmbedder` self-supervised with the
-NT-Xent contrastive objective on public Cowrie data (or a synthetic corpus for
-smoke tests). Features required by the Phase-2 spec:
-
-* **Cosine LR schedule with linear warmup** (``training/schedule.py``).
-* **Gradient checkpointing** for long sessions (per encoder layer), toggled by a
-  flag so short-session runs pay no overhead.
-* **Train/val loss logging to wandb or CSV** -- wandb if installed and enabled,
-  otherwise a plain CSV so runs are always recorded with no extra dependency.
-
-Run::
-
-    # Smoke test on a synthetic corpus (no real logs needed):
-    python -m mirage.training.train --synthetic --epochs 3 --batch-size 64
-
-    # Real data:
-    python -m mirage.training.train --input /path/to/cowrie/logs \\
-        --epochs 50 --batch-size 256 --gradient-checkpointing \\
-        --wandb --run-name mirage-emb-v1
-"""
 
 from __future__ import annotations
 
@@ -49,9 +27,9 @@ from .schedule import cosine_warmup_schedule
 __all__ = ["TrainConfig", "MetricLogger", "train", "main"]
 
 
-# ---------------------------------------------------------------------------
+
 # Config
-# ---------------------------------------------------------------------------
+
 
 
 @dataclass
@@ -154,10 +132,7 @@ class MetricLogger:
             self._wandb.finish()
 
 
-# ---------------------------------------------------------------------------
 # Data loading helpers
-# ---------------------------------------------------------------------------
-
 
 def _load_sessions(cfg: TrainConfig) -> list[Session]:
     """Load real Cowrie sessions, or generate a synthetic corpus for smoke tests."""
@@ -198,10 +173,7 @@ def _seed_everything(seed: int) -> None:
     torch.cuda.manual_seed_all(seed)
 
 
-# ---------------------------------------------------------------------------
 # Train / eval steps
-# ---------------------------------------------------------------------------
-
 
 def _run_epoch(
     model: SessionEmbedder,
@@ -272,10 +244,7 @@ def _run_epoch(
     return mean_loss, last_metrics, global_step
 
 
-# ---------------------------------------------------------------------------
 # Orchestration
-# ---------------------------------------------------------------------------
-
 
 def train(cfg: TrainConfig) -> dict[str, Any]:
     """Run the full training procedure and return a summary dict."""
@@ -321,7 +290,7 @@ def train(cfg: TrainConfig) -> dict[str, Any]:
         collate_fn=collate,
     )
 
-    # -- Model --------------------------------------------------------------
+    # -- Model
     model_cfg = SessionEmbedderConfig(
         vocab_size=tokenizer.vocab_size,
         d_model=cfg.d_model,
@@ -361,7 +330,7 @@ def train(cfg: TrainConfig) -> dict[str, Any]:
         f"steps/epoch={steps_per_epoch} total_steps={total_steps}"
     )
 
-    # -- Loop ---------------------------------------------------------------
+    # -Loop 
     best_val = math.inf
     global_step = 0
     history: list[dict[str, float]] = []
@@ -419,9 +388,9 @@ def _save_checkpoint(
     )
 
 
-# ---------------------------------------------------------------------------
+
 # CLI
-# ---------------------------------------------------------------------------
+
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
