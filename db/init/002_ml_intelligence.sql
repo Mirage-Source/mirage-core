@@ -1,11 +1,4 @@
--- 002_ml_intelligence.sql
--- Phase-2 ML enrichment tables, applied AFTER the core's 001_initial.sql.
--- Mounted into the postgres container's /docker-entrypoint-initdb.d so it runs
--- automatically on first database init (files run in alphabetical order).
---
--- The enrichment worker also creates this table idempotently on startup
--- (bridge/db.py::ML_SCHEMA_DDL), so the system is robust whether or not these
--- migrations were applied manually. Keep the two in sync.
+
 
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS stix_bundle JSONB;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS severity TEXT;
