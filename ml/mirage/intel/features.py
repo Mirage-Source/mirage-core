@@ -1,24 +1,3 @@
-"""Behavioural feature extraction for real-time attacker classification.
-
-Turns a :class:`~mirage.intel.ingest.ProductionSession` into a fixed-length,
-named numeric feature vector that the :class:`~mirage.intel.classifier.SessionClassifier`
-consumes (optionally concatenated with the 128-d behavioural embedding). The
-features deliberately span the four behavioural axes that separate the attacker
-classes:
-
-* **timing** -- automation signature (CV, median ICI, superhuman fraction): the
-  Phase-1 ISI/ICI thesis, reused verbatim from ``mirage.analysis.timing``.
-* **content** -- *what* was run: tool-signature family (one-hot) and command-
-  diversity stats.
-* **intent** -- bait interactions and their escalation (read → copy → exfil): the
-  highest-signal axis, now that the core emits a real bait subsystem.
-* **engagement / sophistication** -- dwell time, working-directory exploration,
-  credential breadth, and SSH-client-banner automation flags.
-
-Everything here is stdlib + numpy (no torch), so features can be extracted and
-weak-labelled without a model present -- the graceful-degradation contract the
-rest of MIRAGE keeps.
-"""
 
 from __future__ import annotations
 
