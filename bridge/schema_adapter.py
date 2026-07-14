@@ -1,30 +1,3 @@
-"""Adapt the Go core's session schema to the ML ``Session`` schema.
-
-The honeypot core and the ML layer evolved separate-but-parallel schemas. This
-module is the single, well-tested translation point between them. It consumes the
-``session_document`` JSONB the core writes (a marshaled Go ``session.Session``)
-and produces a :class:`mirage.data.schema.Session` the ML stack understands.
-
-Field mapping (core -> ML):
-
-    session_id                       -> session_id
-    network.client_ip                -> ip
-    timing.start_ms (epoch ms)       -> start_time (UTC datetime)
-    timing.duration_ms               -> duration_ms
-    commands[].timestamp_ms          -> commands[].timestamp (UTC datetime)
-    timestamp_ms - start_ms          -> commands[].ms_offset   (clamped >= 0)
-    base64decode(raw_input_b64)      -> commands[].raw
-        (fallback: parsed_command + " " + parsed_args)
-    bait_interactions[].bait_type    -> bait_interactions[].bait_type (mapped)
-    bait_interactions[].timestamp_ms -> bait_interactions[].timestamp
-
-``classifier_output`` is left ``None`` -- that is precisely what this pipeline is
-about to compute.
-
-The core's bait taxonomy is richer than the ML schema's, so bait types are mapped
-to the nearest ML category (see :data:`CORE_TO_ML_BAIT`); unmappable types are
-dropped rather than guessed, since bait is a weak auxiliary signal only.
-"""
 
 from __future__ import annotations
 
