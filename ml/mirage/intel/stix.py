@@ -1,20 +1,3 @@
-"""STIX 2.1 bundle export for sharing session intelligence.
-
-Renders an enriched session as a STIX 2.1 bundle so MIRAGE's findings can be
-ingested by any TAXII/STIX-aware platform (MISP, OpenCTI, a SIEM). We hand-build
-the JSON (stdlib only) rather than depend on the ``stix2`` library, keeping the
-package dependency-light and the output inspectable; the structure follows the
-STIX 2.1 spec for the object types an SSH honeypot produces:
-
-* an **identity** SDO for the MIRAGE sensor (the source of the intel),
-* an **indicator** SDO for the attacker's source IP,
-* one **attack-pattern** SDO per observed MITRE ATT&CK technique (with an
-  ``external_reference`` into the ATT&CK catalogue), and
-* **relationship** SROs tying the indicator to the techniques it ``indicates``.
-
-If the ``stix2`` library is installed you may prefer to re-serialize through it
-for strict validation; the dict produced here is already spec-shaped.
-"""
 
 from __future__ import annotations
 
