@@ -1,24 +1,3 @@
-"""Heuristic bait-interaction inference for public corpora.
-
-.. note::
-   **Reconstructed module.** The original ``bait.py`` was not present in the
-   working tree when the integration work was assembled, so this file was rebuilt
-   to the behavior documented in ``loader.py`` and the README ("``bait_interactions``
-   are back-filled for public corpora ... by ``BaitDetector`` regex rules ... These
-   are **weak labels**"). The public surface (:class:`BaitDetector` with
-   :meth:`~BaitDetector.detect`) is what the loader depends on. Diff against the
-   canonical Phase-1 version if you have it.
-
-MIRAGE's real bait subsystem emits :class:`~mirage.data.schema.BaitInteraction`
-events directly. Public Cowrie logs have no such subsystem, so we infer when a
-session *touched* a planted-credential class of file from the command content --
-a regex over the raw command line. The inferred ``bait_type`` is drawn from the
-ML schema's taxonomy (``ssh_key``/``env_file``/``shadow``/``s3``).
-
-These are deliberately weak labels: a session that ``cat``s ``/etc/shadow`` is
-flagged as a ``shadow`` bait touch even though the public honeypot had no real
-decoy there. Treat the rates as a behavioral signal, not ground truth.
-"""
 
 from __future__ import annotations
 
