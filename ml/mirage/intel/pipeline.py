@@ -1,25 +1,3 @@
-"""The real-time intelligence pipeline: session document -> intelligence.
-
-This is the orchestrator that turns one live-core ``session_document`` into the
-structured intelligence the core's ``sessions`` table is waiting for
-(``attacker_class``, ``classifier_confidence``, ``cluster_id``,
-``mitre_techniques``, ``session_summary``) plus richer side outputs (tool
-signature, timing label, severity, STIX bundle). It is pure compute -- no
-database I/O -- so it slots behind any driver (the existing polling worker, an
-API backfill, a batch job) without coupling the ML to the transport.
-
-Graceful degradation is preserved end to end:
-
-* **No trained classifier** -> fall back to the interpretable weak label
-  (``mirage.intel.taxonomy.weak_label``), so a class + confidence is always
-  produced.
-* **No LLM / API key** -> the deterministic template summary
-  (``mirage.intel.summarize``).
-* **No embedding** -> features-only classification.
-
-So the pipeline runs the moment a session lands, and only *improves* as the
-trained classifier and the LLM summarizer are switched on.
-"""
 
 from __future__ import annotations
 
