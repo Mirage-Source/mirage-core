@@ -104,7 +104,12 @@ services:
     env_file: .env
     environment:
       PYTHONUNBUFFERED: "1"
-      MIRAGE_DECEPTION_CHECKPOINT: "${MIRAGE_DECEPTION_CHECKPOINT:-/app/artifacts/deception/ppo.pt}"
+      # Checkpoints are committed under ml/mirage/deception/ and land at
+      # /app/ml/mirage/deception/ inside the image via bridge/Dockerfile's
+      # `COPY ml/ /app/ml/` -- no host-side artifact file needed by default.
+      # Override to /app/artifacts/deception/<file> (and populate ./artifacts/)
+      # to run a newer checkpoint without rebuilding the image.
+      MIRAGE_DECEPTION_CHECKPOINT: "${MIRAGE_DECEPTION_CHECKPOINT:-/app/ml/mirage/deception/ppo.pt}"
       MIRAGE_DECEPTION_ALGO: "${MIRAGE_DECEPTION_ALGO:-ppo}"
       MIRAGE_DECEPTION_PORT: "8787"
       MIRAGE_DECEPTION_MAX_STEPS: "${MIRAGE_DECEPTION_MAX_STEPS:-25}"
