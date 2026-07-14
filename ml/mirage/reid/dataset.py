@@ -1,22 +1,3 @@
-"""Datasets and contrastive collation for re-identification training.
-
-Bridges an identity-labelled corpus (or any ``list[Session]`` plus identity
-labels) to the Phase-3 contrastive trainer. Mirrors the Phase-2 dataset/collator
-contract -- pre-encode once, augment-and-pad per batch -- but with two
-differences that matter for re-ID:
-
-* the collator draws its two views with the **identity-preserving**
-  :class:`~mirage.reid.augment.ReIDAugmenter` (drop / reorder / jitter), and
-* the dataset carries **identity and toolkit labels** alongside each encoded
-  session so the evaluation/fingerprint suites can recover ground truth without
-  re-tokenising.
-
-The two-view layout is exactly what NT-Xent expects: ``view1[i]`` and ``view2[i]``
-are two augmentations of session ``i`` (its positive pair); all other rows in the
-batch are negatives. We reuse Phase-2's ``EncodedExample`` / ``BatchView``
-containers verbatim so the encoder forward signature is unchanged.
-"""
-
 from __future__ import annotations
 
 import random
