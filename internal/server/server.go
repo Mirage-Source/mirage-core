@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/mirage-source/mirage-core/internal/deception"
 	"github.com/mirage-source/mirage-core/internal/session"
 	"github.com/mirage-source/mirage-core/internal/shell"
 	"github.com/mirage-source/mirage-core/internal/store"
@@ -41,6 +42,13 @@ type sessionGuard struct {
 	mu   sync.Mutex
 	sess *session.Session
 	once sync.Once
+}
+
+// sessionID is safe to read without the mutex -- it is set once in Start()
+// before any channel goroutine exists and never mutated afterward, unlike
+// Commands/BaitEvents below.
+func (g *sessionGuard) sessionID() string {
+	return g.sess.SessionID
 }
 
 // appendCommand assigns SequenceNumber (and, if computeDelay, InterCommandDelayMS
@@ -138,6 +146,13 @@ func Start(addr string) {
 	maxConnections := envInt("MAX_CONCURRENT_CONNECTIONS", defaultMaxConcurrentConnections)
 	log.Printf("Max concurrent connections: %d", maxConnections)
 
+	deceptionRuntime := deception.NewRuntime(deception.ConfigFromEnv())
+	if deceptionRuntime == nil {
+		log.Printf("Deception policy: disabled")
+	} else {
+		log.Printf("Deception policy: enabled (apply_actions=%v)", deceptionRuntime.ApplyActions)
+	}
+
 	// Bounds the number of in-flight connections (and therefore goroutines
 	// and per-connection memory) a flood can force us to hold onto. Without
 	// this, an unbounded connection flood combined with the container's
@@ -227,7 +242,7 @@ func Start(addr string) {
 		guard := &sessionGuard{sess: &sess}
 		go func() {
 			defer func() { <-connSlots }()
-			handleConnection(conn, config, guard, db, idleTimeout, handshakeTimeout)
+			handleConnection(conn, config, guard, db, idleTimeout, handshakeTimeout, deceptionRuntime)
 		}() //this will handle the connection concurrently, bounded by connSlots
 	}
 }
@@ -280,7 +295,7 @@ func envInt(key string, fallback int) int {
 	return n
 }
 
-func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGuard, db *sql.DB, idleTimeout, handshakeTimeout time.Duration) {
+func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGuard, db *sql.DB, idleTimeout, handshakeTimeout time.Duration, deceptionRuntime *deception.Runtime) {
 	defer conn.Close()
 
 	log.Printf("New connection from %v", conn.RemoteAddr())
@@ -315,14 +330,14 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGua
 	}
 	log.Printf("Client Version: %s", sshConn.ClientVersion())
 	go ssh.DiscardRequests(reqs)
-	handleChannels(conn, idleTimeout, chans, guard, db)
+	handleChannels(conn, idleTimeout, chans, guard, db, deceptionRuntime)
 }
 
 // handleChannels accepts every "session" channel on this connection and
 // waits for all of them to finish before finalizing -- a connection may open
 // more than one, and the session must only be persisted once, after every
 // channel has stopped mutating it.
-func handleChannels(conn net.Conn, idleTimeout time.Duration, chans <-chan ssh.NewChannel, guard *sessionGuard, db *sql.DB) {
+func handleChannels(conn net.Conn, idleTimeout time.Duration, chans <-chan ssh.NewChannel, guard *sessionGuard, db *sql.DB, deceptionRuntime *deception.Runtime) {
 	var wg sync.WaitGroup
 	for newChannel := range chans {
 		log.Printf("New channel type: %s", newChannel.ChannelType())
@@ -336,7 +351,7 @@ func handleChannels(conn net.Conn, idleTimeout time.Duration, chans <-chan ssh.N
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				handleSessionRequests(conn, idleTimeout, channel, requests, guard)
+				handleSessionRequests(conn, idleTimeout, channel, requests, guard, deceptionRuntime)
 			}()
 		default:
 			newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
@@ -346,7 +361,39 @@ func handleChannels(conn net.Conn, idleTimeout time.Duration, chans <-chan ssh.N
 	guard.finalize(db)
 }
 
-func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh.Channel, requests <-chan *ssh.Request, guard *sessionGuard) {
+// applyDeception asks the deception policy (if enabled) how to respond to
+// one command, and -- only when the policy is also allowed to change shell
+// output (deceptionRuntime.ApplyActions) -- realizes that decision against
+// the response/exit code, sleeping any added delay before returning so the
+// caller can write the (possibly unchanged) response as-is afterward.
+//
+// A nil deceptionRuntime (the feature is off) returns the response/code
+// unchanged and a nil action, matching today's exact behavior. Decide()
+// itself already fails safe to ActionMinimal on any error talking to the
+// inference service, so this never blocks or crashes command handling.
+func applyDeception(deceptionRuntime *deception.Runtime, sessionID, command string, baitHit bool, response string, code int) (string, int, *string) {
+	if deceptionRuntime == nil {
+		return response, code, nil
+	}
+
+	decision, err := deceptionRuntime.Client.Decide(sessionID, command, baitHit)
+	if err != nil {
+		log.Printf("Deception decide failed, falling back to %s: %v", decision.Action, err)
+	}
+	action := decision.Action
+
+	if deceptionRuntime.ApplyActions {
+		var delay time.Duration
+		response, code, delay = deception.Apply(action, response, code)
+		if delay > 0 {
+			time.Sleep(delay)
+		}
+	}
+
+	return response, code, &action
+}
+
+func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh.Channel, requests <-chan *ssh.Request, guard *sessionGuard, deceptionRuntime *deception.Runtime) {
 	defer channel.Close()
 	var inputBuffer []byte
 	log.Printf("Session started.")
@@ -373,6 +420,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 			interp := shell.NewInterpreter()
 			beforeCwd := interp.Cwd
 			response, code, baitHits := interp.Run(payload.Command)
+			response, code, deceptionAction := applyDeception(deceptionRuntime, guard.sessionID(), payload.Command, len(baitHits) > 0, response, code)
 			if response != "" {
 				fmt.Fprintf(channel, "%s\r\n", response)
 			}
@@ -395,6 +443,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 				ParsedArgs:       parsedArgs,
 				WorkingDirectory: beforeCwd,
 				ResponseSource:   responseSourceFor(baitHits),
+				DeceptionAction:  deceptionAction,
 			}
 			cmd = guard.appendCommand(cmd, false)
 			guard.appendBaitEvents(cmd.EventID, baitHits)
@@ -486,6 +535,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 
 				beforeCwd := interp.Cwd
 				response, code, baitHits := interp.Run(cli)
+				response, code, deceptionAction := applyDeception(deceptionRuntime, guard.sessionID(), cli, len(baitHits) > 0, response, code)
 
 				cmd := session.Command{
 					EventID:          uuid.New().String(),
@@ -495,6 +545,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 					ParsedArgs:       parsedArgs,
 					WorkingDirectory: beforeCwd,
 					ResponseSource:   responseSourceFor(baitHits),
+					DeceptionAction:  deceptionAction,
 				}
 				cmd = guard.appendCommand(cmd, true)
 				guard.appendBaitEvents(cmd.EventID, baitHits)

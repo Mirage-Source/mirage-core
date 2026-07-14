@@ -98,6 +98,7 @@ type Command struct {
 	ParsedArgs           []string `json:"parsed_args"`
 	WorkingDirectory     string   `json:"working_directory"`
 	ResponseSource       ResponseSource `json:"response_source"`
+	DeceptionAction      *string  `json:"deception_action"`
 }
 
 type BaitEvent struct {
