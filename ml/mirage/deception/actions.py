@@ -1,20 +1,4 @@
-"""The deception action space -- what an *intelligent* honeypot can choose to do.
 
-Today's MIRAGE shell is a fixed state machine: it answers a handful of commands
-and returns ``command not found`` for the rest. That is a *static* deception
-policy -- it does the same thing regardless of who is connected or what they are
-after, so a curious attacker disengages the moment the illusion cracks. The
-premise of Phase 5 is that the honeypot should instead **choose its response
-strategy in real time** to maximize how long an attacker stays and how much
-intelligence they reveal.
-
-This module defines the discrete strategy choices the policy selects among. Each
-maps to a concrete way the (future LLM-driven) shell could answer the *next*
-command -- the actions are deliberately response-*strategies*, not literal shell
-output, so the same policy works whether the output is templated or LLM-
-generated, and so it can be wired into the core's ``ResponseSource`` hook later
-without retraining.
-"""
 
 from __future__ import annotations
 
