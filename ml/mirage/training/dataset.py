@@ -1,15 +1,3 @@
-"""Dataset and contrastive collation for session embedding training.
-
-Bridges the Phase-1 data stack (``CommandTokenizer`` -> ``EncodedSession``) to the
-Phase-2 contrastive trainer. The dataset pre-encodes each session once into the
-two aligned channels; the collator turns every session into **two augmented
-views** and pads each view independently into batch tensors ready for
-:class:`~mirage.models.embedding.SessionEmbedder`.
-
-The two-view batch layout is what NT-Xent expects: ``view1[i]`` and ``view2[i]``
-are two augmentations of session ``i``, so they form the positive pair while all
-other rows are negatives.
-"""
 
 from __future__ import annotations
 
