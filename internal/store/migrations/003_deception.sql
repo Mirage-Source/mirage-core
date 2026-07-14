@@ -1,4 +1,4 @@
--- Milestone 7: adaptive deception policy (bandit / REINFORCE-A2C / PPO).
+-- Adaptive deception policy (bandit / REINFORCE-A2C / PPO).
 --
 -- Records which action (MINIMAL, ENRICH, SURFACE_BAIT, STALL, FAKE_SUCCESS)
 -- the deception policy chose for each command, when the policy is enabled

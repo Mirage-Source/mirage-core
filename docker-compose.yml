@@ -34,7 +34,7 @@ services:
       DB_PORT: 5432
       DB_USER: ${DB_USER:-mirage}
       DB_NAME: ${DB_NAME:-mirage}
-      # Milestone 7 adaptive deception -- off by default (see .env.example).
+      # Adaptive deception -- off by default (see .env.example).
       # Deliberately NOT a `depends_on` on mirage-deception below: the SSH
       # server must start and run identically whether or not that service
       # exists, builds, or is healthy. deception.Client fails safe to
