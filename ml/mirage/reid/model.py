@@ -1,34 +1,3 @@
-"""Contrastive re-identification model: Phase-2 backbone + projection head.
-
-This is the Phase-3 network. It follows the SimCLR decomposition exactly:
-
-    x --(backbone f)--> h (128-d behavioural embedding)
-                          \
-                           --(projection g)--> z (64-d, unit-normalised)
-
-* the **backbone** ``f`` is the Phase-2
-  :class:`~mirage.models.embedding.SessionEmbedder` -- reused verbatim, optionally
-  warm-started from a Phase-2 checkpoint -- producing the 128-d session embedding
-  ``h``;
-* the **projection head** ``g`` is a 2-layer MLP mapping ``h`` to a 64-d unit
-  vector ``z``.
-
-The contrastive NT-Xent loss is computed on ``z`` (the *metric* space, where the
-objective shapes cosine geometry), while ``h`` is retained as the general-purpose
-*representation*. Chen et al. (2020) showed this split matters: ``g`` is trained
-to be invariant to the augmentation and therefore *discards* nuisance-correlated
-information that downstream tasks may still want, so the representation ``h`` is
-kept for transfer (here: linear toolkit probing, trajectory analysis), while
-retrieval/re-ID uses ``z``.
-
-Neuroscience framing. ``h`` is the analogue of a neuron's **latent embedding**
-from population activity; ``z`` is the **identity-discriminative metric** learned
-on top of it. Re-identifying an attacker across reconnections is computing nearest
-neighbours in ``z`` -- mathematically identical to re-identifying a neuron across
-recording sessions by matching its embedding under a learned metric that is
-invariant to the cross-session nuisance transform.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
