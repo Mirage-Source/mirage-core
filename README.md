@@ -167,4 +167,4 @@ MIRAGE is deployed exclusively on infrastructure owned by the authors. It is des
 
 **Vinayak Tyagi** — Go infrastructure, SSH server, session pipeline, REST API, DevOps, deployment
 
-**Devang Verma** — ML pipeline, behavioural classification, PyTorch models
+**Devang Verma** — ML pipeline / Intellegence Layer, behavioural classification, RL Policy , 
