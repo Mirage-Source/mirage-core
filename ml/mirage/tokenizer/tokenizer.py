@@ -1,33 +1,4 @@
-"""CommandTokenizer: dual-channel encoding of attacker sessions.
 
-The tokenizer converts a :class:`~mirage.data.schema.Session` into two *aligned*
-parallel channels that feed every downstream sequence model:
-
-1. **Token channel** -- an integer id per command, drawn from a frequency-capped
-   vocabulary (top-K commands; everything else -> ``<oov>``).
-2. **Timing channel** -- a real value per command: the log-scaled inter-command
-   interval (ICI) in milliseconds.
-
-Why two channels, and why this matters (the thesis of MIRAGE's Phase 1):
-
-    A session is a *marked temporal point process*. The token is the **mark**
-    (which command) and the timing is the **event time** (when). Most prior
-    honeypot ML throws timing away and models only the command sequence. But the
-    ICI distribution is exactly an inter-spike-interval (ISI) distribution, and
-    in neuroscience the ISI -- especially its regularity -- is one of the most
-    discriminative single features you can compute about a spike train. Here it
-    cleanly separates metronomic scripts from bursty humans. We therefore treat
-    timing as a first-class, co-equal channel, not a side feature.
-
-Two vocabulary modes (see :mod:`mirage.tokenizer.normalize`):
-    * ``"command"``: token = command head verb (arguments stripped).
-    * ``"full"``:    token = normalized, redacted full command line.
-
-Serialization writes two files into a directory:
-    * ``vocab.json``  -- token <-> id mapping.
-    * ``config.json`` -- mode, special tokens, top_k, and corpus timing stats
-      used for optional timing standardization.
-"""
 
 from __future__ import annotations
 
