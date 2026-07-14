@@ -1,6 +1,3 @@
-"""End-to-end smoke test of the exact degraded-mode path bridge/worker.py runs
-in production today: no trained classifier, no embedding, no LLM.
-"""
 
 from __future__ import annotations
 
