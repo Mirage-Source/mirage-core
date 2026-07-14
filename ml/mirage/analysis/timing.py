@@ -1,27 +1,3 @@
-"""Inter-command timing analysis -- MIRAGE's first-class behavioral feature.
-
-This module operationalizes the central Phase-1 claim: **the inter-command
-interval (ICI) distribution distinguishes human attackers from automated tools,
-and it is underexploited in the honeypot literature.**
-
-The framing is borrowed directly from spike-train analysis. A session's command
-times are event times of a marked point process; the gaps between them are
-inter-command intervals, the exact analogue of inter-spike intervals (ISIs). The
-single most informative summary of an ISI sequence is its **coefficient of
-variation** ``CV = std / mean``:
-
-    * ``CV -> 0``  : perfectly regular / metronomic firing (a pacemaker neuron;
-                     here, a script looping at a fixed cadence).
-    * ``CV ~ 1``  : Poisson-like memoryless firing.
-    * ``CV >> 1`` : bursty, irregular firing (cortical neurons; here, a human who
-                     thinks, types, pauses, reacts).
-
-Combined with the median ICI (humans are simply *slower* between commands than a
-tight wget|chmod|exec loop), CV gives a robust, interpretable heuristic. We use
-it here as a weak prior / sanity baseline; later phases replace it with a learned
-classifier that consumes the full timing channel.
-"""
-
 from __future__ import annotations
 
 import math
