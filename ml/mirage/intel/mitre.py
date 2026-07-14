@@ -1,21 +1,3 @@
-"""MITRE ATT&CK technique mapping for captured sessions.
-
-Maps the observable behaviour of a session -- its commands, credential attempts,
-and bait interactions -- onto MITRE ATT&CK technique IDs, producing the
-``mitre_techniques`` field the core leaves empty. This is rule-based and
-transparent (like the tool-signature weak labels): a curated set of regex /
-signal rules, each tied to a specific technique and tactic, so every mapping is
-explainable and auditable for the threat-intel report.
-
-Coverage focuses on what an SSH honeypot can actually observe: Credential Access
-(brute force, reading planted secrets), Discovery (enumeration), Execution,
-Persistence (authorized_keys, cron, accounts), Defense Evasion (history wipe,
-firewall tampering), Command-and-Control / Ingress Tool Transfer, Impact
-(cryptomining), and Exfiltration (bait copy/exfil). Bait interactions are mapped
-explicitly -- reading a planted private key is T1552.004 whether or not the
-command text reveals it -- which is one of the payoffs of the core's new bait
-subsystem.
-"""
 
 from __future__ import annotations
 
