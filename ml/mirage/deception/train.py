@@ -1,66 +1,30 @@
-"""Train and evaluate adaptive deception policies (REINFORCE).
-
-Trains the :class:`~mirage.deception.policy.DeceptionPolicy` on the attacker
-simulator with the REINFORCE policy-gradient algorithm, then compares it against
-the fixed baselines -- crucially against ``MINIMAL`` (today's static honeypot) --
-on the metrics that matter for an intelligence-gathering honeypot: total
-intelligence extracted, commands captured, bait interactions elicited, and how
-long attackers are kept engaged.
-
-The headline result the paper wants: a *learned, adaptive* response policy keeps
-attackers engaged longer and extracts more intent-revealing bait interactions
-than the static honeypot, **without being told the rules** -- approaching the
-hand-written heuristic ceiling from interaction alone.
-
-Run::
-
-    python -m mirage.deception.train --episodes 3000
-"""
-
 from __future__ import annotations
 
 import argparse
 import json
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any, Protocol
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
-from .environment import DeceptionConfig, DeceptionEnv
-from .policy import DeceptionPolicy, FixedPolicy, HeuristicPolicy, RandomPolicy
 from .actions import DeceptionAction
-
-
-class _ValueNetwork(nn.Module):
-    """State-value critic ``V(s)`` -- the REINFORCE baseline.
-
-    Subtracting a learned per-state value from the return turns the high-variance
-    Monte-Carlo gradient into a lower-variance advantage estimate, which is what
-    lets the policy actually credit the rare, high-payoff bait-surfacing action
-    instead of collapsing onto the safe "just enrich" local optimum.
-    """
-
-    def __init__(self, obs_dim: int, hidden_dim: int = 64) -> None:
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(obs_dim, hidden_dim),
-            nn.Tanh(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.Tanh(),
-            nn.Linear(hidden_dim, 1),
-        )
-
-    def forward(self, obs: torch.Tensor) -> torch.Tensor:
-        return self.net(obs).squeeze(-1)
+from .bandit import LinUCBBandit, train_bandit
+from .environment import DeceptionConfig, DeceptionEnv
+from .policy import DeceptionPolicy, FixedPolicy, HeuristicPolicy, RandomPolicy, ValueNetwork
+from .ppo import PPOConfig, train_ppo
 
 __all__ = [
     "Policy",
     "train_deception_policy",
     "evaluate_policy",
+    "PolicyMetrics",
+    "build_baselines",
     "compare_policies",
+    "save_policy_checkpoint",
+    "load_policy_checkpoint",
     "main",
 ]
 
@@ -89,6 +53,9 @@ def train_deception_policy(
     advantage across the batch. Batching is what stabilises learning of the
     *combined* strategy (sustain engagement with enrich, then surface bait on a
     sensitive probe) -- per-episode updates are too high-variance to hold both.
+    This is the middle point of the bandit-to-PPO spectrum: full episodic
+    credit assignment (unlike the bandit), but a single on-policy gradient step
+    per batch with no clipping (unlike PPO).
 
     Args:
         config: Environment config (a fresh default is used if omitted).
@@ -105,7 +72,7 @@ def train_deception_policy(
     torch.manual_seed(seed)
     env = DeceptionEnv(replace(config or DeceptionConfig(), seed=seed))
     policy = policy or DeceptionPolicy(env.obs_dim, env.n_actions)
-    critic = _ValueNetwork(env.obs_dim)
+    critic = ValueNetwork(env.obs_dim)
     optimizer = torch.optim.Adam(
         list(policy.parameters()) + list(critic.parameters()), lr=lr
     )
@@ -159,7 +126,7 @@ def train_deception_policy(
         optimizer.step()
 
         if verbose and (it % 20 == 0 or it == iterations - 1):
-            print(f"[deception] iter {it:4d}/{iterations} avg_return={moving_avg:.2f}")
+            print(f"[reinforce] iter {it:4d}/{iterations} avg_return={moving_avg:.2f}")
 
     return policy, history
 
@@ -233,48 +200,187 @@ def evaluate_policy(
     )
 
 
+def build_baselines(n_actions: int, seed: int = 0) -> dict[str, Policy]:
+    """The fixed controls every learned policy is compared against.
+
+    ``static_minimal`` is today's honeypot (the null hypothesis); ``random`` is
+    a deception-effort control; ``heuristic_ceiling`` is the hand-written,
+    near-optimal rule the learned policies should approach without being told
+    the rules.
+    """
+    return {
+        "static_minimal": FixedPolicy(DeceptionAction.MINIMAL),
+        "random": RandomPolicy(n_actions, seed=seed),
+        "heuristic_ceiling": HeuristicPolicy(),
+    }
+
+
 def compare_policies(
-    learned: DeceptionPolicy,
+    policies: dict[str, Policy],
     config: DeceptionConfig | None = None,
     episodes: int = 1000,
     seed: int = 12345,
 ) -> dict[str, dict[str, float]]:
-    """Evaluate the learned policy against the fixed baselines.
+    """Evaluate an arbitrary named set of policies on identical episodes.
 
     Returns:
-        ``{policy_name: metrics_dict}`` for ``static_minimal`` (today's honeypot),
-        ``random``, ``heuristic_ceiling``, and ``learned``.
+        ``{policy_name: metrics_dict}``, one entry per key in ``policies``.
     """
-    env = DeceptionEnv(replace(config or DeceptionConfig(), seed=seed))
-    contenders: dict[str, Policy] = {
-        "static_minimal": FixedPolicy(DeceptionAction.MINIMAL),
-        "random": RandomPolicy(env.n_actions, seed=seed),
-        "heuristic_ceiling": HeuristicPolicy(),
-        "learned": learned,
-    }
     return {
         name: evaluate_policy(pol, config=config, episodes=episodes, seed=seed).as_dict()
-        for name, pol in contenders.items()
+        for name, pol in policies.items()
     }
+
+
+def save_policy_checkpoint(
+    path: str | Path, policy: DeceptionPolicy, obs_dim: int, n_actions: int, hidden_dim: int = 64
+) -> None:
+    """Save a trained actor (REINFORCE or PPO) to a self-describing ``.pt`` file.
+
+    Only the actor is saved -- it is all :func:`evaluate_policy` /
+    ``select_action`` need. Resuming *training* would also need the critic,
+    which is out of scope for a deployment/evaluation checkpoint.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(
+        {
+            "state_dict": policy.state_dict(),
+            "obs_dim": obs_dim,
+            "n_actions": n_actions,
+            "hidden_dim": hidden_dim,
+        },
+        path,
+    )
+
+
+def load_policy_checkpoint(path: str | Path) -> DeceptionPolicy:
+    """Load a checkpoint written by :func:`save_policy_checkpoint`."""
+    ckpt = torch.load(Path(path), map_location="cpu", weights_only=False)
+    policy = DeceptionPolicy(ckpt["obs_dim"], ckpt["n_actions"], hidden_dim=ckpt.get("hidden_dim", 64))
+    policy.load_state_dict(ckpt["state_dict"])
+    policy.eval()
+    return policy
+
+
+def _build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        "--algo",
+        choices=["all", "bandit", "reinforce", "ppo"],
+        default="all",
+        help="Which learned polic(y/ies) to train (default: all three).",
+    )
+    parser.add_argument("--max-steps", type=int, default=25, help="Environment episode length cap.")
+    parser.add_argument("--seed", type=int, default=0, help="Training RNG seed.")
+    parser.add_argument("--eval-episodes", type=int, default=1000)
+    parser.add_argument("--eval-seed", type=int, default=12345)
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="If set, save each trained policy's checkpoint here (e.g. artifacts/deception).",
+    )
+
+    bandit_group = parser.add_argument_group("bandit (LinUCB)")
+    bandit_group.add_argument("--bandit-episodes", type=int, default=4000)
+    bandit_group.add_argument("--bandit-alpha", type=float, default=1.0)
+    bandit_group.add_argument("--bandit-ridge-lambda", type=float, default=1.0)
+
+    reinforce_group = parser.add_argument_group("REINFORCE / A2C")
+    reinforce_group.add_argument("--reinforce-episodes", type=int, default=2500)
+    reinforce_group.add_argument("--reinforce-lr", type=float, default=1e-2)
+
+    ppo_group = parser.add_argument_group("PPO")
+    ppo_group.add_argument("--ppo-iterations", type=int, default=150)
+    ppo_group.add_argument("--ppo-episodes-per-iter", type=int, default=32)
+    ppo_group.add_argument("--ppo-lr", type=float, default=3e-4)
+    ppo_group.add_argument("--ppo-clip", type=float, default=0.2)
+    ppo_group.add_argument("--ppo-epochs", type=int, default=4)
+
+    parser.add_argument("--quiet", action="store_true", help="Suppress per-algorithm training logs.")
+    return parser
 
 
 def main(argv: list[str] | None = None) -> dict[str, Any]:
-    """CLI: train a policy and print the baseline comparison."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--episodes", type=int, default=2500)
-    parser.add_argument("--eval-episodes", type=int, default=1000)
-    parser.add_argument("--lr", type=float, default=1e-2)
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--max-steps", type=int, default=25)
-    args = parser.parse_args(argv)
+    """CLI: train the requested polic(y/ies) and print the baseline comparison."""
+    args = _build_arg_parser().parse_args(argv)
+    verbose = not args.quiet
 
     config = DeceptionConfig(max_steps=args.max_steps)
-    policy, _ = train_deception_policy(
-        config=config, episodes=args.episodes, lr=args.lr, seed=args.seed, verbose=True
+    probe_env = DeceptionEnv(replace(config, seed=args.seed))
+    obs_dim, n_actions = probe_env.obs_dim, probe_env.n_actions
+
+    policies: dict[str, Policy] = build_baselines(n_actions, seed=args.seed)
+    training_summary: dict[str, dict[str, float]] = {}
+    checkpoints: dict[str, Any] = {}
+
+    if args.algo in ("all", "bandit"):
+        if verbose:
+            print(f"[bandit] training LinUCB for {args.bandit_episodes} episodes...")
+        bandit, bandit_hist = train_bandit(
+            config=config,
+            episodes=args.bandit_episodes,
+            alpha=args.bandit_alpha,
+            ridge_lambda=args.bandit_ridge_lambda,
+            seed=args.seed,
+        )
+        policies["bandit_linucb"] = bandit
+        checkpoints["bandit_linucb"] = bandit
+        training_summary["bandit_linucb"] = {
+            "episodes": args.bandit_episodes,
+            "final_100ep_avg_return": float(np.mean(bandit_hist[-100:])),
+        }
+
+    if args.algo in ("all", "reinforce"):
+        reinforce_policy, reinforce_hist = train_deception_policy(
+            config=config,
+            episodes=args.reinforce_episodes,
+            lr=args.reinforce_lr,
+            seed=args.seed,
+            verbose=verbose,
+        )
+        policies["reinforce_a2c"] = reinforce_policy
+        checkpoints["reinforce_a2c"] = reinforce_policy
+        training_summary["reinforce_a2c"] = {
+            "episodes": args.reinforce_episodes,
+            "final_100ep_avg_return": float(np.mean(reinforce_hist[-100:])),
+        }
+
+    if args.algo in ("all", "ppo"):
+        ppo_cfg = PPOConfig(
+            iterations=args.ppo_iterations,
+            episodes_per_iteration=args.ppo_episodes_per_iter,
+            lr=args.ppo_lr,
+            clip_eps=args.ppo_clip,
+            epochs=args.ppo_epochs,
+            seed=args.seed,
+        )
+        ppo_policy, _ppo_critic, ppo_hist = train_ppo(config=config, ppo_config=ppo_cfg, verbose=verbose)
+        policies["ppo"] = ppo_policy
+        checkpoints["ppo"] = ppo_policy
+        training_summary["ppo"] = {
+            "episodes": len(ppo_hist),
+            "final_100ep_avg_return": float(np.mean(ppo_hist[-100:])),
+        }
+
+    comparison = compare_policies(
+        policies, config=config, episodes=args.eval_episodes, seed=args.eval_seed
     )
-    comparison = compare_policies(policy, config=config, episodes=args.eval_episodes)
-    print(json.dumps(comparison, indent=2))
-    return comparison
+
+    if args.output_dir:
+        out = Path(args.output_dir)
+        if "bandit_linucb" in checkpoints:
+            checkpoints["bandit_linucb"].save(out / "bandit_linucb.npz")
+        if "reinforce_a2c" in checkpoints:
+            save_policy_checkpoint(out / "reinforce_a2c.pt", checkpoints["reinforce_a2c"], obs_dim, n_actions)
+        if "ppo" in checkpoints:
+            save_policy_checkpoint(out / "ppo.pt", checkpoints["ppo"], obs_dim, n_actions)
+        if verbose:
+            print(f"[checkpoints] saved to {out}/")
+
+    result = {"training": training_summary, "comparison": comparison}
+    print(json.dumps(result, indent=2))
+    return result
 
 
 if __name__ == "__main__":  # pragma: no cover

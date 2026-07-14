@@ -1,19 +1,4 @@
-"""Deception policies: a learnable network plus fixed baselines.
 
-The learned :class:`DeceptionPolicy` is a small stochastic policy network trained
-with REINFORCE (see :mod:`mirage.deception.train`). The baselines are the controls
-the paper compares against:
-
-* :class:`FixedPolicy` (``MINIMAL``) -- **today's honeypot**: the same terse
-  response no matter what. The null hypothesis.
-* :class:`RandomPolicy` -- random strategy each turn (a deception-effort control).
-* :class:`HeuristicPolicy` -- a hand-written, near-optimal rule (enrich on recon,
-  surface bait on sensitive probes, fake success on risky ops). An *informed
-  ceiling*: the learned policy should approach it without being told the rules.
-
-All policies share ``select_action(obs) -> int`` so the evaluation harness treats
-them uniformly.
-"""
 
 from __future__ import annotations
 
@@ -24,7 +9,7 @@ import torch.nn as nn
 from .actions import DeceptionAction
 from .environment import COMMAND_CATEGORIES
 
-__all__ = ["DeceptionPolicy", "FixedPolicy", "RandomPolicy", "HeuristicPolicy"]
+__all__ = ["DeceptionPolicy", "ValueNetwork", "FixedPolicy", "RandomPolicy", "HeuristicPolicy"]
 
 _SENSITIVE_IDX = {COMMAND_CATEGORIES.index(c) for c in ("read_sensitive", "escalate", "exfil")}
 
@@ -75,6 +60,30 @@ class DeceptionPolicy(nn.Module):
         if greedy:
             return int(torch.argmax(logits).item())
         return int(torch.distributions.Categorical(logits=logits).sample().item())
+
+
+class ValueNetwork(nn.Module):
+    """State-value critic ``V(s)``, shared by the A2C and PPO trainers.
+
+    Subtracting a learned per-state value from the return turns a high-variance
+    Monte-Carlo return into a lower-variance advantage estimate -- the same
+    network shape works for the one-step-batched baseline in
+    :func:`~mirage.deception.train.train_deception_policy` and for the
+    GAE-lambda critic in :func:`~mirage.deception.ppo.train_ppo`.
+    """
+
+    def __init__(self, obs_dim: int, hidden_dim: int = 64) -> None:
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(obs_dim, hidden_dim),
+            nn.Tanh(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.Tanh(),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(self, obs: torch.Tensor) -> torch.Tensor:
+        return self.net(obs).squeeze(-1)
 
 
 class FixedPolicy:

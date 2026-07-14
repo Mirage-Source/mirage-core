@@ -34,6 +34,16 @@ services:
       DB_PORT: 5432
       DB_USER: ${DB_USER:-mirage}
       DB_NAME: ${DB_NAME:-mirage}
+      # Milestone 7 adaptive deception -- off by default (see .env.example).
+      # Deliberately NOT a `depends_on` on mirage-deception below: the SSH
+      # server must start and run identically whether or not that service
+      # exists, builds, or is healthy. deception.Client fails safe to
+      # ActionMinimal on any error, so this is safe to leave wired even when
+      # MIRAGE_DECEPTION_ENABLED is false or the service is briefly down.
+      MIRAGE_DECEPTION_ENABLED: "${MIRAGE_DECEPTION_ENABLED:-false}"
+      MIRAGE_DECEPTION_URL: "http://mirage-deception:8787"
+      MIRAGE_DECEPTION_TIMEOUT_MS: "${MIRAGE_DECEPTION_TIMEOUT_MS:-200}"
+      MIRAGE_DECEPTION_APPLY_ACTIONS: "${MIRAGE_DECEPTION_APPLY_ACTIONS:-false}"
     volumes:
       - ./config/hostkey:/app/config/hostkey:ro
     ports:
@@ -77,6 +87,41 @@ services:
       resources:
         limits:
           memory: 1024M
+
+  mirage-deception:
+    # Reuses the bridge image -- `pip install /app/ml` in bridge/Dockerfile
+    # already installs mirage.deception, so no new Dockerfile is needed; only
+    # the entrypoint differs (serve.py's HTTP loop instead of the bridge's
+    # poll loop).
+    build:
+      context: .
+      dockerfile: bridge/Dockerfile
+    entrypoint: ["python", "-m", "mirage.deception.serve"]
+    # No depends_on and no external port publish: mirage-core reaches this by
+    # service name on the compose network, and it needs nothing from
+    # postgres. Not required for mirage-core to start -- see the comment on
+    # mirage-core's MIRAGE_DECEPTION_* block above.
+    env_file: .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+      MIRAGE_DECEPTION_CHECKPOINT: "${MIRAGE_DECEPTION_CHECKPOINT:-/app/artifacts/deception/ppo.pt}"
+      MIRAGE_DECEPTION_ALGO: "${MIRAGE_DECEPTION_ALGO:-ppo}"
+      MIRAGE_DECEPTION_PORT: "8787"
+      MIRAGE_DECEPTION_MAX_STEPS: "${MIRAGE_DECEPTION_MAX_STEPS:-25}"
+      MIRAGE_DECEPTION_SESSION_TTL_SECONDS: "${MIRAGE_DECEPTION_SESSION_TTL_SECONDS:-900}"
+    volumes:
+      - ./artifacts:/app/artifacts:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8787/health', timeout=2)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   mirage-api:
     build:
