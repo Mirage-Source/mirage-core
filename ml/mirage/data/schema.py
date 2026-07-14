@@ -1,30 +1,3 @@
-"""Core data structures for MIRAGE sessions.
-
-A MIRAGE session is the unit of analysis throughout the ML stack. Conceptually
-it is a **marked temporal point process**: a sequence of events (shell commands)
-occurring at irregular times, where each event carries a *mark* (the command
-itself). This is the same mathematical object used to describe a neural spike
-train, where each spike has a time and a mark (the neuron of origin). That
-correspondence is not cosmetic -- it is why inter-spike-interval (ISI) tooling
-from neuroscience transfers directly to inter-command-interval (ICI) analysis
-here (see ``mirage.analysis.timing``).
-
-The dataclasses below serialize to / deserialize from the canonical MIRAGE JSON
-schema:
-
-    {
-      "session_id": "uuid",
-      "ip": "string",
-      "start_time": "iso8601",
-      "commands": [{"timestamp": "iso8601", "raw": "string", "ms_offset": 0}],
-      "bait_interactions": [{"bait_type": "...", "timestamp": "iso8601"}],
-      "classifier_output": {"class": "string", "confidence": 0.0}
-    }
-
-Note the JSON key ``class`` is a Python reserved word, so it is stored on the
-``ClassifierOutput`` dataclass as ``cls`` and (de)serialized explicitly.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
