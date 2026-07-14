@@ -1,15 +1,3 @@
-"""Synthetic live-core ``session_document`` generator for development and tests.
-
-Produces session documents in the **exact wire format** the Go core writes
-(`network`/`timing`/`commands`/`auth_attempts`/`bait_interactions`), spanning the
-four attacker archetypes, so the entire Phase-4 pipeline -- ingest → features →
-weak labels → classifier → MITRE → summary → STIX -- is runnable and testable with
-no live database. The archetypes are designed so the interpretable weak labeller
-mostly recovers the intended class, giving the distilled classifier real signal;
-they are *not* a claim about real-world base rates (which are overwhelmingly
-automated). Swap in real documents from ``/api/sessions/{id}`` to validate.
-"""
-
 from __future__ import annotations
 
 import base64
