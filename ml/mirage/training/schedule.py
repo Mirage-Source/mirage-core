@@ -1,13 +1,3 @@
-"""Learning-rate schedule: cosine decay with linear warmup (torch-only).
-
-A short linear warmup stabilizes the Transformer's early steps (the attention
-softmax and LayerNorm statistics are volatile before the embeddings organize),
-after which a cosine decay anneals the rate smoothly to a small floor. This is
-the standard schedule for contrastive Transformer pretraining and is exposed as a
-plain :class:`~torch.optim.lr_scheduler.LambdaLR` factory so it composes with any
-optimizer.
-"""
-
 from __future__ import annotations
 
 import math
