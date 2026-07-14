@@ -1,8 +1,3 @@
-"""mirage.data.synthetic must produce a corpus DataLoader can actually read.
-
-This is exactly the gap that left mirage-session-stats, mirage-train, and
-mirage-visualize's --synthetic flags broken (the module didn't exist).
-"""
 
 from __future__ import annotations
 
