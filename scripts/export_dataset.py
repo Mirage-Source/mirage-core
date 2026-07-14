@@ -17,6 +17,8 @@ Usage:
 
 import argparse
 import csv
+import hashlib
+import hmac
 import json
 import sys
 from collections import Counter
@@ -71,17 +73,30 @@ def fetch_stats(api_url: str, api_key: str) -> dict:
     return resp.json()
 
 
-def enrich_sessions(sessions: list[dict], geo_lookups: dict[str, dict]) -> list[dict]:
+def anonymize_ip(ip: str, salt: str) -> str:
+    digest = hmac.new(salt.encode(), ip.encode(), hashlib.sha256).hexdigest()[:16]
+    return f"anon_{digest}"
+
+
+def enrich_sessions(
+    sessions: list[dict],
+    geo_lookups: dict[str, dict],
+    ip_salt: str | None = None,
+) -> list[dict]:
     """Attach the already-resolved (deduplicated) per-IP geo data to each row."""
     enriched = []
 
     for s in sessions:
+        # Geo/ASN lookup must happen against the real IP; anonymization
+        # only replaces the identifier afterward.
         geo = geo_lookups[s["client_ip"]]
 
         row = dict(s)
         row["asn"] = geo["asn"]
         row["asn_name"] = geo["asn_name"]
         row["country"] = geo["country"]
+        if ip_salt is not None:
+            row["client_ip"] = anonymize_ip(s["client_ip"], ip_salt)
         # mitre_techniques arrives as a list, flatten for CSV row,
         # JSON output keeps it as a real list separately.
         row["mitre_techniques"] = ";".join(s.get("mitre_techniques") or [])
@@ -97,19 +112,22 @@ def write_csv(rows: list[dict], path: Path):
         writer.writerows(rows)
 
 
-def write_json(sessions_raw: list[dict], geo_lookups: dict[str, dict], path: Path):
+def write_json(sessions_raw: list[dict], enriched_rows: list[dict], path: Path):
     # JSON keeps mitre_techniques as a real array and nests geo info,
     # rather than flattening like the CSV does — meant for programmatic
     # consumption (pandas, R, jq) where structure is preferred over flat rows.
+    # client_ip/asn/country come from the enriched row (not re-derived from
+    # sessions_raw) so an anonymized export can't leak the real IP here
+    # while the CSV output stays anonymized.
     out = []
-    for s in sessions_raw:
-        geo = geo_lookups[s["client_ip"]]
+    for s, row in zip(sessions_raw, enriched_rows):
         out.append(
             {
                 **s,
-                "asn": geo["asn"],
-                "asn_name": geo["asn_name"],
-                "country": geo["country"],
+                "client_ip": row["client_ip"],
+                "asn": row["asn"],
+                "asn_name": row["asn_name"],
+                "country": row["country"],
             }
         )
 
@@ -151,7 +169,20 @@ def main():
     parser.add_argument("--geo-country-csv", required=True)
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--version", required=True, help="e.g. v12")
+    # Off by default: current exports use the real client_ip.
+    parser.add_argument(
+        "--anonymize-ips",
+        action="store_true",
+        help="replace client_ip with a salted HMAC in exported output",
+    )
+    parser.add_argument(
+        "--ip-salt",
+        help="HMAC key for --anonymize-ips (required if that flag is set)",
+    )
     args = parser.parse_args()
+
+    if args.anonymize_ips and not args.ip_salt:
+        parser.error("--ip-salt is required when --anonymize-ips is set")
 
     print(f"Fetching export from {args.api_url}/api/export ...", file=sys.stderr)
     export = fetch_export(args.api_url, args.api_key)
@@ -179,17 +210,19 @@ def main():
             if not result.matched:
                 unmatched_count += 1
 
-    enriched_rows = enrich_sessions(sessions, geo_lookups)
+    ip_salt = args.ip_salt if args.anonymize_ips else None
+    enriched_rows = enrich_sessions(sessions, geo_lookups, ip_salt)
 
     out_dir = Path(args.out_dir) / args.version
     out_dir.mkdir(parents=True, exist_ok=True)
 
     write_csv(enriched_rows, out_dir / "sessions.csv")
-    write_json(sessions, geo_lookups, out_dir / "sessions.json")
+    write_json(sessions, enriched_rows, out_dir / "sessions.json")
 
     summary = compute_summary(enriched_rows, unmatched_count, coordinated_ip_groups)
     summary["generated_at"] = export["generated_at"]
     summary["version"] = args.version
+    summary["ip_anonymized"] = args.anonymize_ips
 
     with open(out_dir / "stats_summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
