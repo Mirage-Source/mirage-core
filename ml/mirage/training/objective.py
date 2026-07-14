@@ -1,23 +1,3 @@
-"""Contrastive objective for session embeddings (torch-only).
-
-We use **NT-Xent** (the normalized temperature-scaled cross-entropy of SimCLR),
-which is InfoNCE over L2-normalized embeddings. This is the same family of
-contrastive loss CEBRA uses to align neural and behavioral views; here the two
-"views" are two augmentations of the same attacker session.
-
-Given a batch of ``N`` sessions, each encoded under two augmentations, we have
-``2N`` embeddings. For each anchor, its positive is the *other* view of the same
-session and the negatives are the remaining ``2N - 2`` embeddings. Minimizing the
-loss maximizes the cosine similarity of the positive pair relative to all
-negatives -- pulling same-session (and, transitively, same-tool) sessions
-together while spreading the rest over the hypersphere.
-
-We also expose the **alignment** and **uniformity** metrics of Wang & Isola
-(2020) as diagnostics: alignment measures how close positive pairs are;
-uniformity measures how evenly embeddings cover the sphere. Logging both
-explains *why* a run's clustering improves or collapses, which is useful for the
-paper's analysis.
-"""
 
 from __future__ import annotations
 
