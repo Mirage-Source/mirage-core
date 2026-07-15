@@ -17,8 +17,6 @@ Usage:
 
 import argparse
 import csv
-import hashlib
-import hmac
 import json
 import sys
 from collections import Counter
@@ -26,6 +24,7 @@ from pathlib import Path
 
 import requests
 
+from anonymize import anonymize_ip
 from geo_lookup import GeoLookup
 
 
@@ -71,11 +70,6 @@ def fetch_stats(api_url: str, api_key: str) -> dict:
     )
     resp.raise_for_status()
     return resp.json()
-
-
-def anonymize_ip(ip: str, salt: str) -> str:
-    digest = hmac.new(salt.encode(), ip.encode(), hashlib.sha256).hexdigest()[:16]
-    return f"anon_{digest}"
 
 
 def enrich_sessions(

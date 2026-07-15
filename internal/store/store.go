@@ -106,17 +106,20 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 				event_id, session_id, sequence_number,
 				timestamp_ms, inter_command_delay_ms,
 				raw_input_b64, parsed_command, parsed_args,
-				working_directory, response_source, deception_action
+				working_directory, response_text, exit_code,
+				response_source, deception_action
 			) VALUES (
 				$1, $2, $3,
 				$4, $5,
 				$6, $7, $8,
-				$9, $10, $11
+				$9, $10, $11,
+				$12, $13
 			)
 		`, c.EventID, sess.SessionID, c.SequenceNumber,
 			c.TimestampMS, c.InterCommandDelayMS,
 			c.RawInputB64, c.ParsedCommand, argsBytes,
-			c.WorkingDirectory, c.ResponseSource, c.DeceptionAction,
+			c.WorkingDirectory, c.Response, c.ExitCode,
+			c.ResponseSource, c.DeceptionAction,
 		)
 		if err != nil {
 			return fmt.Errorf("inserting command: %w", err)

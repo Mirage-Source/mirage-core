@@ -284,6 +284,39 @@ func main() {
 		}
 	})
 
+	r.Get("/api/export/commands", func(w http.ResponseWriter, r *http.Request) {
+		after := r.URL.Query().Get("after")
+		limit := 0
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil || parsed <= 0 {
+				http.Error(w, "invalid limit", http.StatusBadRequest)
+				return
+			}
+			limit = parsed
+		}
+
+		export, err := store.GetCommandExport(db, after, limit)
+		if err != nil {
+			if strings.HasPrefix(err.Error(), "invalid cursor") {
+				http.Error(w, "invalid cursor", http.StatusBadRequest)
+				return
+			}
+			http.Error(
+				w,
+				"failed to generate commands export",
+				http.StatusInternalServerError,
+			)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		if err := json.NewEncoder(w).Encode(export); err != nil {
+			log.Printf("encoding commands export response: %v", err)
+		}
+	})
+
 	srv := &http.Server{
 		Addr:              ":8080",
 		Handler:           r,

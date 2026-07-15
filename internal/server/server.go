@@ -456,6 +456,11 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 				parsedArgs = words[1:]
 			}
 
+			status := code
+			if status == shell.ExitRequested {
+				status = 0
+			}
+
 			cmd := session.Command{
 				EventID:          uuid.New().String(),
 				TimestampMS:      now,
@@ -463,16 +468,14 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 				ParsedCommand:    parsedCommand,
 				ParsedArgs:       parsedArgs,
 				WorkingDirectory: beforeCwd,
+				Response:         &response,
+				ExitCode:         &status,
 				ResponseSource:   responseSourceFor(baitHits),
 				DeceptionAction:  deceptionAction,
 			}
 			cmd = guard.appendCommand(cmd, false)
 			guard.appendBaitEvents(cmd.EventID, baitHits)
 
-			status := code
-			if status == shell.ExitRequested {
-				status = 0
-			}
 			// Send exit status to notify client of success/failure
 			channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{Status: uint32(status)}))
 
@@ -557,6 +560,11 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 				beforeCwd := interp.Cwd
 				response, code, baitHits, deceptionAction := applyDeception(deceptionRuntime, interp, guard.sessionID(), cli)
 
+				status := code
+				if status == shell.ExitRequested {
+					status = 0
+				}
+
 				cmd := session.Command{
 					EventID:          uuid.New().String(),
 					TimestampMS:      now,
@@ -564,6 +572,8 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 					ParsedCommand:    parsedCommand,
 					ParsedArgs:       parsedArgs,
 					WorkingDirectory: beforeCwd,
+					Response:         &response,
+					ExitCode:         &status,
 					ResponseSource:   responseSourceFor(baitHits),
 					DeceptionAction:  deceptionAction,
 				}

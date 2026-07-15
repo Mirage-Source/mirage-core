@@ -2,8 +2,11 @@ package store
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 	"github.com/lib/pq"
 	"github.com/mirage-source/mirage-core/internal/api"
@@ -517,4 +520,138 @@ func GetSessionReport(
 	}
 
 	return report, nil
+}
+
+const defaultCommandExportLimit = 2000
+const maxCommandExportLimit = 10000
+
+// encodeCommandCursor/decodeCommandCursor pack the keyset-pagination cursor
+// for GetCommandExport as "timestamp_ms:event_id" -- commands.timestamp_ms
+// alone isn't guaranteed unique across sessions, so event_id breaks ties and
+// keeps pagination stable even if two commands share a millisecond.
+func encodeCommandCursor(timestampMS int64, eventID string) string {
+	return fmt.Sprintf("%d:%s", timestampMS, eventID)
+}
+
+func decodeCommandCursor(cursor string) (timestampMS int64, eventID string, ok bool) {
+	tsPart, idPart, found := strings.Cut(cursor, ":")
+	if !found || idPart == "" {
+		return 0, "", false
+	}
+	ts, err := strconv.ParseInt(tsPart, 10, 64)
+	if err != nil {
+		return 0, "", false
+	}
+	return ts, idPart, true
+}
+
+// GetCommandExport returns one page of the flattened commands export (see
+// api.ExportCommand) ordered by (timestamp_ms, event_id), the natural
+// capture order. after is an opaque cursor from a previous page's
+// NextCursor ("" for the first page); limit is clamped to
+// [1, maxCommandExportLimit], defaulting to defaultCommandExportLimit.
+//
+// Unlike GetExportData (session-level, returned in one shot), per-command
+// volume is high enough -- up to maxCommandsPerSession (500, see
+// internal/server) per session, across every session -- that an unpaginated
+// dump isn't a safe default; keyset pagination (rather than OFFSET) keeps
+// each page's query cost independent of how deep into the export the caller
+// already is.
+func GetCommandExport(db *sql.DB, after string, limit int) (*api.ExportCommandsResponse, error) {
+	if limit <= 0 || limit > maxCommandExportLimit {
+		limit = defaultCommandExportLimit
+	}
+
+	afterTS := int64(-1) // sentinel below any real unix-ms timestamp
+	afterID := ""
+	if after != "" {
+		ts, id, ok := decodeCommandCursor(after)
+		if !ok {
+			return nil, fmt.Errorf("invalid cursor: %q", after)
+		}
+		afterTS, afterID = ts, id
+	}
+
+	rows, err := db.Query(`
+		SELECT
+			c.event_id, c.session_id, c.sequence_number,
+			c.timestamp_ms, c.inter_command_delay_ms,
+			c.raw_input_b64, c.parsed_command, c.parsed_args,
+			c.working_directory, c.response_text, c.exit_code,
+			c.response_source, c.deception_action,
+			b.bait_id, b.bait_type,
+			s.client_ip, s.ssh_client_banner, s.attacker_class, s.mitre_techniques
+		FROM commands c
+		JOIN sessions s ON s.session_id = c.session_id
+		LEFT JOIN bait_interactions b ON b.triggered_by_command_event_id = c.event_id
+		WHERE c.timestamp_ms > $1 OR (c.timestamp_ms = $1 AND c.event_id > $2)
+		ORDER BY c.timestamp_ms ASC, c.event_id ASC
+		LIMIT $3
+	`, afterTS, afterID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("querying commands export: %w", err)
+	}
+	defer rows.Close()
+
+	resp := &api.ExportCommandsResponse{
+		GeneratedAt: fmt.Sprintf("%d", time.Now().UnixMilli()),
+	}
+
+	var lastTS int64
+	var lastID string
+	for rows.Next() {
+		var item api.ExportCommand
+		var rawB64 string
+		var argsRaw, mitreRaw []byte
+		var baitID, baitType sql.NullString
+
+		if err := rows.Scan(
+			&item.EventID, &item.SessionID, &item.SequenceNumber,
+			&item.TimestampMS, &item.InterCommandDelayMS,
+			&rawB64, &item.ParsedCommand, &argsRaw,
+			&item.WorkingDirectory, &item.Response, &item.ExitCode,
+			&item.ResponseSource, &item.DeceptionAction,
+			&baitID, &baitType,
+			&item.ClientIP, &item.SSHClientBanner, &item.AttackerClass, &mitreRaw,
+		); err != nil {
+			return nil, fmt.Errorf("scanning command export row: %w", err)
+		}
+
+		decoded, err := base64.StdEncoding.DecodeString(rawB64)
+		if err != nil {
+			return nil, fmt.Errorf("decoding raw_input_b64 for command %s: %w", item.EventID, err)
+		}
+		item.RawCommand = string(decoded)
+
+		if len(argsRaw) > 0 {
+			if err := json.Unmarshal(argsRaw, &item.ParsedArgs); err != nil {
+				return nil, fmt.Errorf("unmarshalling parsed args: %w", err)
+			}
+		}
+		if len(mitreRaw) > 0 {
+			if err := json.Unmarshal(mitreRaw, &item.MitreTechniques); err != nil {
+				return nil, fmt.Errorf("unmarshalling mitre techniques: %w", err)
+			}
+		}
+
+		if baitID.Valid {
+			item.BaitHit = true
+			item.BaitType = &baitType.String
+		}
+
+		resp.Commands = append(resp.Commands, item)
+		lastTS, lastID = item.TimestampMS, item.EventID
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	resp.CommandCount = len(resp.Commands)
+	if resp.CommandCount == limit {
+		cursor := encodeCommandCursor(lastTS, lastID)
+		resp.NextCursor = &cursor
+	}
+
+	return resp, nil
 }
