@@ -21,15 +21,14 @@ import (
 //     unrecognised command doesn't immediately read as "command not found"
 //     on a from-scratch honeypot.
 //
-// MINIMAL, ENRICH, and SURFACE_BAIT currently pass the response through
-// unchanged. ENRICH and SURFACE_BAIT are still decided and logged (see
-// session.Command.DeceptionAction) -- realizing them as richer output would
-// mean dynamically embellishing `ls`/`cat` results or conditionally
-// revealing planted secrets, which needs the static filesystem in
-// internal/shell/fs.go to support content that can be added at request time.
-// That is a deliberate follow-up, not an oversight: changing what `cat` and
-// `ls` return needs its own careful review on a filesystem that is otherwise
-// fully static and already relied on for BaitHit bookkeeping.
+// MINIMAL passes the response through unchanged, same as always. ENRICH and
+// SURFACE_BAIT are realized elsewhere -- internal/server's applyDeception
+// threads the decided action into internal/shell's Interpreter.RunWithDeception
+// *before* the command executes, so ls/cat can render richer or gated
+// content directly (see fs.go's EnrichedContent/ConditionalChildren and
+// BaitInfo.Hidden). By the time a response reaches this function those two
+// actions have already done everything they're going to do, so this file's
+// job is only the two actions that are pure post-processing transforms.
 //
 // Apply never overrides shell.ExitRequested (the "attacker typed exit"
 // sentinel, 257) -- FAKE_SUCCESS rewriting that to 0 would silently prevent
