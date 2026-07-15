@@ -23,6 +23,16 @@ const ExitRequested = 257
 
 const maxSubstitutionDepth = 3
 
+// Deception action names this package acts on. Duplicated from
+// internal/deception's constants (not imported) because internal/deception
+// already imports internal/shell for shell.ExitRequested -- importing the
+// other way would cycle. Both sides are pinned to the same wire contract
+// documented in internal/deception/client.go.
+const (
+	deceptionActionEnrich      = "ENRICH"
+	deceptionActionSurfaceBait = "SURFACE_BAIT"
+)
+
 // BaitHit is reported when a command touches a planted lure so the caller
 // can record it against the session.
 type BaitHit struct {
@@ -52,12 +62,23 @@ func (s *Interpreter) Prompt() string {
 // Run executes one line of input (which may contain `;`/`&&`/`||`-chained
 // statements) and returns the combined output, the exit code of the last
 // statement that ran, and any bait interactions triggered along the way.
+// Equivalent to RunWithDeception(line, "") -- no deception action applied.
 func (s *Interpreter) Run(line string) (output string, code int, bait []BaitHit) {
-	out, code := s.evalLine(line, 0, &bait)
+	return s.RunWithDeception(line, "")
+}
+
+// RunWithDeception is Run, but threads a deception action ("ENRICH",
+// "SURFACE_BAIT", or "" for none) into the parts of the filesystem (cat/ls)
+// that can render richer or gated content for that action. Passing ""
+// reproduces Run's exact output -- callers should only pass a real action
+// when the deception policy is actually allowed to change output (see
+// server.go's applyDeception).
+func (s *Interpreter) RunWithDeception(line, action string) (output string, code int, bait []BaitHit) {
+	out, code := s.evalLine(line, 0, &bait, action)
 	return out, code, bait
 }
 
-func (s *Interpreter) evalLine(line string, depth int, bait *[]BaitHit) (string, int) {
+func (s *Interpreter) evalLine(line string, depth int, bait *[]BaitHit, action string) (string, int) {
 	stmts := splitStatements(line)
 
 	var outputs []string
@@ -80,7 +101,7 @@ func (s *Interpreter) evalLine(line string, depth int, bait *[]BaitHit) (string,
 		words := tokenizeWords(st.Text)
 		resolved := make([]string, 0, len(words))
 		for _, w := range words {
-			resolved = append(resolved, s.substitute(w, depth, bait))
+			resolved = append(resolved, s.substitute(w, depth, bait, action))
 		}
 		if len(resolved) == 0 {
 			continue
@@ -98,7 +119,7 @@ func (s *Interpreter) evalLine(line string, depth int, bait *[]BaitHit) (string,
 			continue
 		}
 
-		out, code := s.execBuiltin(resolved[0], resolved[1:], bait)
+		out, code := s.execBuiltin(resolved[0], resolved[1:], bait, action)
 		lastExit = code
 		if out != "" {
 			outputs = append(outputs, out)
@@ -113,7 +134,7 @@ func (s *Interpreter) evalLine(line string, depth int, bait *[]BaitHit) (string,
 // deeper than maxSubstitutionDepth collapse to an empty string rather than
 // erroring, same as a real shell running out of patience would look like
 // from the outside. Unset variables interpolate to "", matching bash.
-func (s *Interpreter) substitute(word string, depth int, bait *[]BaitHit) string {
+func (s *Interpreter) substitute(word string, depth int, bait *[]BaitHit, action string) string {
 	var out strings.Builder
 	i := 0
 	for i < len(word) {
@@ -128,7 +149,7 @@ func (s *Interpreter) substitute(word string, depth int, bait *[]BaitHit) string
 			inner := word[i+2 : end]
 			var resolved string
 			if depth+1 <= maxSubstitutionDepth {
-				o, _ := s.evalLine(inner, depth+1, bait)
+				o, _ := s.evalLine(inner, depth+1, bait, action)
 				resolved = strings.TrimRight(o, "\r\n")
 			}
 			out.WriteString(resolved)
@@ -206,7 +227,7 @@ func matchingParen(s string, pos int) int {
 	return -1
 }
 
-func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit) (string, int) {
+func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, action string) (string, int) {
 	switch cmd {
 	case "":
 		return "", 0
@@ -241,10 +262,10 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit) (s
 		return "", testBuiltin(s.Cwd, cmd, args)
 
 	case "cat":
-		return s.catBuiltin(args, bait)
+		return s.catBuiltin(args, bait, action)
 
 	case "ls":
-		return s.lsBuiltin(args)
+		return s.lsBuiltin(args, action)
 
 	case "cd":
 		return s.cdBuiltin(args)
@@ -340,7 +361,7 @@ func testBuiltin(cwd, cmd string, args []string) int {
 	return 1
 }
 
-func (s *Interpreter) catBuiltin(args []string, bait *[]BaitHit) (string, int) {
+func (s *Interpreter) catBuiltin(args []string, bait *[]BaitHit, action string) (string, int) {
 	if len(args) < 1 {
 		return "cat: missing operand", 1
 	}
@@ -348,13 +369,23 @@ func (s *Interpreter) catBuiltin(args []string, bait *[]BaitHit) (string, int) {
 	if n == nil || n.Type != NodeFile {
 		return "cat: " + args[0] + ": No such file or directory", 1
 	}
+	// A Hidden bait node pretends not to exist unless this turn's decision
+	// is SURFACE_BAIT -- no BaitHit is recorded either, since the attacker
+	// never actually discovered it.
+	if n.Bait != nil && n.Bait.Hidden && action != deceptionActionSurfaceBait {
+		return "cat: " + args[0] + ": No such file or directory", 1
+	}
 	if n.Bait != nil {
 		*bait = append(*bait, BaitHit{BaitID: n.Bait.BaitID, BaitType: n.Bait.BaitType, AccessType: session.AccessTypeRead})
 	}
-	return strings.ReplaceAll(n.Content, "\n", "\r\n"), 0
+	content := n.Content
+	if action == deceptionActionEnrich && n.EnrichedContent != "" {
+		content = n.EnrichedContent
+	}
+	return strings.ReplaceAll(content, "\n", "\r\n"), 0
 }
 
-func (s *Interpreter) lsBuiltin(args []string) (string, int) {
+func (s *Interpreter) lsBuiltin(args []string, action string) (string, int) {
 	target := s.Cwd
 	for _, a := range args {
 		if !strings.HasPrefix(a, "-") {
@@ -365,7 +396,7 @@ func (s *Interpreter) lsBuiltin(args []string) (string, int) {
 	if n == nil || n.Type != NodeDir {
 		return "ls: cannot access '" + target + "': No such file or directory", 2
 	}
-	return lsListing(n), 0
+	return lsListing(n, action), 0
 }
 
 func (s *Interpreter) cdBuiltin(args []string) (string, int) {

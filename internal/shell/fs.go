@@ -18,26 +18,47 @@ const (
 
 // BaitInfo marks a node as a planted lure. Any command that reads or lists it
 // reports the interaction back to the caller so it can be recorded.
+//
+// Hidden nodes are only visible in `ls` output and readable via `cat` on the
+// turn the deception policy decides SURFACE_BAIT — see ConditionalChildren
+// below. Zero value (false) is today's behavior: unconditionally
+// visible/readable, which is why the two original bait nodes (.env, id_rsa)
+// need no changes to keep working exactly as before.
 type BaitInfo struct {
 	BaitID   string
 	BaitType session.BaitType
+	Hidden   bool
+}
+
+// ConditionalChild is a directory entry only shown in `ls` output when the
+// deception policy's decided action for that turn matches Action (e.g.
+// "ENRICH" or "SURFACE_BAIT"). The node itself always exists in fs (so a
+// direct `cat`/`cd` by a known name still works, same realism as any other
+// bait node) -- this only governs whether it shows up during exploration.
+// A slice, not a map, so listing order (and therefore output) is
+// deterministic.
+type ConditionalChild struct {
+	Name   string
+	Action string
 }
 
 // Node is a single file or directory in the simulated filesystem. Every
 // directory's Children list is the single source of truth for what `ls`
 // shows — there is no separate listing table that can drift out of sync.
 type Node struct {
-	Path     string // this node's own cleaned absolute path, set by init()
-	Type     NodeType
-	Mode     string
-	Owner    string
-	Group    string
-	Size     int64
-	MTime    string
-	Content  string   // files only
-	Children []string // dirs only, ordered basenames
-	Bait     *BaitInfo
-	Total    int // dirs only, the "total N" ls header value
+	Path                string // this node's own cleaned absolute path, set by init()
+	Type                NodeType
+	Mode                string
+	Owner               string
+	Group               string
+	Size                int64
+	MTime               string
+	Content             string             // files only
+	EnrichedContent     string             // files only; used instead of Content when action is ENRICH
+	Children            []string           // dirs only, ordered basenames, always shown
+	ConditionalChildren []ConditionalChild // dirs only, shown only for a matching action
+	Bait                *BaitInfo
+	Total               int // dirs only, the "total N" ls header value
 }
 
 // fs is keyed by cleaned absolute path. Every path referenced as a child
@@ -73,7 +94,7 @@ var fs = map[string]*Node{
 	"/root": {
 		Type: NodeDir, Mode: "drwx------", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Total: 0,
 	},
-	"/run": emptySystemDir(),
+	"/run":  emptySystemDir(),
 	"/sbin": emptySystemDir(),
 	"/srv":  emptySystemDir(),
 	"/tmp": {
@@ -87,6 +108,10 @@ var fs = map[string]*Node{
 	"/home/ubuntu": {
 		Type: NodeDir, Mode: "drwxr-xr-x", Owner: "ubuntu", Group: "ubuntu", MTime: "May 29 14:02", Total: 36,
 		Children: []string{".bash_history", ".bashrc", ".cache", "django-app", ".env", ".ssh", ".profile"},
+		ConditionalChildren: []ConditionalChild{
+			{Name: ".python_history", Action: "ENRICH"},
+			{Name: ".aws", Action: "SURFACE_BAIT"},
+		},
 	},
 	"/home/ubuntu/.bash_history": {
 		Type: NodeFile, Mode: "-rw-------", Owner: "ubuntu", Group: "ubuntu", MTime: "Jan 12 09:11",
@@ -137,6 +162,29 @@ var fs = map[string]*Node{
 		}, "\n"),
 		Bait: &BaitInfo{BaitID: "home-env-file", BaitType: session.BaitTypeEnvFile},
 	},
+	"/home/ubuntu/.python_history": {
+		Type: NodeFile, Mode: "-rw-------", Owner: "ubuntu", Group: "ubuntu", MTime: "May 29 13:47",
+		Content: strings.Join([]string{
+			"import django",
+			"django.VERSION",
+			"from django.conf import settings",
+			"settings.DATABASES",
+			"exit()",
+		}, "\n"),
+	},
+	"/home/ubuntu/.aws": {
+		Type: NodeDir, Mode: "drwx------", Owner: "ubuntu", Group: "ubuntu", MTime: "May 29 13:40", Total: 4,
+		Children: []string{"credentials"},
+	},
+	"/home/ubuntu/.aws/credentials": {
+		Type: NodeFile, Mode: "-rw-------", Owner: "ubuntu", Group: "ubuntu", MTime: "May 29 13:40", Size: 116,
+		Content: strings.Join([]string{
+			"[default]",
+			"aws_access_key_id=AKIAQXJ3EXAMPLEKEY9",
+			"aws_secret_access_key=k3vQ/EXAMPLEnotarealsecretkeyDoNotUse1234567",
+		}, "\n"),
+		Bait: &BaitInfo{BaitID: "home-aws-credentials", BaitType: session.BaitTypeCredential, Hidden: true},
+	},
 	"/home/ubuntu/.profile": {
 		Type: NodeFile, Mode: "-rw-r--r--", Owner: "ubuntu", Group: "ubuntu", MTime: "Jan 12 09:11", Size: 675,
 		Content: "# ~/.profile: executed by the command interpreter for login shells.\n",
@@ -166,9 +214,9 @@ var fs = map[string]*Node{
 		Children: []string{"adduser.conf", "apt", "bash.bashrc", "cron.d", "hosts", "hostname", "nsswitch.conf", "os-release", "passwd", "shadow", "nginx", "ssh", "systemd"},
 	},
 	"/etc/adduser.conf": {Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Size: 2981, Content: "# /etc/adduser.conf\nDSHELL=/bin/bash\n"},
-	"/etc/apt": {Type: NodeDir, Mode: "drwxr-xr-x", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Total: 4},
-	"/etc/bash.bashrc": {Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Size: 367, Content: "# System-wide .bashrc\n"},
-	"/etc/cron.d": {Type: NodeDir, Mode: "drwxr-xr-x", Owner: "root", Group: "root", MTime: "May 29 14:01", Total: 4},
+	"/etc/apt":          {Type: NodeDir, Mode: "drwxr-xr-x", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Total: 4},
+	"/etc/bash.bashrc":  {Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Size: 367, Content: "# System-wide .bashrc\n"},
+	"/etc/cron.d":       {Type: NodeDir, Mode: "drwxr-xr-x", Owner: "root", Group: "root", MTime: "May 29 14:01", Total: 4},
 	"/etc/hosts": {
 		Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Size: 1748,
 		Content: "127.0.0.1 localhost\n127.0.1.1 ip-172-31-14-52\n",
@@ -188,6 +236,16 @@ var fs = map[string]*Node{
 			`PRETTY_NAME="Ubuntu 22.04.3 LTS"`,
 			`VERSION_ID="22.04"`,
 			`HOME_URL="https://www.ubuntu.com/"`,
+		}, "\n"),
+		EnrichedContent: strings.Join([]string{
+			`NAME="Ubuntu"`,
+			`VERSION="22.04.3 LTS (Jammy Jellyfish)"`,
+			`ID=ubuntu`,
+			`ID_LIKE=debian`,
+			`PRETTY_NAME="Ubuntu 22.04.3 LTS"`,
+			`VERSION_ID="22.04"`,
+			`HOME_URL="https://www.ubuntu.com/"`,
+			`UBUNTU_CODENAME=jammy`,
 		}, "\n"),
 	},
 	"/etc/passwd": {
@@ -299,11 +357,14 @@ func displayPath(p string) string {
 	return p
 }
 
-// lsListing renders `ls -la`-style output for a directory node.
-func lsListing(n *Node) string {
+// lsListing renders `ls -la`-style output for a directory node. action is
+// the deception decision for this turn ("" if none/not applied) -- any
+// ConditionalChildren whose Action matches it are included alongside the
+// always-shown Children, deterministically (declaration order).
+func lsListing(n *Node, action string) string {
 	type entry struct {
-		name string
-		mode string
+		name  string
+		mode  string
 		owner string
 		group string
 		size  int64
@@ -313,7 +374,13 @@ func lsListing(n *Node) string {
 		{".", n.Mode, n.Owner, n.Group, 4096, n.MTime},
 		{"..", "drwxr-xr-x", "root", "root", 4096, n.MTime},
 	}
-	for _, name := range n.Children {
+	names := append([]string{}, n.Children...)
+	for _, cc := range n.ConditionalChildren {
+		if cc.Action != "" && cc.Action == action {
+			names = append(names, cc.Name)
+		}
+	}
+	for _, name := range names {
 		child := fs[path.Join(n.Path, name)]
 		if child == nil {
 			continue
@@ -329,6 +396,26 @@ func lsListing(n *Node) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// LooksLikeBaitAccess is a cheap, pre-execution heuristic for whether a raw
+// command line looks like it targets a planted bait node -- a substring
+// match against every bait node's basename, not real interpretation. Used
+// only as the bait_hit feature sent to the deception inference service
+// before the command has actually run (the interpreter is stateful, so it
+// can't safely be run twice per command to get an exact post-execution
+// answer -- see internal/deception's Decide caller in server.go).
+func LooksLikeBaitAccess(command string) bool {
+	lower := strings.ToLower(command)
+	for p, n := range fs {
+		if n.Bait == nil {
+			continue
+		}
+		if strings.Contains(lower, strings.ToLower(path.Base(p))) {
+			return true
+		}
+	}
+	return false
+}
+
 func sizeOf(n *Node) int64 {
 	if n.Type == NodeDir {
 		return 4096
@@ -338,4 +425,3 @@ func sizeOf(n *Node) int64 {
 	}
 	return int64(len(n.Content))
 }
-

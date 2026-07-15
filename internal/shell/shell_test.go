@@ -1,6 +1,9 @@
 package shell
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestLsCdConsistency(t *testing.T) {
 	s := NewInterpreter()
@@ -76,5 +79,109 @@ func TestUnknownCommandStillReported(t *testing.T) {
 	}
 	if out != "bash: nonexistentcmd: command not found" {
 		t.Fatalf("unexpected output: %q", out)
+	}
+}
+
+func TestRunWithDeceptionEmptyActionMatchesRun(t *testing.T) {
+	cases := []string{"ls", "cat .env", "cat /etc/os-release", "uname -a", "cd /etc && ls"}
+	for _, c := range cases {
+		a := NewInterpreter()
+		b := NewInterpreter()
+		outA, codeA, baitA := a.Run(c)
+		outB, codeB, baitB := b.RunWithDeception(c, "")
+		if outA != outB || codeA != codeB || len(baitA) != len(baitB) {
+			t.Fatalf("Run and RunWithDeception(%q, \"\") diverged: (%q,%d,%d) vs (%q,%d,%d)",
+				c, outA, codeA, len(baitA), outB, codeB, len(baitB))
+		}
+	}
+}
+
+func TestEnrichRevealsPythonHistory(t *testing.T) {
+	s := NewInterpreter()
+	out, code, _ := s.RunWithDeception("ls", "ENRICH")
+	if code != 0 {
+		t.Fatalf("ls failed: %s", out)
+	}
+	if !strings.Contains(out, ".python_history") {
+		t.Fatalf("expected ENRICH to reveal .python_history, got: %s", out)
+	}
+
+	s2 := NewInterpreter()
+	out2, _, _ := s2.Run("ls")
+	if strings.Contains(out2, ".python_history") {
+		t.Fatalf("expected .python_history hidden without ENRICH, got: %s", out2)
+	}
+
+	s3 := NewInterpreter()
+	out3, code3, _ := s3.Run("cat .python_history")
+	if code3 != 0 || out3 == "" {
+		t.Fatalf(".python_history should be readable regardless of action: out=%q code=%d", out3, code3)
+	}
+}
+
+func TestEnrichAddsUbuntuCodename(t *testing.T) {
+	s := NewInterpreter()
+	out, code, _ := s.RunWithDeception("cat /etc/os-release", "ENRICH")
+	if code != 0 || !strings.Contains(out, "UBUNTU_CODENAME=jammy") {
+		t.Fatalf("expected ENRICH to add UBUNTU_CODENAME, got: %q", out)
+	}
+
+	s2 := NewInterpreter()
+	out2, _, _ := s2.Run("cat /etc/os-release")
+	if strings.Contains(out2, "UBUNTU_CODENAME") {
+		t.Fatalf("expected no UBUNTU_CODENAME without ENRICH, got: %q", out2)
+	}
+}
+
+func TestSurfaceBaitRevealsAwsCredentials(t *testing.T) {
+	s := NewInterpreter()
+	out, _, _ := s.RunWithDeception("ls", "SURFACE_BAIT")
+	if !strings.Contains(out, ".aws") {
+		t.Fatalf("expected SURFACE_BAIT to reveal .aws, got: %s", out)
+	}
+
+	s2 := NewInterpreter()
+	out2, _, _ := s2.Run("ls")
+	if strings.Contains(out2, ".aws") {
+		t.Fatalf("expected .aws hidden without SURFACE_BAIT, got: %s", out2)
+	}
+}
+
+func TestAwsCredentialsCatGatedBySurfaceBait(t *testing.T) {
+	s := NewInterpreter()
+	out, code, bait := s.Run("cat .aws/credentials")
+	if code == 0 {
+		t.Fatalf("expected cat .aws/credentials to fail without SURFACE_BAIT, got out=%q code=%d", out, code)
+	}
+	if out != "cat: .aws/credentials: No such file or directory" {
+		t.Fatalf("unexpected output: %q", out)
+	}
+	if len(bait) != 0 {
+		t.Fatalf("expected no bait hit without SURFACE_BAIT, got %v", bait)
+	}
+
+	s2 := NewInterpreter()
+	out2, code2, bait2 := s2.RunWithDeception("cat .aws/credentials", "SURFACE_BAIT")
+	if code2 != 0 {
+		t.Fatalf("cat .aws/credentials with SURFACE_BAIT failed: %s", out2)
+	}
+	if len(bait2) != 1 || bait2[0].BaitID != "home-aws-credentials" {
+		t.Fatalf("expected home-aws-credentials bait hit, got %v", bait2)
+	}
+}
+
+func TestExistingBaitNodesAlwaysVisibleRegardlessOfAction(t *testing.T) {
+	for _, action := range []string{"", "ENRICH", "SURFACE_BAIT", "MINIMAL"} {
+		s := NewInterpreter()
+		out, code, bait := s.RunWithDeception("cat .env", action)
+		if code != 0 || len(bait) != 1 || bait[0].BaitID != "home-env-file" {
+			t.Fatalf("action=%q: expected .env bait hit unconditionally, got out=%q code=%d bait=%v", action, out, code, bait)
+		}
+
+		s2 := NewInterpreter()
+		out2, code2, bait2 := s2.RunWithDeception("cat .ssh/id_rsa", action)
+		if code2 != 0 || len(bait2) != 1 || bait2[0].BaitID != "home-ssh-private-key" {
+			t.Fatalf("action=%q: expected id_rsa bait hit unconditionally, got out=%q code=%d bait=%v", action, out2, code2, bait2)
+		}
 	}
 }
