@@ -362,25 +362,47 @@ func handleChannels(conn net.Conn, idleTimeout time.Duration, chans <-chan ssh.N
 }
 
 // applyDeception asks the deception policy (if enabled) how to respond to
-// one command, and -- only when the policy is also allowed to change shell
-// output (deceptionRuntime.ApplyActions) -- realizes that decision against
-// the response/exit code, sleeping any added delay before returning so the
-// caller can write the (possibly unchanged) response as-is afterward.
+// one command, runs the interpreter exactly once, and -- only when the
+// policy is also allowed to change shell output (deceptionRuntime.ApplyActions)
+// -- realizes that decision against both the shell's rendered output
+// (ENRICH/SURFACE_BAIT, realized inside internal/shell since they need to
+// change what ls/cat render) and the post-execution response/exit code
+// (STALL/FAKE_SUCCESS, realized by deception.Apply), sleeping any added
+// delay before returning so the caller can write the response as-is
+// afterward.
+//
+// The decision is made BEFORE execution (via a cheap pre-execution bait
+// heuristic, shell.LooksLikeBaitAccess) rather than after, specifically so
+// ENRICH/SURFACE_BAIT can be threaded into the one and only interpreter run
+// -- Interpreter is stateful (Cwd/Env persist via cd/export), so running it
+// twice per command to get a decision and then a "real" run would silently
+// double-apply state changes.
 //
 // A nil deceptionRuntime (the feature is off) returns the response/code
 // unchanged and a nil action, matching today's exact behavior. Decide()
 // itself already fails safe to ActionMinimal on any error talking to the
-// inference service, so this never blocks or crashes command handling.
-func applyDeception(deceptionRuntime *deception.Runtime, sessionID, command string, baitHit bool, response string, code int) (string, int, *string) {
+// inference service, so this never blocks or crashes command handling. In
+// shadow mode (ApplyActions == false) the decision is still made and
+// returned for logging, but execAction is left "" so the interpreter runs
+// exactly as Run always has -- attacker-visible output is untouched.
+func applyDeception(deceptionRuntime *deception.Runtime, interp *shell.Interpreter, sessionID, command string) (response string, code int, baitHits []shell.BaitHit, deceptionAction *string) {
 	if deceptionRuntime == nil {
-		return response, code, nil
+		response, code, baitHits = interp.Run(command)
+		return response, code, baitHits, nil
 	}
 
-	decision, err := deceptionRuntime.Client.Decide(sessionID, command, baitHit)
+	baitHint := shell.LooksLikeBaitAccess(command)
+	decision, err := deceptionRuntime.Client.Decide(sessionID, command, baitHint)
 	if err != nil {
 		log.Printf("Deception decide failed, falling back to %s: %v", decision.Action, err)
 	}
 	action := decision.Action
+
+	execAction := ""
+	if deceptionRuntime.ApplyActions {
+		execAction = action
+	}
+	response, code, baitHits = interp.RunWithDeception(command, execAction)
 
 	if deceptionRuntime.ApplyActions {
 		var delay time.Duration
@@ -390,7 +412,7 @@ func applyDeception(deceptionRuntime *deception.Runtime, sessionID, command stri
 		}
 	}
 
-	return response, code, &action
+	return response, code, baitHits, &action
 }
 
 func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh.Channel, requests <-chan *ssh.Request, guard *sessionGuard, deceptionRuntime *deception.Runtime) {
@@ -419,8 +441,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 
 			interp := shell.NewInterpreter()
 			beforeCwd := interp.Cwd
-			response, code, baitHits := interp.Run(payload.Command)
-			response, code, deceptionAction := applyDeception(deceptionRuntime, guard.sessionID(), payload.Command, len(baitHits) > 0, response, code)
+			response, code, baitHits, deceptionAction := applyDeception(deceptionRuntime, interp, guard.sessionID(), payload.Command)
 			if response != "" {
 				fmt.Fprintf(channel, "%s\r\n", response)
 			}
@@ -534,8 +555,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 				}
 
 				beforeCwd := interp.Cwd
-				response, code, baitHits := interp.Run(cli)
-				response, code, deceptionAction := applyDeception(deceptionRuntime, guard.sessionID(), cli, len(baitHits) > 0, response, code)
+				response, code, baitHits, deceptionAction := applyDeception(deceptionRuntime, interp, guard.sessionID(), cli)
 
 				cmd := session.Command{
 					EventID:          uuid.New().String(),
