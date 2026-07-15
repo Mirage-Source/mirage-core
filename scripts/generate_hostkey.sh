@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Generate the SSH host key the honeypot core presents to attackers.
-# The core fatals if core/config/hostkey is missing. Run once before `up`.
+# The core fatals if config/hostkey is missing. Run once before `up`.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KEY="$HERE/core/config/hostkey"
+KEY="$HERE/config/hostkey"
 
 mkdir -p "$(dirname "$KEY")"
 if [[ -f "$KEY" ]]; then

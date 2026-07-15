@@ -13,7 +13,7 @@
 -- e.g.:
 --
 --     docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
---         < db/init/003_deception.sql
+--         < internal/store/migrations/003_deception.sql
 --
 -- ADD COLUMN ... TEXT (nullable, no default) is a metadata-only change on
 -- PostgreSQL -- it does not rewrite the existing table and takes a brief
