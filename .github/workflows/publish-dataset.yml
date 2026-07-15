@@ -51,6 +51,16 @@ jobs:
             --out-dir ../gh-pages/dataset \
             --version "${{ steps.version.outputs.version }}"
 
+      - name: Run commands export
+        working-directory: main
+        run: |
+          python3 scripts/export_commands_dataset.py \
+            --api-url "${{ secrets.API_URL }}" \
+            --api-key "${{ secrets.API_KEY }}" \
+            --out-dir ../gh-pages/dataset \
+            --version "${{ steps.version.outputs.version }}" \
+            --ip-salt "${{ secrets.IP_SALT }}"
+
       - name: Generate report
         working-directory: main
         run: |
