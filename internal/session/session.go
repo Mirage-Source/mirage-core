@@ -97,6 +97,8 @@ type Command struct {
 	ParsedCommand        string   `json:"parsed_command"`
 	ParsedArgs           []string `json:"parsed_args"`
 	WorkingDirectory     string   `json:"working_directory"`
+	Response             *string  `json:"response"`
+	ExitCode             *int     `json:"exit_code"`
 	ResponseSource       ResponseSource `json:"response_source"`
 	DeceptionAction      *string  `json:"deception_action"`
 }
