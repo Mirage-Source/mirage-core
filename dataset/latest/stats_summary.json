@@ -1,13 +1,17 @@
 {
-  "total_sessions": 75987,
-  "unique_ips": 244,
-  "zero_command_sessions": 74397,
-  "zero_command_pct": 97.91,
-  "geo_unmatched_ips": 26,
+  "total_sessions": 102402,
+  "unique_ips": 797,
+  "zero_command_sessions": 99926,
+  "zero_command_pct": 97.58,
+  "geo_unmatched_ips": 33,
   "ssh_banners": [
     [
       "SSH-2.0-Go",
-      74710
+      96923
+    ],
+    [
+      "SSH-2.0-libssh_0.9.6",
+      2514
     ],
     [
       "",
@@ -15,95 +19,95 @@
     ],
     [
       "SSH-2.0-OpenSSH_7.4",
-      38
+      580
+    ],
+    [
+      "SSH-2.0-libssh_0.7.4",
+      560
+    ],
+    [
+      "SSH-2.0-libssh_0.11.1",
+      398
     ],
     [
       "SSH-2.0-PuTTY_Release_0.84",
-      20
+      164
+    ],
+    [
+      "SSH-2.0-AsyncSSH_2.1.0",
+      22
     ],
     [
       "SSH-2.0-paramiko_5.0.0",
       13
     ],
     [
-      "SSH-2.0-libssh2_1.11.0",
-      5
-    ],
-    [
-      "SSH-2.0-AsyncSSH_2.23.0",
-      4
-    ],
-    [
-      "SSH-2.0-libssh_0.9.6",
-      2
-    ],
-    [
-      "SSH-2.0-OpenSSH_7.9p1 Raspbian-10+deb10u2",
-      2
-    ],
-    [
-      "SSH-2.0-OpenSSH_7.9p1 Raspbian-10+deb10u2+rpt1",
-      2
+      "SSH-2.0-libssh2_1.10.0",
+      9
     ]
   ],
   "top_countries": [
     [
       "NL",
-      43886
+      50441
     ],
     [
       "IN",
-      13171
+      13477
     ],
     [
       "GB",
-      8286
+      10009
+    ],
+    [
+      "VN",
+      8711
     ],
     [
       "BG",
-      6066
+      7017
     ],
     [
       "US",
-      1547
-    ],
-    [
-      "DE",
-      642
-    ],
-    [
-      "AD",
-      594
-    ],
-    [
-      "SE",
-      250
+      5622
     ],
     [
       "CN",
-      100
+      1318
     ],
     [
-      "SG",
-      88
+      "DE",
+      1091
+    ],
+    [
+      "AD",
+      657
+    ],
+    [
+      "SE",
+      320
     ]
   ],
   "top_asns": [
     [
       "Pfcloud UG (haftungsbeschrankt)",
-      28766
+      33331
     ],
     [
       "TELEINDIA NETWORKS PRIVATE LIMITED",
       13082
     ],
     [
-      "Datacamp Limited",
-      7562
+      "LLC VASH KREDIT BANK",
+      7857
     ],
     [
-      "LLC VASH KREDIT BANK",
-      6951
+      "Netnam Company",
+      7692
+    ],
+    [
+      "Datacamp Limited",
+      7562
     ],
     [
       "Offshore LC",
@@ -111,7 +115,11 @@
     ],
     [
       "UNMANAGED LTD",
-      2510
+      3624
+    ],
+    [
+      "RoyaleHosting BV",
+      3555
     ],
     [
       "Fiba Cloud Operation Company, LLC",
@@ -119,15 +127,7 @@
     ],
     [
       "Netiface Limited",
-      635
-    ],
-    [
-      "TECHOFF SRV LIMITED",
-      594
-    ],
-    [
-      "VPSVAULT.HOST LTD",
-      248
+      689
     ]
   ],
   "coordinated_ip_groups": [
@@ -180,6 +180,7 @@
       "window_start_ms": 1782263700000
     }
   ],
-  "generated_at": "1783835726405",
-  "version": "v4"
+  "generated_at": "1784208985063",
+  "version": "v5",
+  "ip_anonymized": false
 }

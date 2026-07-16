@@ -1,25 +1,25 @@
-# MIRAGE Honeypot Dataset — v4
+# MIRAGE Honeypot Dataset — v5
 
-Generated from live capture data. Snapshot covers **75,987 sessions** across **244 unique source IPs**.
+Generated from live capture data. Snapshot covers **102,402 sessions** across **797 unique source IPs**.
 
 ## Headline finding
 
-**74,397 of 75,987 sessions (97.91%) executed zero commands** after authentication. The remainder (2.09%) reached the interactive shell and executed real commands — the honeypot is no longer purely a credential-stuffing sink.
+**99,926 of 102,402 sessions (97.58%) executed zero commands** after authentication. The remainder (2.42%) reached the interactive shell and executed real commands — the honeypot is no longer purely a credential-stuffing sink.
 
 ## SSH client banners
 
 | Banner | Sessions |
 |---|---|
-| `SSH-2.0-Go` | 74,710 |
+| `SSH-2.0-Go` | 96,923 |
+| `SSH-2.0-libssh_0.9.6` | 2,514 |
 | *(unknown — rejected sessions recorded before this was tracked)* | 1,189 |
-| `SSH-2.0-OpenSSH_7.4` | 38 |
-| `SSH-2.0-PuTTY_Release_0.84` | 20 |
+| `SSH-2.0-OpenSSH_7.4` | 580 |
+| `SSH-2.0-libssh_0.7.4` | 560 |
+| `SSH-2.0-libssh_0.11.1` | 398 |
+| `SSH-2.0-PuTTY_Release_0.84` | 164 |
+| `SSH-2.0-AsyncSSH_2.1.0` | 22 |
 | `SSH-2.0-paramiko_5.0.0` | 13 |
-| `SSH-2.0-libssh2_1.11.0` | 5 |
-| `SSH-2.0-AsyncSSH_2.23.0` | 4 |
-| `SSH-2.0-libssh_0.9.6` | 2 |
-| `SSH-2.0-OpenSSH_7.9p1 Raspbian-10+deb10u2` | 2 |
-| `SSH-2.0-OpenSSH_7.9p1 Raspbian-10+deb10u2+rpt1` | 2 |
+| `SSH-2.0-libssh2_1.10.0` | 9 |
 
 ## Coordinated infrastructure
 
@@ -57,38 +57,38 @@ Groups of 3+ distinct source IPs that authenticated with the same credential via
 
 | ASN Name | Sessions |
 |---|---|
-| Pfcloud UG (haftungsbeschrankt) | 28,766 |
+| Pfcloud UG (haftungsbeschrankt) | 33,331 |
 | TELEINDIA NETWORKS PRIVATE LIMITED | 13,082 |
+| LLC VASH KREDIT BANK | 7,857 |
+| Netnam Company | 7,692 |
 | Datacamp Limited | 7,562 |
-| LLC VASH KREDIT BANK | 6,951 |
 | Offshore LC | 5,570 |
-| UNMANAGED LTD | 2,510 |
+| UNMANAGED LTD | 3,624 |
+| RoyaleHosting BV | 3,555 |
 | Fiba Cloud Operation Company, LLC | 1,522 |
-| Netiface Limited | 635 |
-| TECHOFF SRV LIMITED | 594 |
-| VPSVAULT.HOST LTD | 248 |
+| Netiface Limited | 689 |
 
 ## Top source countries (full dataset)
 
 | Country | Sessions |
 |---|---|
-| NL | 43,886 |
-| IN | 13,171 |
-| GB | 8,286 |
-| BG | 6,066 |
-| US | 1,547 |
-| DE | 642 |
-| AD | 594 |
-| SE | 250 |
-| CN | 100 |
-| SG | 88 |
+| NL | 50,441 |
+| IN | 13,477 |
+| GB | 10,009 |
+| VN | 8,711 |
+| BG | 7,017 |
+| US | 5,622 |
+| CN | 1,318 |
+| DE | 1,091 |
+| AD | 657 |
+| SE | 320 |
 
 ## Data notes
 
-- 26 of 244 source IPs could not be resolved to an ASN in this snapshot's pinned DB-IP data (coverage gap, not a classification result).
+- 33 of 797 source IPs could not be resolved to an ASN in this snapshot's pinned DB-IP data (coverage gap, not a classification result).
 - `attacker_class` and `classifier_confidence` in the underlying dataset currently reflect interpretable weak-label heuristics (banner signature, auth pattern), not a trained ML classifier. A trained behavioural classifier is in development; this snapshot predates it.
 - ASN/country attribution: [DB-IP](https://db-ip.com), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 ---
 
-*Generated 2026-07-12 05:55 UTC. Dataset version: v4.*
+*Generated 2026-07-16 13:36 UTC. Dataset version: v5.*

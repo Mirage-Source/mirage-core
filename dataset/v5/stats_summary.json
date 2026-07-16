@@ -1,0 +1,186 @@
+{
+  "total_sessions": 102402,
+  "unique_ips": 797,
+  "zero_command_sessions": 99926,
+  "zero_command_pct": 97.58,
+  "geo_unmatched_ips": 33,
+  "ssh_banners": [
+    [
+      "SSH-2.0-Go",
+      96923
+    ],
+    [
+      "SSH-2.0-libssh_0.9.6",
+      2514
+    ],
+    [
+      "",
+      1189
+    ],
+    [
+      "SSH-2.0-OpenSSH_7.4",
+      580
+    ],
+    [
+      "SSH-2.0-libssh_0.7.4",
+      560
+    ],
+    [
+      "SSH-2.0-libssh_0.11.1",
+      398
+    ],
+    [
+      "SSH-2.0-PuTTY_Release_0.84",
+      164
+    ],
+    [
+      "SSH-2.0-AsyncSSH_2.1.0",
+      22
+    ],
+    [
+      "SSH-2.0-paramiko_5.0.0",
+      13
+    ],
+    [
+      "SSH-2.0-libssh2_1.10.0",
+      9
+    ]
+  ],
+  "top_countries": [
+    [
+      "NL",
+      50441
+    ],
+    [
+      "IN",
+      13477
+    ],
+    [
+      "GB",
+      10009
+    ],
+    [
+      "VN",
+      8711
+    ],
+    [
+      "BG",
+      7017
+    ],
+    [
+      "US",
+      5622
+    ],
+    [
+      "CN",
+      1318
+    ],
+    [
+      "DE",
+      1091
+    ],
+    [
+      "AD",
+      657
+    ],
+    [
+      "SE",
+      320
+    ]
+  ],
+  "top_asns": [
+    [
+      "Pfcloud UG (haftungsbeschrankt)",
+      33331
+    ],
+    [
+      "TELEINDIA NETWORKS PRIVATE LIMITED",
+      13082
+    ],
+    [
+      "LLC VASH KREDIT BANK",
+      7857
+    ],
+    [
+      "Netnam Company",
+      7692
+    ],
+    [
+      "Datacamp Limited",
+      7562
+    ],
+    [
+      "Offshore LC",
+      5570
+    ],
+    [
+      "UNMANAGED LTD",
+      3624
+    ],
+    [
+      "RoyaleHosting BV",
+      3555
+    ],
+    [
+      "Fiba Cloud Operation Company, LLC",
+      1522
+    ],
+    [
+      "Netiface Limited",
+      689
+    ]
+  ],
+  "coordinated_ip_groups": [
+    {
+      "count": 3,
+      "ips": [
+        "103.98.149.87",
+        "77.94.47.83",
+        "80.66.85.226"
+      ],
+      "username": "root",
+      "credential": "checking!@!@%",
+      "ssh_client_banner": "SSH-2.0-Go",
+      "window_start_ms": 1783821900000
+    },
+    {
+      "count": 3,
+      "ips": [
+        "176.65.132.129",
+        "192.109.200.78",
+        "91.92.42.7"
+      ],
+      "username": "root",
+      "credential": "p@ssword",
+      "ssh_client_banner": "SSH-2.0-Go",
+      "window_start_ms": 1782264300000
+    },
+    {
+      "count": 3,
+      "ips": [
+        "176.65.132.129",
+        "192.109.200.78",
+        "91.92.42.7"
+      ],
+      "username": "aaa",
+      "credential": "123456",
+      "ssh_client_banner": "SSH-2.0-Go",
+      "window_start_ms": 1782264000000
+    },
+    {
+      "count": 3,
+      "ips": [
+        "176.65.132.129",
+        "192.109.200.78",
+        "91.92.42.7"
+      ],
+      "username": "root",
+      "credential": "test123",
+      "ssh_client_banner": "SSH-2.0-Go",
+      "window_start_ms": 1782263700000
+    }
+  ],
+  "generated_at": "1784208985063",
+  "version": "v5",
+  "ip_anonymized": false
+}
