@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MIRAGE — drawing set for a server that does not exist</title>
-<meta name="description" content="Construction documents for MIRAGE: a production SSH honeypot and internet measurement platform. 52,000+ real attacker sessions captured, structured threat intelligence produced.">
+<meta name="description" content="Construction documents for MIRAGE: a production SSH honeypot and internet measurement platform. 100,000+ real attacker sessions captured, structured threat intelligence produced.">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Caveat:wght@600&display=swap');
 
@@ -215,8 +215,8 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
       <span class="hero-note">nothing in this building is load-bearing →</span>
 
       <div class="dims">
-        <div class="dim"><b>44,000+</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Sessions captured</span></div>
-        <div class="dim"><b>96+</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Unique source IPs</span></div>
+        <div class="dim"><b>100,000+</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Sessions captured</span></div>
+        <div class="dim"><b>750+</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Unique source IPs</span></div>
         <div class="dim"><b>1</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Sensor live · Frankfurt</span></div>
         <div class="dim"><b>Live</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Continuous capture</span></div>
       </div>
@@ -459,7 +459,7 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
           <tr>
             <td class="it">B</td>
             <td><a href="https://github.com/Mirage-Source/mirage-core/blob/gh-pages/dataset/latest/REPORT.md">Dataset</a></td>
-            <td>52,000+ sessions with attacker classification, MITRE ATT&CK mapping, and STIX 2.1 bundles. Dataset updated weekly.</td>
+            <td>100,000+ sessions with attacker classification, MITRE ATT&CK mapping, and STIX 2.1 bundles, plus a per-command <a href="https://github.com/Mirage-Source/mirage-core/blob/gh-pages/dataset/latest/commands.jsonl">commands.jsonl</a> export (command text, response, exit code) for LLM training. Dataset updated weekly.</td>
             <td><span class="ok">&#8594; ISSUED</span></td>
           </tr>
           <tr>
@@ -471,7 +471,7 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
           <tr>
             <td class="it">D</td>
             <td>REST API</td>
-            <td>Live queryable threat intelligence. GET /api/stats, GET /api/sessions, GET /api/sessions/{id}/report with full STIX 2.1 bundle. Key-authenticated.</td>
+            <td>Live queryable threat intelligence. GET /api/stats, GET /api/sessions, GET /api/sessions/{id}/report with full STIX 2.1 bundle, GET /api/export/commands for paginated per-command bulk export. Key-authenticated.</td>
             <td><span class="ok">&#8594; ISSUED</span></td>
           </tr>
         </tbody>
@@ -482,9 +482,9 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
 
     <div class="title-block">
       <div class="tb"><i>Project</i><b>MIRAGE — DECEPTION INFRASTRUCTURE</b></div>
-      <div class="tb"><i>Drawing no.</i><b>A-01 · REV 2.0</b></div>
+      <div class="tb"><i>Drawing no.</i><b>A-01 · REV 2.1</b></div>
       <div class="tb"><i>Scale</i><b>NTS</b></div>
-      <div class="tb"><i>Date</i><b>2026-06</b></div>
+      <div class="tb"><i>Date</i><b>2026-07</b></div>
       <div class="tb"><i>Drawn / checked</i><b><a href="https://github.com/vinayaktyagi10">vinayaktyagi10</a> · <a href="https://github.com/Vangax">Vangax</a></b></div>
     </div>
     <div class="title-block" style="margin-top:0;border-top:1px solid var(--hairline);grid-template-columns:1fr 1fr">
