@@ -10,15 +10,24 @@
 --     docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
 --         < internal/store/migrations/005_ml_intelligence_catchup.sql
 --
--- Idempotent (IF NOT EXISTS / OR REPLACE throughout), safe to re-run,
+-- Idempotent (IF NOT EXISTS / DROP+CREATE throughout), safe to re-run,
 -- including against a fresh instance that already has these columns from
 -- db/init/002_ml_intelligence.sql.
+--
+-- Uses DROP + CREATE rather than CREATE OR REPLACE for the view: Postgres
+-- only allows CREATE OR REPLACE VIEW to *append* trailing columns to an
+-- existing view, not reorder/rename them, and on the VPS this view predated
+-- the ML columns with a different column order -- CREATE OR REPLACE failed
+-- with "cannot change name of view column ... to severity" until this was
+-- switched to an unconditional drop.
 
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS stix_bundle JSONB;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS severity TEXT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS recommended_actions JSONB;
 
-CREATE OR REPLACE VIEW enriched_sessions AS
+DROP VIEW IF EXISTS enriched_sessions;
+
+CREATE VIEW enriched_sessions AS
 SELECT
     s.session_id,
     s.client_ip,
