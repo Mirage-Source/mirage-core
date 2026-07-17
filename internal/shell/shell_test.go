@@ -32,6 +32,19 @@ func TestBaitFires(t *testing.T) {
 	}
 }
 
+func TestCdTildeExpansion(t *testing.T) {
+	s := NewInterpreter()
+	if _, code, _ := s.Run("cd /etc"); code != 0 {
+		t.Fatalf("cd /etc failed")
+	}
+	if _, code, _ := s.Run("cd ~"); code != 0 || s.Cwd != homeDir {
+		t.Fatalf("cd ~ should return to %s, got cwd=%s code=%d", homeDir, s.Cwd, code)
+	}
+	if _, code, _ := s.Run("cd ~/.ssh"); code != 0 || s.Cwd != homeDir+"/.ssh" {
+		t.Fatalf("cd ~/.ssh should resolve under home, got cwd=%s code=%d", s.Cwd, code)
+	}
+}
+
 func TestUnameNoLongerCommandNotFound(t *testing.T) {
 	s := NewInterpreter()
 	out, code, _ := s.Run("uname -s -v -n -r -m")

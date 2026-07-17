@@ -338,6 +338,11 @@ func resolvePath(cwd, target string) string {
 	if target == "" {
 		return cwd
 	}
+	if target == "~" {
+		target = homeDir
+	} else if strings.HasPrefix(target, "~/") {
+		target = homeDir + target[1:]
+	}
 	if strings.HasPrefix(target, "/") {
 		return path.Clean(target)
 	}
