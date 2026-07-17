@@ -1,0 +1,102 @@
+{
+  "panels": [
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        }
+      },
+      "gridPos": {
+        "h": 16,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "ts"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT session_id, client_ip, to_timestamp(start_ms/1000) AS ts, attacker_class, classifier_confidence, severity, cluster_id, tool_signature, timing_label, bait_hit_count, command_count, outcome FROM enriched_sessions ORDER BY start_ms DESC LIMIT 200",
+          "refId": "A"
+        }
+      ],
+      "title": "Enriched Sessions",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        }
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "id": 2,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT attacker_class, severity, count(*) AS sessions, avg(classifier_confidence) AS avg_confidence, sum(bait_hit_count) AS total_bait_hits FROM enriched_sessions WHERE attacker_class IS NOT NULL GROUP BY attacker_class, severity ORDER BY sessions DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Attacker Classes",
+      "type": "table"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["mirage"],
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "timezone": "utc",
+  "title": "MIRAGE — Threat Intel",
+  "uid": "mirage-intel"
+}

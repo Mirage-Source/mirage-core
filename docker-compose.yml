@@ -176,7 +176,10 @@ services:
   grafana:
     image: grafana/grafana:10.4.0
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     volumes:
       - grafana_data:/var/lib/grafana
       - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -185,6 +188,8 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-mirage}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/"
+      DB_NAME: ${DB_NAME:-mirage}
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?GRAFANA_DB_PASSWORD must be set}
     ports:
       - "127.0.0.1:3000:3000"
     restart: unless-stopped
