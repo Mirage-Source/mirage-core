@@ -11,11 +11,11 @@ MIRAGE exposes a convincing fake SSH server, captures every credential attempt a
 MIRAGE has been running continuously on a Frankfurt VPS. As of the latest snapshot:
 
 <!-- STATS:START -->
-- **101,474 sessions** captured from **758 unique source IPs** (5,321 in the last 24h)
-- Most repeated credential pair: `root` / `123456` (214 attempts)
+- **103,870 sessions** captured from **843 unique source IPs** (2,391 in the last 24h)
+- Most repeated credential pair: `support` / `support` (236 attempts)
 - **4 coordinated credential-stuffing windows** identified, across 6 distinct IPs sharing the same credential and SSH client banner within a 5-minute window
 
-_Last updated automatically: 2026-07-16T02:22:14Z_
+_Last updated automatically: 2026-07-17T02:25:00Z_
 <!-- STATS:END -->
 
 The block above is regenerated automatically from the live dataset (see [Keeping this README current](#keeping-this-readme-current)). Sessions that authenticate against the seeded weak-credential list go on to interact with a stateful fake shell; the rest are rejected like a real, minimally hardened `sshd` would reject them.
