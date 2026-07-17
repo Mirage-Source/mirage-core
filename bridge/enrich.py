@@ -1,7 +1,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -12,6 +14,40 @@ from mirage.intel.pipeline import IntelPipeline
 from .config import BridgeConfig
 
 __all__ = ["EnrichmentResult", "Enricher"]
+
+#: Minimum commands before a session is eligible for hash-based clustering --
+#: below this, too many unrelated sessions would share a near-empty
+#: normalized payload (e.g. a lone "ls") and collapse into a meaningless
+#: cluster.
+_MIN_COMMANDS_FOR_HASH_CLUSTER = 2
+
+_IPV4_RE = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
+
+
+def _hash_cluster(session: Any) -> str | None:
+    """Stopgap payload-fingerprint clustering, used while the real embedder
+    (:meth:`Enricher._assign_cluster`) is untrained and idle.
+
+    Hashes the session's normalized raw command sequence (IPv4 addresses
+    replaced with a placeholder, so the same script pointed at a different
+    C2/proxy IP per bot instance still matches) so sessions that received the
+    same or near-identical attack payload land in the same cluster -- e.g.
+    the ``mdrfckr`` SSH-key backdoor-implant payload seen reused verbatim
+    across many bot IPs. This only catches exact/near-exact literal reuse,
+    not behaviorally-similar-but-differently-worded attacks; that needs a
+    trained embedding model, not a hash.
+    """
+    if len(session.commands) < _MIN_COMMANDS_FOR_HASH_CLUSTER:
+        return None
+    normalized = "\n".join(
+        _IPV4_RE.sub("<ip>", cmd.raw.strip())
+        for cmd in session.commands
+        if cmd.raw.strip()
+    )
+    if not normalized:
+        return None
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]
+    return f"payload:{digest}"
 
 
 @dataclass
@@ -216,6 +252,9 @@ class Enricher:
             model_version = self.config.model_version
             trajectory = self._trajectory(hidden)
             cluster_id = self._assign_cluster(embedding)
+
+        if cluster_id is None:
+            cluster_id = _hash_cluster(session)
 
         # -- Phase-4 intelligence (classification + MITRE + summary) --------
         intel = self._pipeline.enrich(
