@@ -338,12 +338,7 @@ func envBool(key string, fallback bool) bool {
 	return b
 }
 
-// resolveRemoteAddr decides what to record as the attacker's real address
-// and ingress metadata for one connection. pp is non-nil only when
-// TRUST_PROXY_PROTOCOL is enabled; a nil pp, or one that never saw a valid
-// PROXY header on this particular connection, falls back to fallback (the
-// real TCP peer address) unchanged -- byte-for-byte the same values that
-// were recorded before this feature existed.
+
 func resolveRemoteAddr(pp *proxyproto.Conn, fallback net.Addr) (addr *net.TCPAddr, ingressSource, proxyNodeID string) {
 	if pp != nil {
 		if tcpAddr, dstRaw, found := pp.RealRemoteAddr(); found {
@@ -378,12 +373,7 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGua
 	conn.SetDeadline(time.Now().Add(idleTimeout))
 
 	remoteAddr := conn.RemoteAddr()
-	// conn may be a *proxyproto.Conn (see the accept loop in Start, which
-	// only wraps when TRUST_PROXY_PROTOCOL is on); recovered here via type
-	// assertion rather than an extra parameter threaded through every call
-	// in between. A conn that was never wrapped simply yields pp == nil,
-	// and resolveRemoteAddr's existing nil-pp fallback handles that exactly
-	// like today.
+
 	pp, _ := conn.(*proxyproto.Conn)
 
 	guard.sess.Network.SSHClientBanner = string(sshConn.ClientVersion())
@@ -434,27 +424,7 @@ func handleChannels(conn net.Conn, idleTimeout time.Duration, chans <-chan ssh.N
 // applyDeception asks the deception policy (if enabled) how to respond to
 // one command, runs the interpreter exactly once, and -- only when the
 // policy is also allowed to change shell output (deceptionRuntime.ApplyActions)
-// -- realizes that decision against both the shell's rendered output
-// (ENRICH/SURFACE_BAIT, realized inside internal/shell since they need to
-// change what ls/cat render) and the post-execution response/exit code
-// (STALL/FAKE_SUCCESS, realized by deception.Apply), sleeping any added
-// delay before returning so the caller can write the response as-is
-// afterward.
-//
-// The decision is made BEFORE execution (via a cheap pre-execution bait
-// heuristic, shell.LooksLikeBaitAccess) rather than after, specifically so
-// ENRICH/SURFACE_BAIT can be threaded into the one and only interpreter run
-// -- Interpreter is stateful (Cwd/Env persist via cd/export), so running it
-// twice per command to get a decision and then a "real" run would silently
-// double-apply state changes.
-//
-// A nil deceptionRuntime (the feature is off) returns the response/code
-// unchanged and a nil action, matching today's exact behavior. Decide()
-// itself already fails safe to ActionMinimal on any error talking to the
-// inference service, so this never blocks or crashes command handling. In
-// shadow mode (ApplyActions == false) the decision is still made and
-// returned for logging, but execAction is left "" so the interpreter runs
-// exactly as Run always has -- attacker-visible output is untouched.
+
 func applyDeception(deceptionRuntime *deception.Runtime, interp *shell.Interpreter, sessionID, command string) (response string, code int, baitHits []shell.BaitHit, deceptionAction *string) {
 	if deceptionRuntime == nil {
 		response, code, baitHits = interp.Run(command)
