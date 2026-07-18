@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/mirage-source/mirage-core/internal/deception"
+	"github.com/mirage-source/mirage-core/internal/proxyproto"
 	"github.com/mirage-source/mirage-core/internal/session"
 	"github.com/mirage-source/mirage-core/internal/shell"
 	"github.com/mirage-source/mirage-core/internal/store"
@@ -146,6 +147,21 @@ func Start(addr string) {
 	maxConnections := envInt("MAX_CONCURRENT_CONNECTIONS", defaultMaxConcurrentConnections)
 	log.Printf("Max concurrent connections: %d", maxConnections)
 
+	// Off by default, and deliberately so: turning this on tells Mirage to
+	// believe a PROXY protocol v1 header prepended to the raw TCP stream
+	// over conn.RemoteAddr() for that connection. That's correct and
+	// necessary when every connection reaching this listener is guaranteed
+	// to come through a trusted relay/load balancer that prepends one -- but
+	// on a listener directly reachable from the open internet it would let
+	// literally anyone claim any source IP they want, silently poisoning
+	// every downstream log/classification/re-identification signal. Never
+	// enable this unless something in front of Mirage is the only thing
+	// that can reach this port.
+	trustProxyProtocol := envBool("TRUST_PROXY_PROTOCOL", false)
+	if trustProxyProtocol {
+		log.Printf("Trusting PROXY protocol v1 headers on incoming connections (TRUST_PROXY_PROTOCOL=true)")
+	}
+
 	deceptionRuntime := deception.NewRuntime(deception.ConfigFromEnv())
 	if deceptionRuntime == nil {
 		log.Printf("Deception policy: disabled")
@@ -188,6 +204,19 @@ func Start(addr string) {
 			continue
 		}
 
+		// Wrapping here, before the per-connection goroutine, is what lets
+		// handleConnection recover it later with a plain type assertion
+		// (conn.(*proxyproto.Conn)) instead of threading an extra parameter
+		// through every call in between. Wrap itself does no I/O -- header
+		// detection happens lazily on first Read, so this can never block
+		// the accept loop.
+		var handlerConn net.Conn = conn
+		var pp *proxyproto.Conn
+		if trustProxyProtocol {
+			pp = proxyproto.Wrap(conn)
+			handlerConn = pp
+		}
+
 		sess := session.Session{
 			SessionID:     uuid.New().String(),
 			SchemaVersion: "1.1",
@@ -215,9 +244,11 @@ func Start(addr string) {
 				// post-handshake assignment, which used to leave every
 				// auth_failed session with a blank client_ip/banner.
 				sess.Network.SSHClientBanner = string(conn.ClientVersion())
-				if tcpAddr, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
+				if tcpAddr, ingressSource, proxyNodeID := resolveRemoteAddr(pp, conn.RemoteAddr()); tcpAddr != nil {
 					sess.Network.ClientIP = tcpAddr.IP.String()
 					sess.Network.ClientPort = tcpAddr.Port
+					sess.Network.IngressSource = ingressSource
+					sess.Network.ProxyNodeID = proxyNodeID
 				}
 
 				sess.AuthAttempts = append(sess.AuthAttempts, session.AuthAttempt{
@@ -242,7 +273,7 @@ func Start(addr string) {
 		guard := &sessionGuard{sess: &sess}
 		go func() {
 			defer func() { <-connSlots }()
-			handleConnection(conn, config, guard, db, idleTimeout, handshakeTimeout, deceptionRuntime)
+			handleConnection(handlerConn, config, guard, db, idleTimeout, handshakeTimeout, deceptionRuntime)
 		}() //this will handle the connection concurrently, bounded by connSlots
 	}
 }
@@ -295,6 +326,36 @@ func envInt(key string, fallback int) int {
 	return n
 }
 
+func envBool(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return fallback
+	}
+	return b
+}
+
+// resolveRemoteAddr decides what to record as the attacker's real address
+// and ingress metadata for one connection. pp is non-nil only when
+// TRUST_PROXY_PROTOCOL is enabled; a nil pp, or one that never saw a valid
+// PROXY header on this particular connection, falls back to fallback (the
+// real TCP peer address) unchanged -- byte-for-byte the same values that
+// were recorded before this feature existed.
+func resolveRemoteAddr(pp *proxyproto.Conn, fallback net.Addr) (addr *net.TCPAddr, ingressSource, proxyNodeID string) {
+	if pp != nil {
+		if tcpAddr, dstRaw, found := pp.RealRemoteAddr(); found {
+			return tcpAddr, session.IngressSourceProxied, dstRaw
+		}
+	}
+	if tcpAddr, ok := fallback.(*net.TCPAddr); ok {
+		return tcpAddr, session.IngressSourceDirect, ""
+	}
+	return nil, session.IngressSourceDirect, ""
+}
+
 func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGuard, db *sql.DB, idleTimeout, handshakeTimeout time.Duration, deceptionRuntime *deception.Runtime) {
 	defer conn.Close()
 
@@ -317,12 +378,21 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGua
 	conn.SetDeadline(time.Now().Add(idleTimeout))
 
 	remoteAddr := conn.RemoteAddr()
+	// conn may be a *proxyproto.Conn (see the accept loop in Start, which
+	// only wraps when TRUST_PROXY_PROTOCOL is on); recovered here via type
+	// assertion rather than an extra parameter threaded through every call
+	// in between. A conn that was never wrapped simply yields pp == nil,
+	// and resolveRemoteAddr's existing nil-pp fallback handles that exactly
+	// like today.
+	pp, _ := conn.(*proxyproto.Conn)
 
 	guard.sess.Network.SSHClientBanner = string(sshConn.ClientVersion())
 
-	if tcpAddr, ok := remoteAddr.(*net.TCPAddr); ok {
+	if tcpAddr, ingressSource, proxyNodeID := resolveRemoteAddr(pp, remoteAddr); tcpAddr != nil {
 		guard.sess.Network.ClientIP = tcpAddr.IP.String()
 		guard.sess.Network.ClientPort = tcpAddr.Port
+		guard.sess.Network.IngressSource = ingressSource
+		guard.sess.Network.ProxyNodeID = proxyNodeID
 	}
 
 	if tcpAddr, ok := conn.LocalAddr().(*net.TCPAddr); ok {

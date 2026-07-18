@@ -72,7 +72,24 @@ type Network struct {
 	ClientPort     int    `json:"client_port"`
 	ServerPort     int    `json:"server_port"`
 	SSHClientBanner string `json:"ssh_client_banner"`
+
+	// IngressSource is "direct" unless TRUST_PROXY_PROTOCOL is enabled and a
+	// PROXY protocol v1 header was actually parsed off this connection, in
+	// which case it's "proxied" and ClientIP/ClientPort above are the
+	// header's claimed original client, not the TCP peer that connected to
+	// us. See internal/proxyproto and TRUST_PROXY_PROTOCOL in server.go.
+	IngressSource string `json:"ingress_source"`
+	// ProxyNodeID is the PROXY header's dst-ip field verbatim (kept opaque
+	// -- it isn't necessarily a real IP, see proxyproto.Conn.RealRemoteAddr),
+	// identifying which relay/sensor node this session came through. Empty
+	// when IngressSource is "direct".
+	ProxyNodeID string `json:"proxy_node_id"`
 }
+
+const (
+	IngressSourceDirect  = "direct"
+	IngressSourceProxied = "proxied"
+)
 
 type Timing struct {
 	StartMS   int64  `json:"start_ms"`
