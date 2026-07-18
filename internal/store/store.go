@@ -54,6 +54,7 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 		INSERT INTO sessions (
 			session_id, schema_version, node_id, protocol,
 			client_ip, client_port, server_port, ssh_client_banner,
+			ingress_source, proxy_node_id,
 			start_ms, end_ms, duration_ms, outcome,
 			command_count, bait_hit_count,
 			attacker_class, classifier_confidence, cluster_id,
@@ -62,14 +63,16 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 		) VALUES (
 			$1, $2, $3, $4,
 			$5, $6, $7, $8,
-			$9, $10, $11, $12,
-			$13, $14,
-			$15, $16, $17,
-			$18, $19,
-			$20
+			$9, $10,
+			$11, $12, $13, $14,
+			$15, $16,
+			$17, $18, $19,
+			$20, $21,
+			$22
 		)
 	`, sess.SessionID, sess.SchemaVersion, sess.NodeID, sess.Protocol,
 	   sess.Network.ClientIP, sess.Network.ClientPort, sess.Network.ServerPort, sess.Network.SSHClientBanner,
+	   sess.Network.IngressSource, sess.Network.ProxyNodeID,
 	   sess.Timing.StartMS, sess.Timing.EndMS, sess.Timing.DurationMS, sess.Outcome,
 	   len(sess.Commands), len(sess.BaitEvents),
 	   sess.Intelligence.AttackerClass, sess.Intelligence.ClassifierConfidence, sess.Intelligence.ClusterID,
