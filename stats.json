@@ -1,8 +1,8 @@
 {
-  "total_sessions": 110339,
-  "unique_ips": 952,
-  "sessions_last_24h": 6502,
-  "sessions_last_7d": 39894,
+  "total_sessions": 111419,
+  "unique_ips": 976,
+  "sessions_last_24h": 1036,
+  "sessions_last_7d": 35616,
   "top_ips": [
     {
       "ip": "103.64.129.98",
@@ -21,15 +21,15 @@
       "count": 3044
     },
     {
-      "ip": "45.153.34.235",
-      "count": 2283
-    },
-    {
       "ip": "45.153.34.112",
       "count": 2283
     },
     {
       "ip": "176.65.132.17",
+      "count": 2283
+    },
+    {
+      "ip": "45.153.34.235",
       "count": 2283
     },
     {
@@ -41,34 +41,38 @@
       "count": 2165
     },
     {
-      "ip": "45.153.34.144",
+      "ip": "155.103.69.40",
       "count": 1522
     }
   ],
   "top_usernames": [
     {
       "username": "root",
-      "count": 49478
+      "count": 49844
     },
     {
       "username": "admin",
-      "count": 3724
+      "count": 3816
     },
     {
       "username": "user",
-      "count": 2075
+      "count": 2090
     },
     {
       "username": "ubuntu",
-      "count": 1937
+      "count": 1950
     },
     {
       "username": "deploy",
-      "count": 1514
+      "count": 1525
     },
     {
       "username": "test",
-      "count": 1212
+      "count": 1219
+    },
+    {
+      "username": "ana",
+      "count": 858
     },
     {
       "username": "pi",
@@ -76,135 +80,131 @@
     },
     {
       "username": "debian",
-      "count": 788
+      "count": 798
     },
     {
       "username": "claude",
-      "count": 747
-    },
-    {
-      "username": "guest",
-      "count": 700
+      "count": 749
     }
   ],
   "top_passwords": [
     {
       "password": "123456",
-      "count": 5331
+      "count": 5371
     },
     {
       "password": "123",
-      "count": 3074
+      "count": 3088
     },
     {
       "password": "1234",
-      "count": 2570
+      "count": 2584
     },
     {
       "password": "12345678",
-      "count": 1927
+      "count": 1949
     },
     {
       "password": "password",
-      "count": 1856
+      "count": 1885
     },
     {
       "password": "1",
-      "count": 1825
+      "count": 1831
     },
     {
       "password": "12345",
-      "count": 1733
+      "count": 1754
     },
     {
       "password": "root",
-      "count": 1631
+      "count": 1634
     },
     {
       "password": "123456789",
-      "count": 1374
+      "count": 1389
     },
     {
-      "password": "abc123",
-      "count": 773
+      "password": "111111",
+      "count": 780
     }
   ],
   "top_credentials": [
     {
       "username": "support",
       "password": "support",
-      "count": 273
+      "count": 279
     },
     {
       "username": "root",
       "password": "checking!@!@%",
-      "count": 262
+      "count": 268
     },
     {
       "username": "root",
       "password": "123456",
-      "count": 235
+      "count": 238
     },
     {
       "username": "admin",
       "password": "admin",
-      "count": 218
+      "count": 221
     },
     {
       "username": "root",
       "password": "12345",
-      "count": 209
+      "count": 211
     },
     {
       "username": "root",
       "password": "1234",
-      "count": 202
+      "count": 204
     },
     {
       "username": "root",
       "password": "12345678",
-      "count": 197
+      "count": 199
     },
     {
       "username": "root",
       "password": "123456789",
-      "count": 194
+      "count": 196
     },
     {
       "username": "root",
       "password": "password",
-      "count": 186
+      "count": 188
     },
     {
       "username": "root",
       "password": "111111",
-      "count": 184
+      "count": 186
     }
   ],
   "ssh_banners": [
     {
       "banner": "SSH-2.0-Go",
-      "count": 101742
+      "count": 102030
     },
     {
       "banner": "SSH-2.0-libssh_0.9.6",
-      "count": 4520
+      "count": 4948
     },
     {
       "banner": "",
       "count": 1189
     },
     {
-      "banner": "SSH-2.0-OpenSSH_7.4",
-      "count": 771
+      "banner": "SSH-2.0-libssh_0.7.4",
+      "count": 858
     },
     {
-      "banner": "SSH-2.0-libssh_0.7.4",
-      "count": 650
+      "banner": "SSH-2.0-OpenSSH_7.4",
+      "count": 809
     },
     {
       "banner": "SSH-2.0-libssh_0.11.1",
-      "count": 647
+      "count": 730
     },
     {
       "banner": "SSH-2.0-libssh_0.9.5",
@@ -212,11 +212,11 @@
     },
     {
       "banner": "SSH-2.0-PuTTY_Release_0.84",
-      "count": 229
+      "count": 245
     },
     {
       "banner": "SSH-2.0-AsyncSSH_2.1.0",
-      "count": 22
+      "count": 41
     },
     {
       "banner": "SSH-2.0-libssh2_1.10.0",
@@ -284,31 +284,31 @@
     },
     {
       "hour": 2,
-      "count": 3262
+      "count": 3403
     },
     {
       "hour": 3,
-      "count": 2181
+      "count": 2420
     },
     {
       "hour": 4,
-      "count": 5229
+      "count": 5379
     },
     {
       "hour": 5,
-      "count": 3058
+      "count": 3234
     },
     {
       "hour": 6,
-      "count": 3077
+      "count": 3240
     },
     {
       "hour": 7,
-      "count": 2298
+      "count": 2505
     },
     {
       "hour": 8,
-      "count": 2309
+      "count": 2313
     },
     {
       "hour": 9,
@@ -371,5 +371,5 @@
       "count": 4165
     }
   ],
-  "generated_at": "2026-07-18T02:09:29Z"
+  "generated_at": "2026-07-19T02:26:35Z"
 }
