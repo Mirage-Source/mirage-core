@@ -382,8 +382,9 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
       <span class="sec-tab">Tolerances</span>
       <h2>Known deviations</h2>
       <div class="notes" style="max-width:72ch">
-        <p>Single node, single geography. Frankfurt is a major peering hub — results may overrepresent European-routed traffic. The observation window is too short to characterise seasonal or campaign-level periodicity.</p>
+        <p>Single node, single geography. Frankfurt is a major peering hub — results may overrepresent European-routed traffic. The observation window is too short to characterise seasonal or campaign-level periodicity. The sensor now speaks an opt-in PROXY protocol v1 on ingest, so a future multi-node deployment behind a shared relay can still attribute sessions to their real client IP rather than the relay's — not yet exercised, since today's node is directly exposed with no relay in front of it.</p>
         <p>Early sessions were all credential-stuffing with no shell interaction — a real gap in the sensor at the time, since it accepted any credential and couldn't be distinguished from a working login. The sensor now runs a seeded weak-credential allowlist and a simulated interactive shell, and attacker sessions do execute commands and trigger planted bait files (fake credentials, SSH keys) against it.</p>
+        <p>The emulated shell originally had no pipes or output redirection — real recon one-liners chaining `| grep` or `> file` would dead-end on the first unimplemented operator. It now parses `|` pipelines (with `grep`/`head`/`tail`/`wc` reading the piped input) and `>`/`>>`/`<` redirects, writing into a per-session filesystem overlay so one attacker's writes never leak into another's session.</p>
         <p>ML pipeline is live. MITRE ATT&CK techniques are mapped per session and all sessions are enriched with attacker classification. Current labels are produced by an interpretable weak-label fallback — a trained classifier checkpoint is in development and will replace these once deployed.</p>
       </div>
     </section>
@@ -482,7 +483,7 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
 
     <div class="title-block">
       <div class="tb"><i>Project</i><b>MIRAGE — DECEPTION INFRASTRUCTURE</b></div>
-      <div class="tb"><i>Drawing no.</i><b>A-01 · REV 2.1</b></div>
+      <div class="tb"><i>Drawing no.</i><b>A-01 · REV 2.2</b></div>
       <div class="tb"><i>Scale</i><b>NTS</b></div>
       <div class="tb"><i>Date</i><b>2026-07</b></div>
       <div class="tb"><i>Drawn / checked</i><b><a href="https://github.com/vinayaktyagi10">vinayaktyagi10</a> · <a href="https://github.com/Vangax">Vangax</a></b></div>
