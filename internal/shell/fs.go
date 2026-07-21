@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/mirage-source/mirage-core/internal/session"
 )
@@ -323,15 +324,74 @@ func init() {
 	}
 }
 
-// lookup resolves a path (absolute or relative to cwd) to its cleaned
-// absolute form and the node at that path, if any.
-func lookup(cwd, target string) (string, *Node) {
-	clean := resolvePath(cwd, target)
+// lookup resolves a path (absolute or relative to s.Cwd) to its cleaned
+// absolute form and the node at that path, if any. s.overlay (this
+// session's `>`/`>>` writes) shadows the shared base filesystem.
+func (s *Interpreter) lookup(target string) (string, *Node) {
+	clean := resolvePath(s.Cwd, target)
+	if n, ok := s.overlay[clean]; ok {
+		return clean, n
+	}
 	n, ok := fs[clean]
 	if !ok {
 		return clean, nil
 	}
 	return clean, n
+}
+
+// writeFile creates or overwrites a file at target in this session's
+// overlay -- never the shared base fs map. The parent directory must
+// already exist; this shell has no mkdir.
+func (s *Interpreter) writeFile(target, content string, appendMode bool) (string, int) {
+	clean := resolvePath(s.Cwd, target)
+	parentPath := path.Dir(clean)
+	_, parent := s.lookup(parentPath)
+	if parent == nil || parent.Type != NodeDir {
+		return "bash: " + target + ": No such file or directory", 1
+	}
+
+	base := path.Base(clean)
+	_, existing := s.lookup(clean)
+	if existing != nil && existing.Type == NodeDir {
+		return "bash: " + target + ": Is a directory", 1
+	}
+
+	newContent := content
+	if appendMode && existing != nil {
+		newContent = existing.Content + content
+	}
+
+	if s.overlay == nil {
+		s.overlay = map[string]*Node{}
+	}
+	s.overlay[clean] = &Node{
+		Path: clean, Type: NodeFile, Mode: "-rw-r--r--", Owner: "ubuntu", Group: "ubuntu",
+		MTime: time.Now().UTC().Format("Jan _2 15:04"), Content: newContent,
+	}
+
+	alreadyListed := false
+	for _, c := range parent.Children {
+		if c == base {
+			alreadyListed = true
+			break
+		}
+	}
+	if !alreadyListed {
+		if s.overlayChildren == nil {
+			s.overlayChildren = map[string][]string{}
+		}
+		for _, c := range s.overlayChildren[parentPath] {
+			if c == base {
+				alreadyListed = true
+				break
+			}
+		}
+		if !alreadyListed {
+			s.overlayChildren[parentPath] = append(s.overlayChildren[parentPath], base)
+		}
+	}
+
+	return "", 0
 }
 
 func resolvePath(cwd, target string) string {
@@ -365,8 +425,9 @@ func displayPath(p string) string {
 // lsListing renders `ls -la`-style output for a directory node. action is
 // the deception decision for this turn ("" if none/not applied) -- any
 // ConditionalChildren whose Action matches it are included alongside the
-// always-shown Children, deterministically (declaration order).
-func lsListing(n *Node, action string) string {
+// always-shown Children, deterministically (declaration order), followed by
+// any files this session wrote into n.Path via a `>`/`>>` redirect.
+func (s *Interpreter) lsListing(n *Node, action string) string {
 	type entry struct {
 		name  string
 		mode  string
@@ -385,8 +446,9 @@ func lsListing(n *Node, action string) string {
 			names = append(names, cc.Name)
 		}
 	}
+	names = append(names, s.overlayChildren[n.Path]...)
 	for _, name := range names {
-		child := fs[path.Join(n.Path, name)]
+		_, child := s.lookup(path.Join(n.Path, name))
 		if child == nil {
 			continue
 		}

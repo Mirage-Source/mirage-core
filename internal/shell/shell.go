@@ -1,15 +1,15 @@
 // Package shell simulates just enough of an interactive Ubuntu bash session
 // to survive real-world attacker recon: a single filesystem tree (fs.go)
 // shared by every command, and a small tokenizer (tokenizer.go) that
-// understands `;`/`&&`/`||` chaining, quoting, and one level of `$(...)`
-// command substitution. It deliberately does not implement pipes, redirects,
-// or real subshell execution — see the project's honeypot-hardening plan for
-// why that line was drawn where it was.
+// understands `;`/`&&`/`||` chaining, quoting, `$(...)` command
+// substitution, `|` pipelines, and `>`/`>>`/`<` redirects.
 package shell
 
 import (
 	"fmt"
 	"log"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/mirage-source/mirage-core/internal/session"
@@ -44,10 +44,15 @@ type BaitHit struct {
 // Interpreter holds the state of one interactive session: its current
 // working directory and any exported environment variables. Create one per
 // SSH session and reuse it across commands so `cd` and `export` persist the
-// way they would in a real shell.
+// way they would in a real shell. overlay/overlayChildren hold this
+// session's own `>`/`>>` writes (fs.go's writeFile/lookup) so they never
+// leak into another session or mutate the shared fs map.
 type Interpreter struct {
 	Cwd string
 	Env map[string]string
+
+	overlay         map[string]*Node
+	overlayChildren map[string][]string
 }
 
 func NewInterpreter() *Interpreter {
@@ -98,35 +103,143 @@ func (s *Interpreter) evalLine(line string, depth int, bait *[]BaitHit, action s
 			}
 		}
 
-		words := tokenizeWords(st.Text)
-		resolved := make([]string, 0, len(words))
-		for _, w := range words {
-			resolved = append(resolved, s.substitute(w, depth, bait, action))
-		}
-		if len(resolved) == 0 {
-			continue
-		}
+		stages := splitPipeline(st.Text)
 
-		// A statement made up entirely of NAME=value words (e.g. the very
-		// common `uname=$(uname -a)` local-variable-assignment pattern) is
-		// an assignment, not a command invocation.
-		if isAssignmentOnly(resolved) {
-			for _, w := range resolved {
-				k, v, _ := strings.Cut(w, "=")
-				s.Env[k] = v
+		// NAME=value assignment only applies to a lone, non-piped statement --
+		// real bash treats `FOO=bar | baz` as a pipeline, not an assignment.
+		if len(stages) == 1 {
+			words := tokenizeWords(stages[0])
+			resolved := make([]string, 0, len(words))
+			for _, w := range words {
+				resolved = append(resolved, s.substitute(w, depth, bait, action))
 			}
-			lastExit = 0
+			if len(resolved) == 0 {
+				continue
+			}
+			if isAssignmentOnly(resolved) {
+				for _, w := range resolved {
+					k, v, _ := strings.Cut(w, "=")
+					s.Env[k] = v
+				}
+				lastExit = 0
+				continue
+			}
+
+			cmdWords, red := extractRedirects(resolved)
+			if len(cmdWords) == 0 {
+				continue
+			}
+			var stdin *string
+			if red.stdinFile != "" {
+				in, ok := s.readStdinFile(red.stdinFile)
+				if !ok {
+					outputs = append(outputs, red.stdinFile+": No such file or directory")
+					lastExit = 1
+					continue
+				}
+				stdin = &in
+			}
+			out, code := s.execBuiltin(cmdWords[0], cmdWords[1:], bait, action, stdin)
+			lastExit = code
+			out, ok := s.applyStdoutRedirect(out, red)
+			if !ok {
+				outputs = append(outputs, out)
+				lastExit = 1
+				continue
+			}
+			if out != "" {
+				outputs = append(outputs, out)
+			}
 			continue
 		}
 
-		out, code := s.execBuiltin(resolved[0], resolved[1:], bait, action)
-		lastExit = code
-		if out != "" {
-			outputs = append(outputs, out)
+		// A real pipeline: each stage after the first gets the previous
+		// stage's stdout as its own stdin; only the last stage's output
+		// reaches the attacker's terminal.
+		var stageOut string
+		var stageCode int
+		var pipedIn *string
+		for i, stageText := range stages {
+			words := tokenizeWords(stageText)
+			resolved := make([]string, 0, len(words))
+			for _, w := range words {
+				resolved = append(resolved, s.substitute(w, depth, bait, action))
+			}
+			cmdWords, red := extractRedirects(resolved)
+			if len(cmdWords) == 0 {
+				stageOut, stageCode, pipedIn = "", 0, nil
+				continue
+			}
+
+			stdin := pipedIn
+			if red.stdinFile != "" {
+				in, ok := s.readStdinFile(red.stdinFile)
+				if !ok {
+					stageOut, stageCode = red.stdinFile+": No such file or directory", 1
+					break
+				}
+				stdin = &in
+			}
+
+			stageOut, stageCode = s.execBuiltin(cmdWords[0], cmdWords[1:], bait, action, stdin)
+			// "command not found" is this shell's stand-in for stderr, which
+			// a plain `|` never captures.
+			if stageCode == 127 {
+				pipedIn = nil
+			} else {
+				// Builtins format output as \r\n for terminal display; a
+				// pipe needs raw \n content.
+				forwarded := strings.ReplaceAll(stageOut, "\r\n", "\n")
+				pipedIn = &forwarded
+			}
+
+			if i == len(stages)-1 {
+				var ok bool
+				stageOut, ok = s.applyStdoutRedirect(stageOut, red)
+				if !ok {
+					stageCode = 1
+				}
+			} else if red.stdoutFile != "" {
+				s.writeFile(red.stdoutFile, stageOut, red.appendMode)
+			}
+		}
+		lastExit = stageCode
+		if stageOut != "" {
+			outputs = append(outputs, stageOut)
 		}
 	}
 
 	return strings.Join(outputs, "\r\n"), lastExit
+}
+
+// applyStdoutRedirect writes out to red.stdoutFile if one was specified.
+// Returns ("", true) on a successful write, out unchanged with ok=true when
+// there was no redirect, or an error message with ok=false on failure.
+func (s *Interpreter) applyStdoutRedirect(out string, red redirects) (string, bool) {
+	if red.stdoutFile == "" {
+		return out, true
+	}
+	content := strings.ReplaceAll(out, "\r\n", "\n")
+	// Builtins return output without a trailing newline (the terminal
+	// display path adds it); a file needs it explicit so a later append
+	// doesn't run two writes together on one line.
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	if msg, code := s.writeFile(red.stdoutFile, content, red.appendMode); code != 0 {
+		return msg, false
+	}
+	return "", true
+}
+
+// readStdinFile resolves a `<` redirect's target to file content, or
+// (_, false) if it doesn't exist or isn't a regular file.
+func (s *Interpreter) readStdinFile(target string) (string, bool) {
+	_, n := s.lookup(target)
+	if n == nil || n.Type != NodeFile {
+		return "", false
+	}
+	return n.Content, true
 }
 
 // substitute resolves `$(...)` command substitutions and `$NAME`/`${NAME}`
@@ -227,7 +340,10 @@ func matchingParen(s string, pos int) int {
 	return -1
 }
 
-func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, action string) (string, int) {
+// execBuiltin dispatches one command. stdin is non-nil only when this
+// invocation is piped-into or `<`-redirected; most builtins ignore it, only
+// cat/grep/head/tail/wc read it.
+func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, action string, stdin *string) (string, int) {
 	switch cmd {
 	case "":
 		return "", 0
@@ -259,16 +375,28 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 		return "", 0
 
 	case "test", "[":
-		return "", testBuiltin(s.Cwd, cmd, args)
+		return "", s.testBuiltin(cmd, args)
 
 	case "cat":
-		return s.catBuiltin(args, bait, action)
+		return s.catBuiltin(args, bait, action, stdin)
 
 	case "ls":
 		return s.lsBuiltin(args, action)
 
 	case "cd":
 		return s.cdBuiltin(args)
+
+	case "grep":
+		return s.grepBuiltin(args, stdin)
+
+	case "head":
+		return s.headTailBuiltin(args, stdin, true)
+
+	case "tail":
+		return s.headTailBuiltin(args, stdin, false)
+
+	case "wc":
+		return s.wcBuiltin(args, stdin)
 
 	case "exit":
 		return "", ExitRequested
@@ -277,6 +405,23 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 		log.Printf("Unknown command: %s", cmd)
 		return "bash: " + cmd + ": command not found", 127
 	}
+}
+
+// builtinInput resolves a stdin-reading builtin's input: a named file
+// argument if given, otherwise piped stdin. ok is false only when a file
+// argument was given but isn't a readable file.
+func (s *Interpreter) builtinInput(fileArg string, stdin *string) (text string, ok bool) {
+	if fileArg != "" {
+		_, n := s.lookup(fileArg)
+		if n == nil || n.Type != NodeFile {
+			return "", false
+		}
+		return n.Content, true
+	}
+	if stdin != nil {
+		return *stdin, true
+	}
+	return "", true
 }
 
 func unameOutput(args []string) string {
@@ -335,7 +480,7 @@ func unameOutput(args []string) string {
 
 // testBuiltin implements the handful of `test`/`[` checks attacker recon
 // scripts actually use: -f (regular file), -d (directory), -e (exists).
-func testBuiltin(cwd, cmd string, args []string) int {
+func (s *Interpreter) testBuiltin(cmd string, args []string) int {
 	if cmd == "[" && len(args) > 0 && args[len(args)-1] == "]" {
 		args = args[:len(args)-1]
 	}
@@ -343,7 +488,7 @@ func testBuiltin(cwd, cmd string, args []string) int {
 		return 2
 	}
 	flag, target := args[0], args[1]
-	_, n := lookup(cwd, target)
+	_, n := s.lookup(target)
 	switch flag {
 	case "-f":
 		if n != nil && n.Type == NodeFile {
@@ -361,11 +506,16 @@ func testBuiltin(cwd, cmd string, args []string) int {
 	return 1
 }
 
-func (s *Interpreter) catBuiltin(args []string, bait *[]BaitHit, action string) (string, int) {
+func (s *Interpreter) catBuiltin(args []string, bait *[]BaitHit, action string, stdin *string) (string, int) {
 	if len(args) < 1 {
+		// A standalone `cat` (no pipe/redirect in) keeps the original
+		// "missing operand" error; only a piped/redirected cat reads stdin.
+		if stdin != nil {
+			return strings.ReplaceAll(*stdin, "\n", "\r\n"), 0
+		}
 		return "cat: missing operand", 1
 	}
-	_, n := lookup(s.Cwd, args[0])
+	_, n := s.lookup(args[0])
 	if n == nil || n.Type != NodeFile {
 		return "cat: " + args[0] + ": No such file or directory", 1
 	}
@@ -392,11 +542,11 @@ func (s *Interpreter) lsBuiltin(args []string, action string) (string, int) {
 			target = a
 		}
 	}
-	_, n := lookup(s.Cwd, target)
+	_, n := s.lookup(target)
 	if n == nil || n.Type != NodeDir {
 		return "ls: cannot access '" + target + "': No such file or directory", 2
 	}
-	return lsListing(n, action), 0
+	return s.lsListing(n, action), 0
 }
 
 func (s *Interpreter) cdBuiltin(args []string) (string, int) {
@@ -404,10 +554,209 @@ func (s *Interpreter) cdBuiltin(args []string) (string, int) {
 	if len(args) >= 1 {
 		target = args[0]
 	}
-	clean, n := lookup(s.Cwd, target)
+	clean, n := s.lookup(target)
 	if n == nil || n.Type != NodeDir {
 		return "cd: " + target + ": No such file or directory", 1
 	}
 	s.Cwd = clean
 	return "", 0
+}
+
+// grepBuiltin implements a simplified grep: -i/-v/-n/-c, pattern as a RE2
+// regex, falling back to a literal substring match on an invalid pattern.
+func (s *Interpreter) grepBuiltin(args []string, stdin *string) (string, int) {
+	var invert, ignoreCase, lineNumbers, countOnly bool
+	var pattern, fileArg string
+	for _, a := range args {
+		switch {
+		case a == "-v":
+			invert = true
+		case a == "-i":
+			ignoreCase = true
+		case a == "-n":
+			lineNumbers = true
+		case a == "-c":
+			countOnly = true
+		case strings.HasPrefix(a, "-"):
+			// unrecognized flag, ignored
+		case pattern == "":
+			pattern = a
+		default:
+			fileArg = a
+		}
+	}
+	if pattern == "" {
+		return "usage: grep [-ivnc] pattern [file]", 2
+	}
+
+	text, ok := s.builtinInput(fileArg, stdin)
+	if !ok {
+		return "grep: " + fileArg + ": No such file or directory", 2
+	}
+
+	reSrc := pattern
+	if ignoreCase {
+		reSrc = "(?i)" + reSrc
+	}
+	re, err := regexp.Compile(reSrc)
+	match := func(line string) bool {
+		if err != nil {
+			if ignoreCase {
+				return strings.Contains(strings.ToLower(line), strings.ToLower(pattern))
+			}
+			return strings.Contains(line, pattern)
+		}
+		return re.MatchString(line)
+	}
+
+	lines := splitLines(text)
+	var matched []string
+	count := 0
+	for i, line := range lines {
+		if match(line) == !invert {
+			count++
+			if lineNumbers {
+				line = strconv.Itoa(i+1) + ":" + line
+			}
+			matched = append(matched, line)
+		}
+	}
+
+	if countOnly {
+		return strconv.Itoa(count), boolToExit(count > 0)
+	}
+	return strings.Join(matched, "\r\n"), boolToExit(len(matched) > 0)
+}
+
+// headTailBuiltin implements `head`/`tail -n N` (default 10), reading a
+// file argument if given, otherwise stdin.
+func (s *Interpreter) headTailBuiltin(args []string, stdin *string, head bool) (string, int) {
+	n := 10
+	var fileArg string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "-n" && i+1 < len(args):
+			i++
+			if v, err := strconv.Atoi(args[i]); err == nil {
+				n = v
+			}
+		case strings.HasPrefix(a, "-n") && len(a) > 2:
+			if v, err := strconv.Atoi(a[2:]); err == nil {
+				n = v
+			}
+		case strings.HasPrefix(a, "-") && len(a) > 1 && isAllDigits(a[1:]):
+			if v, err := strconv.Atoi(a[1:]); err == nil {
+				n = v
+			}
+		case !strings.HasPrefix(a, "-"):
+			fileArg = a
+		}
+	}
+
+	text, ok := s.builtinInput(fileArg, stdin)
+	if !ok {
+		cmd := "tail"
+		if head {
+			cmd = "head"
+		}
+		return cmd + ": " + fileArg + ": No such file or directory", 1
+	}
+
+	lines := splitLines(text)
+	if n < 0 {
+		n = 0
+	}
+	var picked []string
+	if head {
+		if n > len(lines) {
+			n = len(lines)
+		}
+		picked = lines[:n]
+	} else {
+		start := len(lines) - n
+		if start < 0 {
+			start = 0
+		}
+		picked = lines[start:]
+	}
+	return strings.Join(picked, "\r\n"), 0
+}
+
+// wcBuiltin implements `wc -l/-w/-c` (default: all three, in that order,
+// matching real wc's column order).
+func (s *Interpreter) wcBuiltin(args []string, stdin *string) (string, int) {
+	var lines, words, bytesFlag bool
+	var fileArg string
+	for _, a := range args {
+		switch {
+		case a == "-l":
+			lines = true
+		case a == "-w":
+			words = true
+		case a == "-c":
+			bytesFlag = true
+		case strings.HasPrefix(a, "-"):
+		default:
+			fileArg = a
+		}
+	}
+	if !lines && !words && !bytesFlag {
+		lines, words, bytesFlag = true, true, true
+	}
+
+	text, ok := s.builtinInput(fileArg, stdin)
+	if !ok {
+		return "wc: " + fileArg + ": No such file or directory", 1
+	}
+
+	lineCount := len(splitLines(text))
+	if text == "" {
+		lineCount = 0
+	}
+	wordCount := len(strings.Fields(text))
+	byteCount := len(text)
+
+	var fields []string
+	if lines {
+		fields = append(fields, strconv.Itoa(lineCount))
+	}
+	if words {
+		fields = append(fields, strconv.Itoa(wordCount))
+	}
+	if bytesFlag {
+		fields = append(fields, strconv.Itoa(byteCount))
+	}
+	out := strings.Join(fields, " ")
+	if fileArg != "" {
+		out += " " + fileArg
+	}
+	return out, 0
+}
+
+func splitLines(text string) []string {
+	text = strings.TrimRight(text, "\n")
+	if text == "" {
+		return nil
+	}
+	return strings.Split(text, "\n")
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func boolToExit(b bool) int {
+	if b {
+		return 0
+	}
+	return 1
 }

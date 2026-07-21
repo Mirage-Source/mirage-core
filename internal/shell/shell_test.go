@@ -95,6 +95,106 @@ func TestUnknownCommandStillReported(t *testing.T) {
 	}
 }
 
+func TestPipeGrep(t *testing.T) {
+	s := NewInterpreter()
+	out, code, _ := s.Run("cat /etc/passwd | grep root")
+	if code != 0 || !strings.Contains(out, "root:x:0:0:root") {
+		t.Fatalf("expected passwd's root line, got out=%q code=%d", out, code)
+	}
+
+	out, code, _ = s.Run("cat /etc/passwd | grep -v root | grep -c .")
+	if code != 0 || out != "3" {
+		t.Fatalf("expected 3 non-root lines, got out=%q code=%d", out, code)
+	}
+}
+
+func TestPipeHeadTailWc(t *testing.T) {
+	s := NewInterpreter()
+	out, code, _ := s.Run("cat /etc/passwd | head -n 1")
+	if code != 0 || out != "root:x:0:0:root:/root:/bin/bash" {
+		t.Fatalf("head -n 1 mismatch: out=%q code=%d", out, code)
+	}
+	out, code, _ = s.Run("wc -l /etc/passwd")
+	if code != 0 || !strings.HasPrefix(out, "4 ") {
+		t.Fatalf("expected 4 lines counted, got out=%q code=%d", out, code)
+	}
+}
+
+func TestPipeUnknownCommandDoesNotForwardStdout(t *testing.T) {
+	s := NewInterpreter()
+	// nonexistentcmd's "command not found" text is this shell's stand-in
+	// for stderr and must not leak into the next stage's stdin.
+	out, code, _ := s.Run("nonexistentcmd | wc -l")
+	if code != 0 || out != "0" {
+		t.Fatalf("expected wc to see empty stdin (0 lines), got out=%q code=%d", out, code)
+	}
+}
+
+func TestRedirectWriteAndReadBack(t *testing.T) {
+	s := NewInterpreter()
+	if _, code, _ := s.Run("echo hello world > /tmp/note.txt"); code != 0 {
+		t.Fatalf("redirect write failed")
+	}
+	out, code, _ := s.Run("cat /tmp/note.txt")
+	// echo's stdout implicitly ends with a newline, same as real bash --
+	// the write stores it, so reading it back shows it too.
+	if code != 0 || out != "hello world\r\n" {
+		t.Fatalf("expected 'hello world\\r\\n' read back, got out=%q code=%d", out, code)
+	}
+	if _, code, _ := s.Run("ls /tmp"); code != 0 {
+		t.Fatalf("ls /tmp failed after write")
+	}
+	if !strings.Contains(mustLs(t, s, "/tmp"), "note.txt") {
+		t.Fatalf("expected note.txt to appear in ls /tmp")
+	}
+}
+
+func TestRedirectAppendKeepsLinesSeparate(t *testing.T) {
+	s := NewInterpreter()
+	s.Run("echo first > /tmp/log.txt")
+	s.Run("echo second >> /tmp/log.txt")
+	out, _, _ := s.Run("cat /tmp/log.txt")
+	if out != "first\r\nsecond\r\n" {
+		t.Fatalf("expected two separate lines, got %q", out)
+	}
+}
+
+func TestRedirectWriteIsolatedPerSession(t *testing.T) {
+	s1 := NewInterpreter()
+	s1.Run("echo secret > /tmp/isolated.txt")
+
+	s2 := NewInterpreter()
+	_, code, _ := s2.Run("cat /tmp/isolated.txt")
+	if code == 0 {
+		t.Fatalf("expected a fresh session not to see another session's write")
+	}
+}
+
+func TestPipeCharInsideQuotesIsNotAPipe(t *testing.T) {
+	s := NewInterpreter()
+	out, code, _ := s.Run(`echo "a|b"`)
+	if code != 0 || out != "a|b" {
+		t.Fatalf("expected literal 'a|b', got out=%q code=%d", out, code)
+	}
+}
+
+func TestRedirectToMissingDirFails(t *testing.T) {
+	s := NewInterpreter()
+	_, code, _ := s.Run("echo hi > /no/such/dir/file.txt")
+	if code == 0 {
+		t.Fatalf("expected redirect into a nonexistent directory to fail")
+	}
+}
+
+func mustLs(t *testing.T, s *Interpreter, dir string) string {
+	t.Helper()
+	out, code, _ := s.Run("ls " + dir)
+	if code != 0 {
+		t.Fatalf("ls %s failed: %s", dir, out)
+	}
+	return out
+}
+
 func TestRunWithDeceptionEmptyActionMatchesRun(t *testing.T) {
 	cases := []string{"ls", "cat .env", "cat /etc/os-release", "uname -a", "cd /etc && ls"}
 	for _, c := range cases {

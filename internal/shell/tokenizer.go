@@ -11,8 +11,8 @@ type statement struct {
 
 // splitStatements breaks a line into statements on top-level `;`, `&&`, and
 // `||`, without splitting inside quotes or inside a parenthesized/`$(...)`
-// span. This intentionally does not support pipes (`|`) or redirects (`>`,
-// `<`) — those are out of scope for this pass.
+// span. A statement's Text may still contain a `|` pipeline and
+// `>`/`>>`/`<` redirects — see splitPipeline and extractRedirects.
 func splitStatements(line string) []statement {
 	var stmts []statement
 	var cur strings.Builder
@@ -71,6 +71,103 @@ func splitStatements(line string) []statement {
 	flush()
 
 	return stmts
+}
+
+// splitPipeline breaks one statement's text into pipeline stages on
+// top-level single `|`, quote- and paren-aware like splitStatements. A
+// statement with no `|` returns a single-element slice.
+func splitPipeline(text string) []string {
+	var stages []string
+	var cur strings.Builder
+
+	var quote byte
+	parenDepth := 0
+
+	runes := []byte(text)
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+
+		if quote != 0 {
+			cur.WriteByte(c)
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+
+		switch {
+		case c == '\'' || c == '"':
+			quote = c
+			cur.WriteByte(c)
+		case c == '(':
+			parenDepth++
+			cur.WriteByte(c)
+		case c == ')':
+			if parenDepth > 0 {
+				parenDepth--
+			}
+			cur.WriteByte(c)
+		case parenDepth == 0 && c == '|' && !(i+1 < len(runes) && runes[i+1] == '|'):
+			stages = append(stages, strings.TrimSpace(cur.String()))
+			cur.Reset()
+		default:
+			cur.WriteByte(c)
+		}
+	}
+	stages = append(stages, strings.TrimSpace(cur.String()))
+
+	return stages
+}
+
+// redirects holds the `>`/`>>`/`<` targets pulled out of one pipeline
+// stage's word list by extractRedirects.
+type redirects struct {
+	stdoutFile string
+	appendMode bool
+	stdinFile  string
+}
+
+// extractRedirects pulls `>`/`>>`/`<` operators and their filename out of an
+// already-tokenized word list, returning the remaining command+args words
+// separately. Only `cmd > file` and `cmd >file` are recognized — redirects
+// before the command name or with a leading fd number (`2>`) are not.
+func extractRedirects(words []string) ([]string, redirects) {
+	var r redirects
+	var out []string
+
+	for i := 0; i < len(words); i++ {
+		w := words[i]
+
+		op, rest := "", ""
+		switch {
+		case w == ">" || w == ">>" || w == "<":
+			op = w
+			if i+1 < len(words) {
+				i++
+				rest = words[i]
+			}
+		case strings.HasPrefix(w, ">>") && len(w) > 2:
+			op, rest = ">>", w[2:]
+		case strings.HasPrefix(w, ">") && len(w) > 1:
+			op, rest = ">", w[1:]
+		case strings.HasPrefix(w, "<") && len(w) > 1:
+			op, rest = "<", w[1:]
+		default:
+			out = append(out, w)
+			continue
+		}
+
+		switch op {
+		case ">":
+			r.stdoutFile, r.appendMode = rest, false
+		case ">>":
+			r.stdoutFile, r.appendMode = rest, true
+		case "<":
+			r.stdinFile = rest
+		}
+	}
+
+	return out, r
 }
 
 // tokenizeWords splits a single statement into words, honoring single and
