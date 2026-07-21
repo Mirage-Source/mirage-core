@@ -2,7 +2,7 @@
   "total_sessions": 111419,
   "unique_ips": 976,
   "sessions_last_24h": 0,
-  "sessions_last_7d": 24713,
+  "sessions_last_7d": 20639,
   "top_ips": [
     {
       "ip": "103.64.129.98",
@@ -371,5 +371,5 @@
       "count": 4165
     }
   ],
-  "generated_at": "2026-07-20T03:20:12Z"
+  "generated_at": "2026-07-21T02:25:48Z"
 }
