@@ -121,6 +121,10 @@ def fetch_pending(
             if isinstance(doc, str):
                 doc = json.loads(doc)
             out.append((session_id, doc))
+    # autocommit=False means this read still opened a transaction; close it
+    # here so an empty batch doesn't leave the connection idle-in-transaction
+    # across the worker's poll sleep.
+    conn.rollback()
     return out
 
 
