@@ -148,7 +148,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 768M
 
   prometheus:
     image: prom/prometheus:v2.51.0
