@@ -1,0 +1,45 @@
+cff-version: 1.2.0
+message: "If you use MIRAGE or its dataset, please cite the following."
+title: "MIRAGE: A Labeled SSH Honeypot Dataset, and What Auditing It Revealed About Honeypot Data Validity"
+type: software
+authors:
+  - family-names: "Tyagi"
+    given-names: "Vinayak"
+    affiliation: "Manipal University Jaipur"
+  - family-names: "Verma"
+    given-names: "Devang"
+    affiliation: "Symbiosis Skills & Professional University"
+repository-code: "https://github.com/Mirage-Source/mirage-core"
+url: "https://mirage-source.github.io/mirage-core/"
+identifiers:
+  - type: doi
+    value: 10.17605/OSF.IO/JM4E7
+    description: "Archived dataset snapshot and preprint (OSF)"
+keywords:
+  - honeypot
+  - SSH
+  - threat-intelligence
+  - MITRE ATT&CK
+  - weak-supervision
+  - network-measurement
+  - dataset
+  - data-validity
+license: Apache-2.0
+version: "1.1"
+date-released: "2026-08-20"
+preferred-citation:
+  type: article
+  title: "MIRAGE: A Labeled SSH Honeypot Dataset, and What Auditing It Revealed About Honeypot Data Validity"
+  authors:
+    - family-names: "Tyagi"
+      given-names: "Vinayak"
+      affiliation: "Manipal University Jaipur"
+    - family-names: "Verma"
+      given-names: "Devang"
+      affiliation: "Symbiosis Skills & Professional University"
+  year: 2026
+  identifiers:
+    - type: doi
+      value: 10.17605/OSF.IO/JM4E7
+      description: "Preprint (OSF); not yet peer-reviewed"
+  notes: "Preprint — publicly available manuscript, not a peer-reviewed publication."

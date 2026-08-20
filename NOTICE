@@ -1,0 +1,17 @@
+MIRAGE
+Copyright 2026 Vinayak Tyagi and Devang Verma
+
+This product includes software developed for the MIRAGE SSH honeypot and
+threat-intelligence research project (https://github.com/Mirage-Source/mirage-core).
+
+Licensed under the Apache License, Version 2.0 (the "License"); see the LICENSE
+file for terms. The published MIRAGE dataset is licensed separately under
+Creative Commons Attribution 4.0 International (CC BY 4.0); see DATASET_LICENSE.md.
+
+---
+
+Third-party attributions:
+
+- Geographic and ASN attribution data is derived from DB-IP (https://db-ip.com),
+  licensed under CC BY 4.0. Reuse of the geo-enriched fields must preserve this
+  attribution.

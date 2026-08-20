@@ -170,3 +170,28 @@ MIRAGE is deployed exclusively on infrastructure owned by the authors. It is des
 **Vinayak Tyagi** — Go infrastructure, SSH server, session pipeline, REST API, DevOps, deployment
 
 **Devang Verma** — ML pipeline / Intellegence Layer, behavioural classification, RL Policy , 
+
+---
+
+## Citation
+
+If you use MIRAGE or its dataset in academic work, please cite the accompanying
+preprint (see `CITATION.cff`):
+
+> Vinayak Tyagi and Devang Verma. "MIRAGE: A Labeled SSH Honeypot Dataset, and
+> What Auditing It Revealed About Honeypot Data Validity." Preprint, 2026.
+> OSF: https://doi.org/10.17605/OSF.IO/JM4E7
+
+_The preprint is a publicly available manuscript and has not yet been peer-reviewed._
+
+---
+
+## License
+
+- **Source code** is licensed under the [Apache License 2.0](LICENSE).
+- **The published MIRAGE dataset** (session exports, `commands.jsonl`, report, and
+  the archived OSF snapshot) is licensed separately under
+  [CC BY 4.0](DATASET_LICENSE.md).
+
+Contributions are welcome under these terms — see [CONTRIBUTING.md](CONTRIBUTING.md),
+which requires a Developer Certificate of Origin sign-off (`git commit -s`).
