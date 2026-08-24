@@ -44,3 +44,5 @@ dataset/
 
 # local DB backups (scripts/backup_db.sh) -- never committed
 backups/
+
+data/labels/labeling_queue.jsonl
