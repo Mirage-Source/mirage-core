@@ -30,25 +30,48 @@ Pipeline
 from __future__ import annotations
 
 from .augment import ReIDAugmentConfig, ReIDAugmenter
+from .campaign import (
+    CampaignMembership,
+    CampaignResult,
+    credential_sets_match,
+    detect_campaign,
+    divisibility_candidates,
+)
 from .data import (
     IdentityCorpus,
     IdentityProfile,
     make_identity_corpus,
     reconnection_split,
 )
-from .dataset import ReIDCollator, ReIDDataset, ReIDEvalCollator, ReIDExample
-from .loss import REID_TEMPERATURE, NTXentLoss, reid_ntxent_loss
+from .dataset import PKCollator, ReIDCollator, ReIDDataset, ReIDEvalCollator, ReIDExample
+from .loss import (
+    REID_TEMPERATURE,
+    UNKNOWN_TOOLKIT,
+    CampaignAwareReIDLoss,
+    NTXentLoss,
+    SupConLoss,
+    campaign_aware_reid_loss,
+    reid_ntxent_loss,
+)
 from .model import (
     ContrastiveReIDModel,
     ProjectionHead,
     ReIDModelConfig,
     ReIDModelOutput,
 )
+from .pk_sampler import PKBatchSampler
+from .real_data import build_real_identity_corpus, load_real_identity_corpus, save_real_identity_corpus, toolkit_label_for
 
 __all__ = [
     # augment
     "ReIDAugmentConfig",
     "ReIDAugmenter",
+    # campaign
+    "CampaignMembership",
+    "CampaignResult",
+    "credential_sets_match",
+    "detect_campaign",
+    "divisibility_candidates",
     # data
     "IdentityCorpus",
     "IdentityProfile",
@@ -59,6 +82,14 @@ __all__ = [
     "ReIDExample",
     "ReIDCollator",
     "ReIDEvalCollator",
+    "PKCollator",
+    # pk_sampler
+    "PKBatchSampler",
+    # real_data (DB-independent; see mirage.reid.real_db for the Postgres side)
+    "build_real_identity_corpus",
+    "save_real_identity_corpus",
+    "load_real_identity_corpus",
+    "toolkit_label_for",
     # model
     "ContrastiveReIDModel",
     "ReIDModelConfig",
@@ -67,5 +98,9 @@ __all__ = [
     # loss
     "NTXentLoss",
     "reid_ntxent_loss",
+    "SupConLoss",
+    "CampaignAwareReIDLoss",
+    "campaign_aware_reid_loss",
+    "UNKNOWN_TOOLKIT",
     "REID_TEMPERATURE",
 ]

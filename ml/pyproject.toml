@@ -28,6 +28,10 @@ viz = ["umap-learn>=0.5"]
 logging = ["wandb>=0.16"]
 # Parquet log ingestion.
 parquet = ["pandas>=1.5", "pyarrow>=10"]
+# Real-data re-ID: pulling sessions directly from a Postgres backup/restore
+# (mirage-core has no live API once the sensor is offline -- see
+# mirage.reid.real_db).
+real-data = ["psycopg2-binary>=2.9"]
 # Tests.
 dev = ["pytest>=7"]
 
@@ -37,6 +41,9 @@ mirage-train = "mirage.training.train:main"
 mirage-visualize = "mirage.viz.visualize:main"
 mirage-reid = "mirage.reid.train:main"
 mirage-deception = "mirage.deception.train:main"
+mirage-reid-campaign = "mirage.reid.real_db:main_detect_campaign"
+mirage-reid-export = "mirage.reid.real_db:main_export_corpus"
+mirage-reid-real = "mirage.reid.real_train:main"
 
 [tool.setuptools.packages.find]
 include = ["mirage*"]

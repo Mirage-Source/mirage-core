@@ -119,18 +119,32 @@ func splitPipeline(text string) []string {
 	return stages
 }
 
-// redirects holds the `>`/`>>`/`<` targets pulled out of one pipeline
-// stage's word list by extractRedirects.
+// redirects holds the `>`/`>>`/`<`/`2>`/`2>>`/`2>&1`/`&>` targets pulled out
+// of one pipeline stage's word list by extractRedirects.
+//
+// Only the stderr-goes-somewhere direction is modeled (2>, 2>>, 2>&1, &>) --
+// not the reverse (1>&2 / >&2, "send stdout to stderr"). That direction is
+// rare in real recon (which wants to *capture* error text, not discard it
+// into the noisier stream) and would need a fourth flag for a case attackers
+// essentially never use against a honeypot; scoped out rather than modeled
+// half-heartedly.
 type redirects struct {
 	stdoutFile string
 	appendMode bool
 	stdinFile  string
+
+	stderrFile          string
+	stderrAppendMode    bool
+	mergeStderrToStdout bool   // 2>&1
+	combinedFile        string // &>file (both streams to one file)
 }
 
-// extractRedirects pulls `>`/`>>`/`<` operators and their filename out of an
+// extractRedirects pulls redirect operators and their filename out of an
 // already-tokenized word list, returning the remaining command+args words
-// separately. Only `cmd > file` and `cmd >file` are recognized — redirects
-// before the command name or with a leading fd number (`2>`) are not.
+// separately. Recognizes `cmd > file`/`cmd >file` (and `<`) as before, plus
+// `2>file`/`2>>file`/`2>&1`/`&>file` in both spaced and attached form.
+// Redirects before the command name are still not recognized (matches the
+// existing `>`/`<` limitation, not a new gap).
 func extractRedirects(words []string) ([]string, redirects) {
 	var r redirects
 	var out []string
@@ -140,12 +154,21 @@ func extractRedirects(words []string) ([]string, redirects) {
 
 		op, rest := "", ""
 		switch {
-		case w == ">" || w == ">>" || w == "<":
+		case w == "2>&1":
+			r.mergeStderrToStdout = true
+			continue
+		case w == "2>" || w == "2>>" || w == "&>" || w == ">" || w == ">>" || w == "<":
 			op = w
 			if i+1 < len(words) {
 				i++
 				rest = words[i]
 			}
+		case strings.HasPrefix(w, "2>>") && len(w) > 3:
+			op, rest = "2>>", w[3:]
+		case strings.HasPrefix(w, "2>") && len(w) > 2:
+			op, rest = "2>", w[2:]
+		case strings.HasPrefix(w, "&>") && len(w) > 2:
+			op, rest = "&>", w[2:]
 		case strings.HasPrefix(w, ">>") && len(w) > 2:
 			op, rest = ">>", w[2:]
 		case strings.HasPrefix(w, ">") && len(w) > 1:
@@ -164,6 +187,12 @@ func extractRedirects(words []string) ([]string, redirects) {
 			r.stdoutFile, r.appendMode = rest, true
 		case "<":
 			r.stdinFile = rest
+		case "2>":
+			r.stderrFile, r.stderrAppendMode = rest, false
+		case "2>>":
+			r.stderrFile, r.stderrAppendMode = rest, true
+		case "&>":
+			r.combinedFile = rest
 		}
 	}
 

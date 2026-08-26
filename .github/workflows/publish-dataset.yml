@@ -1,11 +1,12 @@
+# Retired 2026-08-26: Mirage is no longer live (no API to export from).
+# Weekly cron disabled; workflow_dispatch kept so it can be re-armed by
+# restoring the `schedule` trigger below if the sensor comes back online.
 name: Publish Dataset
 
 permissions:
   contents: write
 
 on:
-  schedule:
-    - cron: '0 3 * * 0'
   workflow_dispatch:
 
 jobs:

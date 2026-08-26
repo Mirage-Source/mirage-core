@@ -46,3 +46,7 @@ dataset/
 backups/
 
 data/labels/labeling_queue.jsonl
+
+# Real-data re-ID corpus export (mirage-reid-export) -- large, derived from a
+# DB backup restore, regenerate with mirage-reid-export rather than commit.
+ml/data/

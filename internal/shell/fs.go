@@ -196,7 +196,7 @@ var fs = map[string]*Node{
 	},
 	"/home/ubuntu/.ssh/authorized_keys": {
 		Type: NodeFile, Mode: "-rw-------", Owner: "ubuntu", Group: "ubuntu", MTime: "Jan 12 09:11",
-		Content: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEXAMPLE0000000000000000000000000000 ubuntu@ip-172-31-14-52\n",
+		Content: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEXAMPLE0000000000000000000000000000 ubuntu@{{hostname}}\n",
 	},
 	"/home/ubuntu/.ssh/id_rsa": {
 		Type: NodeFile, Mode: "-rw-------", Owner: "ubuntu", Group: "ubuntu", MTime: "Jan 12 09:11",
@@ -208,7 +208,7 @@ var fs = map[string]*Node{
 	},
 	"/home/ubuntu/.ssh/id_rsa.pub": {
 		Type: NodeFile, Mode: "-rw-r--r--", Owner: "ubuntu", Group: "ubuntu", MTime: "Jan 12 09:11",
-		Content: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC00EXAMPLE0000000000000000000000 ubuntu@ip-172-31-14-52\n",
+		Content: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC00EXAMPLE0000000000000000000000 ubuntu@{{hostname}}\n",
 	},
 	"/etc": {
 		Type: NodeDir, Mode: "drwxr-xr-x", Owner: "root", Group: "root", MTime: "May 29 14:01", Total: 212,
@@ -220,11 +220,11 @@ var fs = map[string]*Node{
 	"/etc/cron.d":       {Type: NodeDir, Mode: "drwxr-xr-x", Owner: "root", Group: "root", MTime: "May 29 14:01", Total: 4},
 	"/etc/hosts": {
 		Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Size: 1748,
-		Content: "127.0.0.1 localhost\n127.0.1.1 ip-172-31-14-52\n",
+		Content: "127.0.0.1 localhost\n127.0.1.1 {{hostname}}\n",
 	},
 	"/etc/hostname": {
 		Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Size: 191,
-		Content: "ip-172-31-14-52\n",
+		Content: "{{hostname}}\n",
 	},
 	"/etc/nsswitch.conf": {Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Size: 522, Content: "passwd: files\ngroup: files\nshadow: files\n"},
 	"/etc/os-release": {
@@ -299,11 +299,11 @@ var fs = map[string]*Node{
 	},
 	"/var/log/syslog": {
 		Type: NodeFile, Mode: "-rw-r-----", Owner: "syslog", Group: "adm", MTime: "Jul 11 09:00",
-		Content: "Jul 11 09:00:01 ip-172-31-14-52 systemd[1]: Started Daily apt download activities.\n",
+		Content: "Jul 11 09:00:01 {{hostname}} systemd[1]: Started Daily apt download activities.\n",
 	},
 	"/var/log/auth.log": {
 		Type: NodeFile, Mode: "-rw-r-----", Owner: "syslog", Group: "adm", MTime: "Jul 11 09:00",
-		Content: "Jul 11 08:58:12 ip-172-31-14-52 sshd[1021]: Accepted password for ubuntu from 10.0.4.9 port 51422 ssh2\n",
+		Content: "Jul 11 08:58:12 {{hostname}} sshd[1021]: Accepted password for ubuntu from 10.0.4.9 port 51422 ssh2\n",
 	},
 	"/var/mail": emptySystemDir(),
 	"/var/opt":  emptySystemDir(),
