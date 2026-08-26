@@ -44,6 +44,11 @@ services:
       MIRAGE_DECEPTION_URL: "http://mirage-deception:8787"
       MIRAGE_DECEPTION_TIMEOUT_MS: "${MIRAGE_DECEPTION_TIMEOUT_MS:-200}"
       MIRAGE_DECEPTION_APPLY_ACTIONS: "${MIRAGE_DECEPTION_APPLY_ACTIONS:-false}"
+      # Identifies this deployment's heartbeat rows for the data-validity
+      # dashboard's downtime-vs-silence check (internal/validity). Only
+      # matters once more than one sensor writes into a shared/aggregated
+      # setup -- a single deployment can leave this at the default.
+      SENSOR_ID: "${SENSOR_ID:-default}"
     volumes:
       - ./config/hostkey:/app/config/hostkey:ro
     ports:
@@ -150,55 +155,5 @@ services:
         limits:
           memory: 768M
 
-  prometheus:
-    image: prom/prometheus:v2.51.0
-    volumes:
-      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
-    environment:
-      API_KEY: ${API_KEY}
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - >
-        printf '%s' "$$API_KEY" > /prometheus/api_key_runtime &&
-        exec /bin/prometheus
-        --config.file=/etc/prometheus/prometheus.yml
-        --storage.tsdb.path=/prometheus
-        --storage.tsdb.retention.time=30d
-    ports:
-      - "127.0.0.1:9090:9090"
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-
-  grafana:
-    image: grafana/grafana:10.4.0
-    depends_on:
-      prometheus:
-        condition: service_started
-      postgres:
-        condition: service_healthy
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./config/grafana/dashboards:/etc/grafana/mirage-dashboards:ro
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-mirage}
-      GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/"
-      DB_NAME: ${DB_NAME:-mirage}
-      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?GRAFANA_DB_PASSWORD must be set}
-    ports:
-      - "127.0.0.1:3000:3000"
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-
 volumes:
   postgres_data:
-  prometheus_data:
-  grafana_data:

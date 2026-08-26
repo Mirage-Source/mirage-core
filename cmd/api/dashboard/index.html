@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mirage — data validity</title>
+<style>
+  :root {
+    --bg: #f5f1e8; --surface: #fff; --line: #ddd6c5; --text: #1c2428;
+    --text-soft: #5a6469; --crit: #b44430; --warn: #b87514; --good: #3f7d4e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1215; --surface: #131b1f; --line: #26333a; --text: #e4e7e3;
+      --text-soft: #a7b1af; --crit: #d96a54; --warn: #d9a03a; --good: #5cb06e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  header {
+    padding: 20px 28px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 1.1rem; margin: 0; }
+  header .meta { color: var(--text-soft); font-size: 0.85rem; }
+  select { font: inherit; padding: 4px 8px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 28px 60px; }
+  section {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 20px 24px; margin-bottom: 20px;
+  }
+  h2 { font-size: 1rem; margin: 0 0 4px; }
+  .sub { color: var(--text-soft); font-size: 0.85rem; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--text-soft); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 5px; font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .badge.crit { background: color-mix(in srgb, var(--crit) 18%, transparent); color: var(--crit); }
+  .badge.good { background: color-mix(in srgb, var(--good) 18%, transparent); color: var(--good); }
+  .badge.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+  svg { width: 100%; height: 120px; overflow: visible; }
+  .flagged-day { fill: var(--crit); }
+  .empty { color: var(--text-soft); font-style: italic; }
+  #error { color: var(--crit); padding: 20px 28px; display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Mirage — data validity</h1>
+  <span class="meta">sensor <select id="sensor-select"></select></span>
+  <span class="meta" id="computed-at"></span>
+</header>
+<div id="error"></div>
+<main>
+  <section>
+    <h2>Accept-rate band drift</h2>
+    <div class="sub">Daily auth success rate vs. its own trailing history. A day outside the band is flagged red.</div>
+    <svg id="rate-chart" viewBox="0 0 1000 120" preserveAspectRatio="none"></svg>
+    <div id="rate-flags"></div>
+  </section>
+
+  <section>
+    <h2>Field cardinality</h2>
+    <div class="sub">Watched fields that should vary. A collapse from a varied baseline to (near-)one value is flagged.</div>
+    <table>
+      <thead><tr><th>Field</th><th>Distinct</th><th>Modal value</th><th>Modal share (now)</th><th>Modal share (7–14d ago)</th><th></th></tr></thead>
+      <tbody id="fields-body"></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Campaign vs. aggregate</h2>
+    <div class="sub">Structural-signature campaign detection (wordlist-divisibility + credential-set identity), and whether it's masking the aggregate's real shape.</div>
+    <div id="campaign-summary"></div>
+    <table>
+      <thead><tr><th></th><th>Total sessions</th><th>Zero-command sessions</th><th>Zero-command %</th></tr></thead>
+      <tbody id="aggregate-body"></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Downtime vs. silence</h2>
+    <div class="sub">Sensor heartbeat gaps — periods of session silence overlapping a gap are downtime, not genuine attacker absence.</div>
+    <div id="heartbeat-summary"></div>
+    <table>
+      <thead><tr><th>Start</th><th>End</th><th>Duration</th></tr></thead>
+      <tbody id="gaps-body"></tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+const params = new URLSearchParams(location.search);
+const apiKey = params.get('api_key') || '';
+
+async function api(path) {
+  const res = await fetch(path, { headers: apiKey ? { 'X-API-Key': apiKey } : {} });
+  if (!res.ok) throw new Error(path + ': HTTP ' + res.status);
+  return res.json();
+}
+
+function fmtPct(x) { return (x * 100).toFixed(1) + '%'; }
+function fmtDuration(s) {
+  if (s < 3600) return Math.round(s / 60) + 'm';
+  if (s < 86400) return (s / 3600).toFixed(1) + 'h';
+  return (s / 86400).toFixed(1) + 'd';
+}
+
+function renderRateChart(points) {
+  const svg = document.getElementById('rate-chart');
+  if (!points.length) { svg.innerHTML = ''; return; }
+  const maxRate = Math.max(0.01, ...points.map(p => p.rate));
+  const w = 1000, h = 120, step = w / Math.max(1, points.length - 1);
+  const path = points.map((p, i) => {
+    const x = i * step, y = h - (p.rate / maxRate) * (h - 10) - 5;
+    return (i === 0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1);
+  }).join(' ');
+  const dots = points.map((p, i) => {
+    if (!p.flagged) return '';
+    const x = i * step, y = h - (p.rate / maxRate) * (h - 10) - 5;
+    return `<circle class="flagged-day" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4"><title>${p.date}: ${fmtPct(p.rate)} (flagged)</title></circle>`;
+  }).join('');
+  svg.innerHTML = `<path d="${path}" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.7"/>${dots}`;
+}
+
+function renderFields(fields) {
+  const body = document.getElementById('fields-body');
+  body.innerHTML = fields.map(f => `
+    <tr>
+      <td>${f.table}.${f.column}</td>
+      <td>${f.distinct_count}</td>
+      <td>${f.modal_value ?? '—'}</td>
+      <td>${fmtPct(f.modal_share)}</td>
+      <td>${fmtPct(f.baseline_modal_share)}</td>
+      <td>${f.collapsed ? '<span class="badge crit">collapsed</span>' : '<span class="badge good">ok</span>'}</td>
+    </tr>`).join('') || '<tr><td colspan="6" class="empty">no data yet</td></tr>';
+}
+
+function renderCampaign(c) {
+  document.getElementById('campaign-summary').innerHTML =
+    `<p>${c.members.length} confirmed member address(es), ${c.total_campaign_sessions.toLocaleString()} sessions` +
+    (c.excluded_candidates.length ? `, ${c.excluded_candidates.length} coincidental divisor(s) excluded.` : '.') + '</p>';
+  document.getElementById('aggregate-body').innerHTML = `
+    <tr><td>All sessions</td><td>${c.aggregate_all.total_sessions.toLocaleString()}</td><td>${c.aggregate_all.zero_command_sessions.toLocaleString()}</td><td>${c.aggregate_all.zero_command_pct.toFixed(2)}%</td></tr>
+    <tr><td>Excluding campaign</td><td>${c.aggregate_excluding_campaign.total_sessions.toLocaleString()}</td><td>${c.aggregate_excluding_campaign.zero_command_sessions.toLocaleString()}</td><td>${c.aggregate_excluding_campaign.zero_command_pct.toFixed(2)}%</td></tr>`;
+}
+
+function renderHeartbeat(h) {
+  document.getElementById('heartbeat-summary').innerHTML =
+    '<p>Last heartbeat: ' + (h.last_heartbeat ? new Date(h.last_heartbeat).toLocaleString() : '<span class="empty">never</span>') + '</p>';
+  document.getElementById('gaps-body').innerHTML = h.gaps.map(g => `
+    <tr><td>${new Date(g.start).toLocaleString()}</td><td>${new Date(g.end).toLocaleString()}</td><td>${fmtDuration(g.duration_seconds)}</td></tr>
+  `).join('') || '<tr><td colspan="3" class="empty">no gaps in the last 30 days</td></tr>';
+}
+
+async function loadSummary(sensor) {
+  const s = await api('/api/validity/summary?sensor=' + encodeURIComponent(sensor));
+  document.getElementById('computed-at').textContent = 'computed ' + new Date(s.computed_at).toLocaleString();
+  renderRateChart(s.accept_rate);
+  document.getElementById('rate-flags').innerHTML = s.accept_rate_flagged_days
+    ? `<p><span class="badge crit">${s.accept_rate_flagged_days} day(s) flagged</span></p>`
+    : '<p class="empty">no drift flags</p>';
+  renderFields(s.field_cardinality);
+  renderCampaign(s.campaign);
+  renderHeartbeat(s.heartbeat);
+}
+
+async function init() {
+  try {
+    const { sensors, default: def } = await api('/api/sensors');
+    const select = document.getElementById('sensor-select');
+    select.innerHTML = sensors.map(n => `<option value="${n}">${n}</option>`).join('');
+    select.value = def;
+    select.addEventListener('change', () => loadSummary(select.value));
+    await loadSummary(def);
+  } catch (e) {
+    const err = document.getElementById('error');
+    err.style.display = 'block';
+    err.textContent = 'Failed to load dashboard data: ' + e.message +
+      (apiKey ? '' : ' (no ?api_key= in the URL?)');
+  }
+}
+init();
+</script>
+</body>
+</html>

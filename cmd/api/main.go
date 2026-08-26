@@ -8,14 +8,48 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/mirage-source/mirage-core/internal/api"
 	"github.com/mirage-source/mirage-core/internal/store"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/mirage-source/mirage-core/internal/validity"
 )
+
+// validityCache holds the last computed ValiditySummary per sensor.
+// Populated by a background ticker (see refreshValidity below), never
+// computed inline in a request handler -- campaign decomposition alone is
+// an O(sessions) scan over the whole corpus, and a dashboard load must
+// stay fast regardless of corpus size.
+type validityCache struct {
+	mu   sync.RWMutex
+	data map[string]api.ValiditySummary
+}
+
+func (c *validityCache) get(sensor string) (api.ValiditySummary, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	s, ok := c.data[sensor]
+	return s, ok
+}
+
+func (c *validityCache) set(sensor string, s api.ValiditySummary) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.data == nil {
+		c.data = map[string]api.ValiditySummary{}
+	}
+	c.data[sensor] = s
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("encoding JSON response: %v", err)
+	}
+}
 
 func main() {
 	apiKey := os.Getenv("API_KEY")
@@ -29,115 +63,47 @@ func main() {
 	}
 	defer db.Close()
 
-	// Prometheus metrics
-	var (
-		sessionsTotal = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "mirage_sessions_total",
-			Help: "Total SSH sessions captured.",
-		}, func() float64 {
-			var count float64
-			db.QueryRow(`SELECT COUNT(*) FROM sessions`).Scan(&count)
-			return count
-		})
-		sessions24h = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "mirage_sessions_24h",
-			Help: "Sessions in the last 24 hours.",
-		}, func() float64 {
-			var count float64
-			db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE start_ms >= (EXTRACT(EPOCH FROM NOW() - INTERVAL '24 hours') * 1000)`).Scan(&count)
-			return count
-		})
-		uniqueIPs = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "mirage_unique_ips_total",
-			Help: "Unique attacker IPs observed.",
-		}, func() float64 {
-			var count float64
-			db.QueryRow(`SELECT COUNT(DISTINCT client_ip) FROM sessions`).Scan(&count)
-			return count
-		})
-		authAttempts = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "mirage_auth_attempts_total",
-			Help: "Total authentication attempts.",
-		}, func() float64 {
-			var count float64
-			db.QueryRow(`SELECT COUNT(*) FROM auth_attempts`).Scan(&count)
-			return count
-		})
-		enrichedSessions = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "mirage_enriched_sessions_total",
-			Help: "Sessions with ML intelligence populated.",
-		}, func() float64 {
-			var count float64
-			db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE attacker_class IS NOT NULL`).Scan(&count)
-			return count
-		})
-		authAttemptsSuccessful = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "mirage_auth_attempts_successful_total",
-			Help: "Authentication attempts that matched a seeded weak credential.",
-		}, func() float64 {
-			var count float64
-			db.QueryRow(`SELECT COUNT(*) FROM auth_attempts WHERE success`).Scan(&count)
-			return count
-		})
-		baitInteractions = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "mirage_bait_interactions_total",
-			Help: "Bait files/credentials touched by attackers.",
-		}, func() float64 {
-			var count float64
-			db.QueryRow(`SELECT COUNT(*) FROM bait_interactions`).Scan(&count)
-			return count
-		})
-		commandsTotal = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "mirage_commands_total",
-			Help: "Shell commands executed across all sessions.",
-		}, func() float64 {
-			var count float64
-			db.QueryRow(`SELECT COUNT(*) FROM commands`).Scan(&count)
-			return count
-		})
-		sessionsByOutcome = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "mirage_sessions_by_outcome",
-			Help: "Sessions grouped by terminal outcome.",
-		}, []string{"outcome"})
-	)
-
-	prometheus.MustRegister(
-		sessionsTotal, sessions24h, uniqueIPs, authAttempts, enrichedSessions,
-		authAttemptsSuccessful, baitInteractions, commandsTotal, sessionsByOutcome,
-	)
-
-	refreshOutcomeGauge := func() {
-		rows, err := db.Query(`SELECT outcome, COUNT(*) FROM sessions GROUP BY outcome`)
-		if err != nil {
-			log.Printf("refreshing outcome gauge: %v", err)
-			return
-		}
-		defer rows.Close()
-
-		seen := map[string]float64{}
-		for rows.Next() {
-			var outcome string
-			var count float64
-			if err := rows.Scan(&outcome, &count); err != nil {
-				log.Printf("scanning outcome row: %v", err)
-				return
-			}
-			seen[outcome] = count
-		}
-
-		for _, outcome := range []string{"active", "clean_disconnect", "timeout", "connection_reset", "auth_failed", "command_limit_reached"} {
-			sessionsByOutcome.WithLabelValues(outcome).Set(seen[outcome])
-		}
+	sensors, err := store.LoadSensors(db)
+	if err != nil {
+		log.Fatalf("loading sensor configuration: %v", err)
+	}
+	sensorNames := make([]string, len(sensors))
+	for i, s := range sensors {
+		sensorNames[i] = s.Name
 	}
 
-	refreshOutcomeGauge()
+	vcache := &validityCache{}
+	refreshValidity := func() {
+		for _, sn := range sensors {
+			summary, err := validity.Compute(sn.DB, sn.Name, time.Now())
+			if err != nil {
+				log.Printf("computing validity summary for sensor %q: %v", sn.Name, err)
+				continue
+			}
+			vcache.set(sn.Name, api.NewValiditySummary(sn.Name, summary))
+		}
+	}
+	refreshValidity()
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(10 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
-			refreshOutcomeGauge()
+			refreshValidity()
 		}
 	}()
+
+	// Read once at startup: the page is embedded in the binary, so a
+	// per-request read would buy nothing and a failure here should stop the
+	// process rather than 500 on every dashboard load.
+	//
+	// Served directly rather than through http.FileServer: the route is the
+	// exact path "/dashboard", and FileServer resolves the request path
+	// against the FS, so it would look for a file named "dashboard" and 404
+	// on the index.html that is actually there.
+	dashboardPage, err := dashboardFS.ReadFile("dashboard/index.html")
+	if err != nil {
+		log.Fatalf("loading embedded dashboard page: %v", err)
+	}
 
 	r := chi.NewRouter()
 
@@ -146,6 +112,14 @@ func main() {
 			presented := r.Header.Get("X-API-Key")
 			if presented == "" {
 				presented = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+			}
+			if presented == "" {
+				// The dashboard page itself is a plain browser navigation,
+				// which can't set a custom header -- accepted here as a
+				// deliberate, documented trade-off (see DECISIONS.md) so
+				// /dashboard?api_key=... works, not a general bypass: the
+				// header/bearer path above is still tried first.
+				presented = r.URL.Query().Get("api_key")
 			}
 			if subtle.ConstantTimeCompare([]byte(presented), []byte(apiKey)) != 1 {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -156,7 +130,62 @@ func main() {
 		})
 	})
 
-	r.Handle("/metrics", promhttp.Handler())
+	r.Get("/dashboard", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if _, err := w.Write(dashboardPage); err != nil {
+			log.Printf("writing dashboard page: %v", err)
+		}
+	})
+
+	r.Get("/api/sensors", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"sensors": sensorNames, "default": sensorNames[0]})
+	})
+
+	validitySummaryFor := func(w http.ResponseWriter, r *http.Request) (api.ValiditySummary, bool) {
+		name := r.URL.Query().Get("sensor")
+		if name == "" {
+			name = sensorNames[0]
+		}
+		s, ok := vcache.get(name)
+		if !ok {
+			http.Error(w, "sensor not found or not yet computed", http.StatusNotFound)
+		}
+		return s, ok
+	}
+
+	r.Get("/api/validity/summary", func(w http.ResponseWriter, r *http.Request) {
+		if s, ok := validitySummaryFor(w, r); ok {
+			writeJSON(w, s)
+		}
+	})
+	r.Get("/api/validity/accept-rate", func(w http.ResponseWriter, r *http.Request) {
+		s, ok := validitySummaryFor(w, r)
+		if !ok {
+			return
+		}
+		series := s.AcceptRate
+		if raw := r.URL.Query().Get("days"); raw != "" {
+			if n, err := strconv.Atoi(raw); err == nil && n > 0 && n < len(series) {
+				series = series[len(series)-n:]
+			}
+		}
+		writeJSON(w, series)
+	})
+	r.Get("/api/validity/fields", func(w http.ResponseWriter, r *http.Request) {
+		if s, ok := validitySummaryFor(w, r); ok {
+			writeJSON(w, s.FieldCardinality)
+		}
+	})
+	r.Get("/api/validity/campaign", func(w http.ResponseWriter, r *http.Request) {
+		if s, ok := validitySummaryFor(w, r); ok {
+			writeJSON(w, s.Campaign)
+		}
+	})
+	r.Get("/api/validity/heartbeat", func(w http.ResponseWriter, r *http.Request) {
+		if s, ok := validitySummaryFor(w, r); ok {
+			writeJSON(w, s.Heartbeat)
+		}
+	})
 
 	r.Get("/api/stats", func(w http.ResponseWriter, r *http.Request) {
 		stats, err := store.GetStats(db)
@@ -246,24 +275,24 @@ func main() {
 		}
 	})
 	r.Get("/api/sessions/{id}/report", func(w http.ResponseWriter, r *http.Request) {
-    sessionID := chi.URLParam(r, "id")
-    if sessionID == "" {
-        http.Error(w, "missing session id", http.StatusBadRequest)
-        return
-    }
-    report, err := store.GetSessionReport(db, sessionID)
-    if err != nil {
-        if err.Error() == "session not found" {
-            http.Error(w, "session not found", http.StatusNotFound)
-            return
-        }
-        http.Error(w, "failed to generate report", http.StatusInternalServerError)
-        return
-    }
-    w.Header().Set("Content-Type", "application/json")
-    if err := json.NewEncoder(w).Encode(report); err != nil {
-        log.Printf("encoding report response: %v", err)
-    }
+		sessionID := chi.URLParam(r, "id")
+		if sessionID == "" {
+			http.Error(w, "missing session id", http.StatusBadRequest)
+			return
+		}
+		report, err := store.GetSessionReport(db, sessionID)
+		if err != nil {
+			if err.Error() == "session not found" {
+				http.Error(w, "session not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, "failed to generate report", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(report); err != nil {
+			log.Printf("encoding report response: %v", err)
+		}
 	})
 
 	r.Get("/api/export", func(w http.ResponseWriter, r *http.Request) {
