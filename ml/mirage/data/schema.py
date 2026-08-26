@@ -10,6 +10,7 @@ __all__ = [
     "Command",
     "BaitInteraction",
     "ClassifierOutput",
+    "AuthAttempt",
     "Session",
     "parse_iso8601",
     "to_iso8601",
@@ -127,6 +128,26 @@ class ClassifierOutput:
 
 
 @dataclass(slots=True)
+class AuthAttempt:
+    """One credential presentation during a session's authentication phase.
+
+    Attributes:
+        username: Username presented.
+        credential: Password/credential presented alongside it.
+    """
+
+    username: str
+    credential: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"username": self.username, "credential": self.credential}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "AuthAttempt":
+        return cls(username=d["username"], credential=d["credential"])
+
+
+@dataclass(slots=True)
 class Session:
     """A complete attacker session: the atomic unit for all MIRAGE ML models.
 
@@ -140,6 +161,19 @@ class Session:
             during data exploration.
         duration_ms: Optional explicit session duration in milliseconds (from
             cowrie ``session.closed``). Falls back to the last command offset.
+        ssh_client_banner: SSH client version string presented at handshake
+            (e.g. ``"SSH-2.0-Go"``). Empty string if unknown/unrecorded --
+            never ``None``, so callers can treat it uniformly. Exchanged before
+            any application-layer logic runs, so it isn't subject to the
+            silent-capture-failure window documented for ``success``/
+            ``outcome`` in the preprint (Section V).
+        auth_attempts: Credential presentations during this session's
+            authentication phase, in the order presented. Most sessions have
+            exactly one (mean 1.011 per the preprint); the field exists mainly
+            so a session with zero commands -- 97%+ of the real corpus -- still
+            carries *some* attacker-chosen signal (which username/credential
+            it tried) rather than encoding to an empty, undifferentiated
+            sequence.
     """
 
     session_id: str
@@ -149,6 +183,8 @@ class Session:
     bait_interactions: list[BaitInteraction] = field(default_factory=list)
     classifier_output: ClassifierOutput | None = None
     duration_ms: int | None = None
+    ssh_client_banner: str = ""
+    auth_attempts: list[AuthAttempt] = field(default_factory=list)
 
     # -- Derived, point-process style accessors -----------------------------
 
@@ -199,6 +235,8 @@ class Session:
                 if self.classifier_output is not None
                 else None
             ),
+            "ssh_client_banner": self.ssh_client_banner,
+            "auth_attempts": [a.to_dict() for a in self.auth_attempts],
         }
         if self.duration_ms is not None:
             out["duration_ms"] = int(self.duration_ms)
@@ -206,7 +244,12 @@ class Session:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Session":
-        """Deserialize from the canonical MIRAGE JSON schema."""
+        """Deserialize from the canonical MIRAGE JSON schema.
+
+        ``ssh_client_banner``/``auth_attempts`` default to empty when absent, so
+        this stays backward compatible with rows written before those fields
+        existed.
+        """
         classifier = d.get("classifier_output")
         return cls(
             session_id=d["session_id"],
@@ -220,4 +263,8 @@ class Session:
                 ClassifierOutput.from_dict(classifier) if classifier else None
             ),
             duration_ms=d.get("duration_ms"),
+            ssh_client_banner=d.get("ssh_client_banner", ""),
+            auth_attempts=[
+                AuthAttempt.from_dict(a) for a in d.get("auth_attempts", [])
+            ],
         )

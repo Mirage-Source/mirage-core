@@ -17,12 +17,21 @@ __all__ = ["TokenizerConfig", "EncodedSession", "CommandTokenizer"]
 
 Mode = Literal["command", "full"]
 
-# Reserved ids. Order is part of the on-disk contract; do not reorder.
+# Reserved ids. Order is part of the on-disk contract; do not reorder --
+# DUR_TOKEN was added after the first four and must stay last so an existing
+# saved vocab.json's ids for pad/bos/eos/oov never shift.
 PAD_TOKEN = "<pad>"
 BOS_TOKEN = "<bos>"
 EOS_TOKEN = "<eos>"
 OOV_TOKEN = "<oov>"
-SPECIAL_TOKENS: tuple[str, ...] = (PAD_TOKEN, BOS_TOKEN, EOS_TOKEN, OOV_TOKEN)
+DUR_TOKEN = "<dur>"
+SPECIAL_TOKENS: tuple[str, ...] = (PAD_TOKEN, BOS_TOKEN, EOS_TOKEN, OOV_TOKEN, DUR_TOKEN)
+
+# Namespace prefixes for session-metadata vocabulary entries, so they can
+# never collide with a command token and can be identified later (e.g. to
+# exempt them from re-ID augmentation -- see CommandTokenizer.metadata_ids).
+BANNER_PREFIX = "banner:"
+CRED_PREFIX = "cred:"
 
 
 @dataclass
@@ -39,6 +48,21 @@ class TokenizerConfig:
             natural log of ``1 + ms``).
         timing_mean: Corpus mean of the log-ICI, for optional standardization.
         timing_std: Corpus std of the log-ICI, for optional standardization.
+        use_metadata: Encode ``ssh_client_banner``/``auth_attempts``/duration as
+            extra tokens right after ``<bos>`` (see ``CommandTokenizer.encode``).
+            The reason this exists: 97%+ of real MIRAGE sessions have zero
+            commands and would otherwise all encode to the identical
+            ``[<bos>, <eos>]`` sequence, giving a re-ID model nothing to learn
+            from for the overwhelming majority of the corpus. Kept as a toggle
+            (mirrors ``SessionEmbedderConfig.use_timing``) for a token-only
+            ablation.
+        metadata_top_k: Vocabulary budget for banner + credential tokens,
+            counted and capped *separately* from ``top_k`` -- the near-ubiquitous
+            banner token (``SSH-2.0-Go`` alone is 81.5% of sessions) would
+            otherwise crowd out real command tokens if they shared one budget.
+        duration_mean: Corpus mean of the log-scaled session duration, for
+            optional standardization of the ``<dur>`` token's timing value.
+        duration_std: Corpus std of the log-scaled session duration.
         version: Schema version of the serialized artifacts.
     """
 
@@ -49,7 +73,11 @@ class TokenizerConfig:
     timing_log_base: float = math.e
     timing_mean: float = 0.0
     timing_std: float = 1.0
-    version: int = 1
+    use_metadata: bool = True
+    metadata_top_k: int = 100
+    duration_mean: float = 0.0
+    duration_std: float = 1.0
+    version: int = 2
 
 
 @dataclass(slots=True)
@@ -121,9 +149,29 @@ class CommandTokenizer:
         return self._token_to_id[OOV_TOKEN]
 
     @property
+    def dur_id(self) -> int:
+        return self._token_to_id[DUR_TOKEN]
+
+    @property
     def vocab_size(self) -> int:
         """Total vocabulary size, including special tokens."""
         return len(self._id_to_token)
+
+    @property
+    def metadata_ids(self) -> frozenset[int]:
+        """Vocabulary ids of every banner/credential token plus ``<dur>``.
+
+        For a caller (e.g. the re-ID augmenter) that needs to exempt session-
+        metadata positions from command-oriented augmentation the same way it
+        already exempts ``<pad>``/``<bos>``/``<eos>``.
+        """
+        ids = {
+            i
+            for tok, i in self._token_to_id.items()
+            if tok.startswith(BANNER_PREFIX) or tok.startswith(CRED_PREFIX)
+        }
+        ids.add(self.dur_id)
+        return frozenset(ids)
 
     def __len__(self) -> int:
         return self.vocab_size
@@ -135,7 +183,10 @@ class CommandTokenizer:
 
         Counts normalized commands across all sessions, keeps the ``top_k`` most
         frequent as the vocabulary, and computes the corpus mean/std of the
-        log-ICI for optional timing standardization.
+        log-ICI for optional timing standardization. When ``config.use_metadata``
+        is set, also counts banner/credential tokens into a *separate*
+        ``metadata_top_k``-capped vocabulary tier, and fits the log-duration
+        mean/std used to standardize the ``<dur>`` token's timing value.
 
         Args:
             sessions: Iterable of sessions (consumed once).
@@ -144,7 +195,9 @@ class CommandTokenizer:
             ``self``, for chaining.
         """
         counts: Counter[str] = Counter()
+        metadata_counts: Counter[str] = Counter()
         log_icis: list[float] = []
+        log_durations: list[float] = []
 
         for session in sessions:
             for raw in session.raw_commands():
@@ -153,12 +206,25 @@ class CommandTokenizer:
                     counts[token] += 1
             for delta in session.inter_command_deltas_ms():
                 log_icis.append(self._log_ici(max(delta, 0)))
+            if self.config.use_metadata:
+                if session.ssh_client_banner:
+                    metadata_counts[self._banner_token(session.ssh_client_banner)] += 1
+                for attempt in session.auth_attempts:
+                    metadata_counts[
+                        self._credential_token(attempt.username, attempt.credential)
+                    ] += 1
+                log_durations.append(self._log_ms(session.effective_duration_ms))
 
         self._install_specials()
         for token, _ in counts.most_common(self.config.top_k):
             if token not in self._token_to_id:
                 self._token_to_id[token] = len(self._id_to_token)
                 self._id_to_token.append(token)
+        if self.config.use_metadata:
+            for token, _ in metadata_counts.most_common(self.config.metadata_top_k):
+                if token not in self._token_to_id:
+                    self._token_to_id[token] = len(self._id_to_token)
+                    self._id_to_token.append(token)
 
         if log_icis:
             mean = sum(log_icis) / len(log_icis)
@@ -166,28 +232,59 @@ class CommandTokenizer:
             self.config.timing_mean = mean
             self.config.timing_std = math.sqrt(var) or 1.0
 
+        if log_durations:
+            mean = sum(log_durations) / len(log_durations)
+            var = sum((x - mean) ** 2 for x in log_durations) / len(log_durations)
+            self.config.duration_mean = mean
+            self.config.duration_std = math.sqrt(var) or 1.0
+
         return self
 
     # -- Timing transform ---------------------------------------------------
 
-    def _log_ici(self, delta_ms: float) -> float:
-        """Log-scale an inter-command interval (the log-ISI transform).
+    def _log_ms(self, value_ms: float) -> float:
+        """Log-scale a millisecond-domain quantity: ``log(1 + value_ms)``.
 
-        Uses ``log(1 + delta_ms)`` so that a zero-delta step maps to ``0`` and
-        the heavy right tail of think-pauses is compressed. The neuroscience
-        rationale: ISIs are approximately log-normally distributed, so the log
-        domain is where Gaussian-friendly models and distance metrics behave.
+        Zero maps to ``0``; the heavy right tail of ms-scale durations (a
+        think-pause, or a whole session's length) is compressed. Shared by the
+        inter-command-interval transform and the ``<dur>`` token's duration
+        transform -- both are "how many milliseconds did this span," just at
+        different scales.
         """
-        value = math.log1p(max(delta_ms, 0.0))
+        value = math.log1p(max(value_ms, 0.0))
         base = self.config.timing_log_base
         if base != math.e:
             value /= math.log(base)
         return value
 
+    def _log_ici(self, delta_ms: float) -> float:
+        """Log-scale an inter-command interval (the log-ISI transform).
+
+        The neuroscience rationale: ISIs are approximately log-normally
+        distributed, so the log domain is where Gaussian-friendly models and
+        distance metrics behave.
+        """
+        return self._log_ms(delta_ms)
+
     def _maybe_standardize(self, log_ici: float, standardize: bool) -> float:
         if not standardize:
             return log_ici
         return (log_ici - self.config.timing_mean) / (self.config.timing_std or 1.0)
+
+    def _maybe_standardize_duration(self, log_duration: float, standardize: bool) -> float:
+        if not standardize:
+            return log_duration
+        return (log_duration - self.config.duration_mean) / (self.config.duration_std or 1.0)
+
+    # -- Metadata token formatting --------------------------------------------
+
+    @staticmethod
+    def _banner_token(banner: str) -> str:
+        return f"{BANNER_PREFIX}{banner}"
+
+    @staticmethod
+    def _credential_token(username: str, credential: str) -> str:
+        return f"{CRED_PREFIX}{username}:{credential}"
 
     # -- Encoding -----------------------------------------------------------
 
@@ -237,6 +334,25 @@ class CommandTokenizer:
         if self.config.add_bos:
             ids.append(self.bos_id)
             timing.append(self._maybe_standardize(0.0, standardize_timing))
+
+        if self.config.use_metadata:
+            # Metadata block: <dur> (real signal, in the timing channel) then
+            # the banner and every credential tried (real signal, in the token
+            # channel). None of these participate in the inter-command-interval
+            # chain below -- prev_offset is still unset when the loop starts.
+            ids.append(self.dur_id)
+            log_duration = self._log_ms(session.effective_duration_ms)
+            timing.append(self._maybe_standardize_duration(log_duration, standardize_timing))
+
+            if session.ssh_client_banner:
+                banner_tok = self._banner_token(session.ssh_client_banner)
+                ids.append(self._token_to_id.get(banner_tok, self.oov_id))
+                timing.append(self._maybe_standardize(0.0, standardize_timing))
+
+            for attempt in session.auth_attempts:
+                cred_tok = self._credential_token(attempt.username, attempt.credential)
+                ids.append(self._token_to_id.get(cred_tok, self.oov_id))
+                timing.append(self._maybe_standardize(0.0, standardize_timing))
 
         prev_offset: int | None = None
         for raw, offset in zip(raws, offsets):

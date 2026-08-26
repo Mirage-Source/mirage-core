@@ -13,7 +13,7 @@ from ..training.dataset import BatchView, EncodedExample
 from .augment import ReIDAugmentConfig, ReIDAugmenter
 from .data import IdentityCorpus
 
-__all__ = ["ReIDExample", "ReIDDataset", "ReIDCollator", "ReIDEvalCollator"]
+__all__ = ["ReIDExample", "ReIDDataset", "ReIDCollator", "ReIDEvalCollator", "PKCollator"]
 
 
 @dataclass
@@ -162,7 +162,14 @@ class ReIDCollator:
         self.pad_id = tokenizer.pad_id
         config = augment_config or ReIDAugmentConfig()
         config.timing_std = timing_std
-        protected = {tokenizer.pad_id, tokenizer.bos_id, tokenizer.eos_id}
+        # <dur>/banner/credential tokens are session metadata, not commands --
+        # the drop/shuffle/jitter augmentations are calibrated for command
+        # semantics and must not touch them, same as <pad>/<bos>/<eos>.
+        protected = {
+            tokenizer.pad_id,
+            tokenizer.bos_id,
+            tokenizer.eos_id,
+        } | tokenizer.metadata_ids
         rng = random.Random(seed) if seed is not None else None
         self.augmenter = ReIDAugmenter(protected_ids=protected, config=config, rng=rng)
 
@@ -198,6 +205,64 @@ class ReIDEvalCollator:
             [ex.timing for ex in batch],
             self.pad_id,
         )
+        identities = [ex.identity for ex in batch]
+        toolkits = [ex.toolkit for ex in batch]
+        return view, identities, toolkits
+
+
+class PKCollator:
+    """Collate a :class:`~mirage.reid.pk_sampler.PKBatchSampler` batch into one
+    augmented, padded view plus its aligned identity/toolkit labels.
+
+    Unlike :class:`ReIDCollator` (which produces *two* views of every example,
+    because its only source of positives is two augmentations of the same
+    row), this produces a *single* view: with a P-K batch, positives already
+    exist as other rows carrying the same identity, so the contrastive loss
+    (:class:`~mirage.reid.loss.CampaignAwareReIDLoss`) needs one embedding per
+    row, not a paired view. Every row -- real or resampled-with-replacement by
+    the sampler -- still gets its own independent augmentation draw, so two
+    rows that happen to be the *same* underlying session (a padded identity)
+    are never literally identical inputs.
+
+    Args:
+        tokenizer: Fitted tokenizer (provides pad/bos/eos ids for anchoring).
+        augment_config: Augmentation strengths; defaults to the Phase-3 spec.
+        timing_std: Std the timing channel was standardized with; see
+            :class:`ReIDCollator`.
+        seed: Optional base seed for deterministic, reproducible augmentation.
+    """
+
+    def __init__(
+        self,
+        tokenizer: CommandTokenizer,
+        augment_config: ReIDAugmentConfig | None = None,
+        timing_std: float = 1.0,
+        seed: int | None = None,
+    ) -> None:
+        self.pad_id = tokenizer.pad_id
+        config = augment_config or ReIDAugmentConfig()
+        config.timing_std = timing_std
+        # <dur>/banner/credential tokens are session metadata, not commands --
+        # the drop/shuffle/jitter augmentations are calibrated for command
+        # semantics and must not touch them, same as <pad>/<bos>/<eos>.
+        protected = {
+            tokenizer.pad_id,
+            tokenizer.bos_id,
+            tokenizer.eos_id,
+        } | tokenizer.metadata_ids
+        rng = random.Random(seed) if seed is not None else None
+        self.augmenter = ReIDAugmenter(protected_ids=protected, config=config, rng=rng)
+
+    def __call__(
+        self, batch: list[ReIDExample]
+    ) -> tuple[BatchView, list[str], list[str]]:
+        aug_ids: list[list[int]] = []
+        aug_tim: list[list[float]] = []
+        for ex in batch:
+            ids, tim = self.augmenter(ex.input_ids, ex.timing)
+            aug_ids.append(ids)
+            aug_tim.append(tim)
+        view = _pad_views(aug_ids, aug_tim, self.pad_id)
         identities = [ex.identity for ex in batch]
         toolkits = [ex.toolkit for ex in batch]
         return view, identities, toolkits

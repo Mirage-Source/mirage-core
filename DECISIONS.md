@@ -122,3 +122,111 @@ question (all three workflows; pause vs. delete). You picked pause, with
 the reasoning above matching what I'd have recommended for a project
 explicitly described as "no longer live" rather than "shut down for
 good."
+
+## 2026-08-26 — Real re-ID identity = source address; campaign tier as an
+auxiliary toolkit signal, not identity
+
+**Chose:** For real-data Phase-3 training, use each session's real
+`client_ip` as the contrastive-loss identity label (verified ground truth
+for every row), and confirmed campaign-tier membership as a *separate*,
+weaker "toolkit" label — never asserted as the same identity. Implemented
+as a two-granularity loss (`CampaignAwareReIDLoss`): full-strength SupCon
+on identity, weighted-down SupCon on toolkit, with the `unknown` toolkit
+placeholder excluded from ever anchoring the toolkit term.
+
+**Why:** The preprint's own campaign finding (§VI-A) proves the 50
+campaign addresses share identical *tooling*, not that they share one
+*operator* — it explicitly declines that attribution claim ("we leave
+attribution open"). Treating the whole campaign as one identity would
+bake an unverified claim into training data as if it were ground truth —
+exactly the failure shape the preprint spent a full section (silent
+capture corruption) warning about. Per-IP identity costs nothing extra
+(it's already known) and is still a real re-ID test via the existing
+held-out gallery/probe split.
+
+**Alternative considered:** Identity = the whole 50-IP campaign as one
+class (the stronger, more "interesting" signal, since it would test
+cross-IP recognition directly — rejected because it overclaims); identity
+= client_ip only, discarding the campaign finding entirely (safest, but
+throws away the one place structural ground truth actually exists beyond
+IP — rejected as wasteful, and the paper's own §VIII names this as the
+open problem worth addressing).
+
+**My answer before seeing yours:** Asked directly, gave three options and
+laid out the reasoning above without a recommendation first, per standing
+instructions. Confirmed matches my own answer.
+
+## 2026-08-26 — Session metadata (banner/credential/duration) folded into
+one token stream, not a separate model branch
+
+**Chose:** Extend `CommandTokenizer`/`Session` so `ssh_client_banner` and
+`auth_attempts` (username:credential pairs tried) become vocabulary
+tokens inserted right after `<bos>`, and session duration is carried in
+the *timing* channel via a new `<dur>` placeholder token — rather than
+adding a separate side-channel branch to `SessionEmbedder` fused before
+the projection head.
+
+**Why:** 97.2% of real sessions have zero commands and, before this
+change, all encoded to the identical `[<bos>, <eos>]` sequence — the
+contrastive loss had literally nothing to discriminate on for the
+overwhelming majority of the corpus. `SessionEmbedder` already has
+sinusoidal positional encoding and masked-mean pooling over every
+position (not a CLS token), so a unified token stream loses no real
+representational capacity versus a separate branch — verified empirically
+by re-running the same 400-step smoke config before/after: recall@1
+0.005 -> 0.031, recall@10 0.006 -> 0.099, loss curve went from
+non-monotonic (5.62 -> 4.54 -> 4.60) to smoothly decreasing
+(3.69 -> 2.80 -> 2.76). Duration specifically goes through the timing
+channel rather than a bucketed token, since it's continuous and the
+timing channel already exists for exactly this kind of value.
+
+**Alternative considered:** A separate side-channel branch (categorical
+banner embedding + hashed credential embedding + scalar duration MLP,
+concatenated with the pooled command representation before the
+projection head) — architecturally cleaner separation of "sequence" vs.
+"session-level" information, but requires changing `SessionEmbedder`'s
+signature, `ContrastiveReIDModel.forward`, `ReIDModelOutput`, and every
+collator; rejected as unnecessary complexity once duration's own
+awkwardness (the only real weak point of the token-stream approach) was
+resolved by routing it through the existing timing channel instead of
+forcing it into a discretized vocabulary entry.
+
+**My answer before seeing yours:** n/a — you asked me directly whether
+quality would degrade with one token stream before deciding; I gave the
+technical reasoning above (positional encoding + mean pooling means no
+capacity loss, duration is the one soft spot, fixed via the timing
+channel) and you approved building it that way.
+
+## 2026-08-26 — Stderr routing implemented as post-hoc output
+classification, not a real dual-stream refactor
+
+**Chose:** Model "did this stage's output go to stdout or stderr" by
+classifying the *already-computed* single output string via its exit code
+(`isErrorChannel`, with one explicit override for `which`), rather than
+changing every builtin's signature from `(string, int)` to
+`(stdout, stderr string, code int)` and threading two channels through
+the whole interpreter.
+
+**Why:** A correctness-review finding flagged that unknown commands
+always wrote "command not found" to the same channel as normal output,
+and that `2>`/`2>&1` weren't even parsed — a real recon script checking
+stderr specifically would catch this. A full dual-stream refactor would
+touch every one of the ~20 builtin functions for a benefit the audit
+already showed doesn't materialize: across this interpreter's whole
+builtin set, exit code is a reliable proxy for "is this error text"
+except for `which` (which can exit 1 while still printing real stdout
+matches), which the classifier special-cases explicitly rather than
+silently getting wrong.
+
+**Alternative considered:** The full two-string-per-builtin refactor
+(more "correct" in the abstract, matches how a real shell is actually
+built) — rejected as disproportionate: it would touch far more surface
+for the same externally-observable behavior, and the audit found no
+second case beyond `which` where the classifier's exit-code heuristic
+actually diverges from truth.
+
+**My answer before seeing yours:** n/a — this was flagged to you as the
+large/architectural piece of a four-part finding, and you gave blanket
+approval to work through all four rather than re-litigating this specific
+implementation choice; noted here rather than skipped since it's still a
+real design fork a reviewer could reasonably ask about.
