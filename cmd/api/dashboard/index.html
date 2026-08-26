@@ -84,6 +84,12 @@
     </table>
   </section>
 
+  <section id="llm-section">
+    <h2>LLM shell completion</h2>
+    <div class="sub">Which provider answers commands the shell has no builtin for. Switching takes effect on the next completion &mdash; no restart.</div>
+    <div id="llm-body"></div>
+  </section>
+
   <section>
     <h2>Downtime vs. silence</h2>
     <div class="sub">Sensor heartbeat gaps — periods of session silence overlapping a gap are downtime, not genuine attacker absence.</div>
@@ -159,6 +165,66 @@ function renderHeartbeat(h) {
   `).join('') || '<tr><td colspan="3" class="empty">no gaps in the last 30 days</td></tr>';
 }
 
+async function loadLLM() {
+  const body = document.getElementById('llm-body');
+  let data;
+  try {
+    data = await api('/api/llm-shell/providers');
+  } catch (e) {
+    body.innerHTML = '<p class="empty">Could not reach the deception service.</p>';
+    return;
+  }
+  if (!data.configured || !data.providers.length) {
+    body.innerHTML = '<p class="empty">No providers configured '
+      + '(set MIRAGE_LLM_SHELL_PROVIDERS_JSON on the deception service).</p>';
+    return;
+  }
+
+  const s = data.stats || {};
+  const options = data.providers
+    .map(p => `<option value="${p.name}" ${p.name === data.active ? 'selected' : ''}>${p.name} &mdash; ${p.model}</option>`)
+    .join('');
+
+  body.innerHTML = `
+    <p>Active provider
+      <select id="llm-active">${options}</select>
+      <span id="llm-switch-status" class="meta"></span>
+    </p>
+    <table>
+      <thead><tr><th>Provider</th><th>Kind</th><th>Model</th><th>Endpoint</th></tr></thead>
+      <tbody>${data.providers.map(p => `
+        <tr>
+          <td>${p.name}${p.name === data.active ? ' <span class="badge good">active</span>' : ''}</td>
+          <td>${p.provider}</td>
+          <td>${p.model}</td>
+          <td>${p.base_url || 'default'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <p class="meta">
+      served ${s.served ?? 0} &middot; refused ${s.refused ?? 0} &middot;
+      recent calls ${s.recent_calls ?? 0} &middot;
+      circuit ${s.circuit_open ? '<span class="badge crit">open</span>' : '<span class="badge good">closed</span>'}
+      &middot; tracked sessions ${s.tracked_sessions ?? 0}
+    </p>`;
+
+  document.getElementById('llm-active').addEventListener('change', async (ev) => {
+    const status = document.getElementById('llm-switch-status');
+    status.textContent = 'switching...';
+    try {
+      const res = await fetch('/api/llm-shell/active', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, apiKey ? { 'X-API-Key': apiKey } : {}),
+        body: JSON.stringify({ name: ev.target.value }),
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      await loadLLM();
+    } catch (e) {
+      status.textContent = 'switch failed: ' + e.message;
+    }
+  });
+}
+
 async function loadSummary(sensor) {
   const s = await api('/api/validity/summary?sensor=' + encodeURIComponent(sensor));
   document.getElementById('computed-at').textContent = 'computed ' + new Date(s.computed_at).toLocaleString();
@@ -179,6 +245,7 @@ async function init() {
     select.value = def;
     select.addEventListener('change', () => loadSummary(select.value));
     await loadSummary(def);
+    await loadLLM();
   } catch (e) {
     const err = document.getElementById('error');
     err.style.display = 'block';

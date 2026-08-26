@@ -7,4 +7,10 @@ numpy>=1.23
 scikit-learn>=1.2
 # Phase-4 threat-intel summaries (only used when MIRAGE_INTEL_USE_LLM=1; the
 # summarizer imports it lazily and falls back to a template if absent).
+# Also backs the "anthropic" provider of the LLM shell-completion fallback.
 anthropic>=0.40
+# The "openai_compatible" provider of the LLM shell-completion fallback --
+# covers OpenAI proper and any self-hosted server speaking the same API
+# (Ollama, vLLM, LM Studio) via a configured base_url. Imported lazily; the
+# fallback reports itself unavailable if it's absent.
+openai>=1.40
