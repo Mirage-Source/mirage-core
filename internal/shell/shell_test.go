@@ -200,6 +200,7 @@ func TestRunWithDeceptionEmptyActionMatchesRun(t *testing.T) {
 	for _, c := range cases {
 		a := NewInterpreter()
 		b := NewInterpreter()
+		b.Hostname = a.Hostname // isolate this comparison from per-session hostname randomization
 		outA, codeA, baitA := a.Run(c)
 		outB, codeB, baitB := b.RunWithDeception(c, "")
 		if outA != outB || codeA != codeB || len(baitA) != len(baitB) {
