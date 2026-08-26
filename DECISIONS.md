@@ -98,3 +98,27 @@ exact number this whole effort exists to make trustworthy — rejected).
 call I made unilaterally and flagged explicitly rather than posing as a
 question, since it directly determines whether the resulting metric means
 anything.
+
+## 2026-08-26 — Retire the three live-dependent GitHub Actions workflows
+
+**Chose:** Disable the trigger on `deploy.yml`, `update-stats.yml`, and
+`publish-dataset.yml` (drop `push`/`schedule`, keep `workflow_dispatch`),
+rather than deleting the files, and left `go-tests.yml`/`ml-tests.yml`
+untouched since they don't depend on the live sensor.
+
+**Why:** Mirage is no longer live — the VPS `deploy.yml` pushes to, and
+the API `update-stats.yml`/`publish-dataset.yml` poll, no longer exist, so
+all three would just fail (or silently no-op) on every scheduled run.
+Pausing rather than deleting keeps the workflow re-armable with a
+one-line diff (restore the trigger) if the sensor comes back online,
+versus reconstructing it from git history.
+
+**Alternative considered:** Delete the files outright (simpler, no dead
+config sitting in the repo, but loses the "one line to re-arm" property
+and makes reviving deployment/publishing later strictly more work).
+
+**My answer before seeing yours:** n/a — asked as a multiple-choice
+question (all three workflows; pause vs. delete). You picked pause, with
+the reasoning above matching what I'd have recommended for a project
+explicitly described as "no longer live" rather than "shut down for
+good."

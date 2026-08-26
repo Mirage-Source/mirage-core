@@ -1,8 +1,9 @@
+# Retired 2026-08-26: Mirage is no longer live (no VPS to deploy to).
+# Auto-deploy-on-push disabled; workflow_dispatch kept so it can be re-armed
+# by restoring the `push` trigger below if the sensor comes back online.
 name: Deploy MIRAGE
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   deploy:
