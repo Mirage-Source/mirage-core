@@ -230,3 +230,118 @@ large/architectural piece of a four-part finding, and you gave blanket
 approval to work through all four rather than re-litigating this specific
 implementation choice; noted here rather than skipped since it's still a
 real design fork a reviewer could reasonably ask about.
+
+## 2026-08-26 — Validity toolkit lives in the Go API binary, not a new
+Python or JS service
+
+**Chose:** Build the P1 data-validity toolkit (accept-rate band drift,
+field-cardinality collapse, campaign-vs-aggregate decomposition, downtime-
+vs-silence heartbeat) as a new `internal/validity` Go package, exposed
+through the existing `mirage-api` binary and a `//go:embed`-served
+dashboard — retiring Prometheus+Grafana rather than adding a third viz
+layer. Ported `ml/mirage/reid/campaign.py`'s wordlist-divisibility +
+credential-set-identity test to Go by hand (`internal/validity/campaign.go`)
+rather than shelling out to the existing tested Python implementation.
+
+**Why:** Every existing Grafana panel already turned out to be a live SQL
+query wrapped in a Prometheus gauge (`cmd/api/main.go`) — Prometheus/
+Grafana added no data-processing value, just a poll/store/viz layer on
+numbers Postgres already had, with full history, more cheaply than
+Prometheus's 30-day retention. A second runtime call from Go into Python
+for one check would add a cross-language dependency to what's otherwise a
+single-binary serving path, for ~60 lines of dependency-free `Counter`
+logic that's mechanical to port faithfully (verified against the existing
+Python test suite's exact cases, ported 1:1 in
+`internal/validity/campaign_test.go`). Keeping this to one binary matches
+the explicit "light stack" goal, which matters beyond aesthetics for §05's
+still-unbuilt distributed-collector story (Sensor 06): a node other people
+run shouldn't need to stand up Prometheus+Grafana+a second language
+runtime just to see its own validity checks.
+
+**Alternative considered:** Keep Prometheus+Grafana and add a third
+dashboard beside them (less migration work now, but adds a viz layer on
+top of infra already shown to be pure pass-through, and doesn't help the
+light-stack/fleet-node goal); have the Go API shell out to the existing
+Python `campaign.py` CLI and cache its output (reuses the canonical tested
+implementation, avoids maintaining two copies of the same logic, but adds
+a Python runtime dependency to the serving path and a subprocess-call
+failure mode for a check simple enough to duplicate safely).
+
+**My answer before seeing yours:** n/a — you asked me to design this
+(scope explicitly deferred: "whatever you prefer"/"I think I want to keep
+the whole stack... as light as possible") after two rounds of me asking
+you to choose first on the interface and scope questions; noted here
+rather than skipped since the concrete architecture (single binary,
+hand-ported check vs. cross-language call) is still a real fork worth a
+reviewer's scrutiny even though you delegated picking it.
+
+## 2026-08-26 — Downtime-vs-silence needs a real heartbeat, not a session-
+gap heuristic
+
+**Chose:** Add a new `sensor_heartbeats(sensor_id, ts)` table, written by
+a ticker in the SSH server (`cmd/mirage/main.go`) independent of session
+traffic, tagged by a new `SENSOR_ID` env var — rather than trying to infer
+downtime from gaps in session arrival alone, and rather than reusing the
+existing `sessions.node_id` field for sensor identity.
+
+**Why:** "Sensor was down" and "sensor was up but nobody connected" are
+indistinguishable from session data alone by construction — that's the
+whole point of the check, so no heuristic on session gaps can actually
+answer it; a real out-of-band liveness signal is necessary, not just
+preferable. Separately, `sessions.node_id` turned out to be hardcoded to
+`"Ubuntu"` (`internal/server/server.go:223`) — the emulated-OS identity
+string shown to attackers, not a deployment/sensor identifier — so reusing
+it for sensor identity would have been reusing a field for a meaning it
+doesn't have, caught while implementing rather than assumed from a
+migration comment.
+
+**Alternative considered:** Derive liveness from the `ml-worker`/bridge's
+existing 10s poll loop, which already runs continuously — rejected because
+it measures the bridge's liveness, not the SSH listener's; the SSH server
+could be down while the bridge is still up, producing a false "alive"
+reading on exactly the failure this check exists to catch.
+
+**My answer before seeing yours:** n/a — this surfaced during
+implementation (checking where `node_id` actually came from before
+building on it), not as a question posed to you first; noted here per the
+same "real design fork" standard as the entries above.
+
+## 2026-08-26 — Dashboard accepts the API key as a `?api_key=` query param,
+in addition to the header
+
+**Chose:** `cmd/api/main.go`'s auth middleware now falls back to
+`r.URL.Query().Get("api_key")` when neither `X-API-Key` nor `Authorization:
+Bearer` is present, so `GET /dashboard?api_key=...` works from a plain
+browser navigation -- rather than requiring every existing REST consumer to
+change, or building a login form + cookie session for the dashboard alone.
+
+**Why:** Every other route on `mirage-api` is called by scripts/`curl`,
+which can set headers freely; `/dashboard` is the first route a human
+loads by typing/clicking a URL, and a browser navigation cannot attach a
+custom header. The existing model already treats this key as something
+"available to researchers on request" (README's REST API section), not a
+secret with a stricter threat model like a user password, so accepting it
+in a query string for the one route that needs it is a proportionate
+trade-off, not a new weaker posture for the whole API -- header/bearer are
+still tried first and this is only a fallback.
+
+**Alternative considered:** A real login flow (password form → signed
+cookie) -- the correct answer for a multi-user product, but disproportionate
+build for a single shared API key that's already handed out manually
+per-researcher; would also be the first stateful/session-carrying thing in
+an otherwise fully stateless API.
+
+**Known weakness, stated plainly rather than glossed over:** a URL
+containing the key can leak via browser history, a shared clipboard, or an
+outbound `Referer` header if the dashboard ever links offsite (it
+currently doesn't). Acceptable for now given the key's existing
+distribution model; would need revisiting before ever making the dashboard
+route reachable from the open internet rather than an operator's own
+tunnel/VPN.
+
+**My answer before seeing yours:** n/a -- this is a mechanical consequence
+of the browser-can't-set-headers constraint discovered while wiring
+`/dashboard` into the existing all-routes-need-a-header middleware, not a
+question with a real design fork posed to you; logged anyway since it's a
+security-relevant trade-off a reviewer should be able to see was made
+deliberately, not accidentally.

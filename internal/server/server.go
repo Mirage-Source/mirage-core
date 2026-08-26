@@ -22,6 +22,7 @@ import (
 	"github.com/mirage-source/mirage-core/internal/session"
 	"github.com/mirage-source/mirage-core/internal/shell"
 	"github.com/mirage-source/mirage-core/internal/store"
+	"github.com/mirage-source/mirage-core/internal/validity"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -189,6 +190,20 @@ func Start(addr string) {
 	}
 	defer db.Close()
 
+	// Deliberately independent of session traffic and NOT keyed by
+	// sess.NodeID below (that field is hardcoded "Ubuntu", the emulated-OS
+	// string shown to attackers, not a deployment identity) -- this is the
+	// out-of-band liveness signal the downtime-vs-silence validity check
+	// needs, since "sensor down" and "sensor up, nobody connected" are
+	// otherwise indistinguishable from session data alone.
+	sensorID := os.Getenv("SENSOR_ID")
+	if sensorID == "" {
+		sensorID = "default"
+	}
+	heartbeatInterval := envDuration("SENSOR_HEARTBEAT_INTERVAL_SECONDS", 60*time.Second)
+	stopHeartbeat := validity.StartHeartbeat(db, sensorID, heartbeatInterval, log.Printf)
+	defer stopHeartbeat()
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -337,7 +352,6 @@ func envBool(key string, fallback bool) bool {
 	}
 	return b
 }
-
 
 func resolveRemoteAddr(pp *proxyproto.Conn, fallback net.Addr) (addr *net.TCPAddr, ingressSource, proxyNodeID string) {
 	if pp != nil {
@@ -643,4 +657,3 @@ func responseSourceFor(bait []shell.BaitHit) session.ResponseSource {
 	}
 	return session.ResponseSourceHardcoded
 }
-

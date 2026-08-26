@@ -57,6 +57,7 @@ PostgreSQL  ←  enriched with attacker_class, mitre_techniques, stix_bundle
 | `internal/shell/` | Go | Stateful fake shell, unified filesystem tree, `;`/`&&`/`||` chaining, `$(...)` substitution |
 | `internal/session/` | Go | Session data model |
 | `internal/store/` | Go | PostgreSQL persistence |
+| `internal/validity/` | Go | Data-validity checks (accept-rate drift, field cardinality, campaign decomposition, heartbeat gaps) served at `/dashboard` |
 | `bridge/` | Python | Polling worker, schema adapter, ML pipeline orchestration |
 | `ml/` | Python / PyTorch | Classifier, timing heuristics, tool signature detection |
 | `db/init/` | SQL | PostgreSQL schema migrations |
@@ -104,9 +105,45 @@ A secured REST API exposes the live dataset. All endpoints require an `X-API-Key
 | `GET /api/sessions/{id}` | Full session with ML intelligence overlay |
 | `GET /api/sessions/{id}/report` | Structured report with embedded STIX 2.1 bundle |
 | `GET /api/export` | Full session export (used by the weekly dataset job) |
-| `GET /metrics` | Prometheus metrics |
+| `GET /api/export/commands` | Full command export, cursor-paginated (`?after=`, `?limit=`) |
+| `GET /api/sensors` | Configured dashboard sensors |
+| `GET /api/validity/summary` | All four data-validity checks for one sensor (`?sensor=`) |
+| `GET /api/validity/accept-rate` | Accept-rate band-drift series (`?sensor=`, `?days=`) |
+| `GET /api/validity/fields` | Field-cardinality collapse status (`?sensor=`) |
+| `GET /api/validity/campaign` | Campaign-vs-aggregate decomposition (`?sensor=`) |
+| `GET /api/validity/heartbeat` | Sensor uptime / downtime gaps (`?sensor=`) |
+| `GET /dashboard` | The data-validity dashboard (`?api_key=` — see below) |
 
-API access is available to researchers on request.
+API access is available to researchers on request. All routes require an
+`X-API-Key` header or `Authorization: Bearer` token, except `/dashboard`,
+which also accepts the key as `?api_key=` since a browser navigation can't
+set a custom header — see `DECISIONS.md` for the trade-off that implies.
+
+Prometheus and Grafana have been retired in favor of `/dashboard` — see
+the data-validity toolkit section below.
+
+### Data-validity toolkit
+
+`internal/validity` implements four standing checks generalizing the
+[preprint](#citation)'s data-validity audit, so the next silent corruption
+gets caught automatically instead of waiting for an outside reviewer:
+
+1. **Accept-rate band drift** — a rolling control chart on daily auth
+   success rate; flags a day that falls outside its own trailing history.
+2. **Field cardinality collapse** — watches a fixed set of fields that
+   should vary (`sessions.outcome`, `auth_attempts.success`, SSH banner,
+   attacker class, deception action, ingress source) for a silent collapse
+   to one value.
+3. **Campaign-vs-aggregate decomposition** — the preprint's
+   wordlist-divisibility + credential-set-identity campaign test, run live,
+   with headline stats computed both including and excluding the detected
+   campaign.
+4. **Downtime-vs-silence separation** — a sensor heartbeat independent of
+   session traffic, so "the sensor was down" and "nobody connected" are
+   never conflated.
+
+All four are computed periodically and served at `/dashboard` and the
+`/api/validity/*` endpoints above.
 
 ---
 
