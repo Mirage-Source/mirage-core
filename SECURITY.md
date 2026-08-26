@@ -23,11 +23,35 @@ knob, regardless of which deception action is active:
   networking package (no `net`, `net/http`) and no process-execution package
   (no `os/exec`). Every command is dispatched from a fixed whitelist (`echo`,
   `whoami`, `pwd`, `hostname`, `id`, `uname`, `export`, `test`, `cat`, `ls`,
-  `cd`, `grep`, `head`, `tail`, `wc`, `exit`); anything else -- `wget`,
-  `curl`, `nc`, `ssh`, `scp`, `telnet`, `ping`, a Python one-liner opening a
-  socket -- falls through to the same `"command not found"` response every
-  other unrecognized command gets. There is no code path in the shell that
-  can dial out, regardless of what an attacker types.
+  `cd`, `grep`, `head`, `tail`, `wc`, `which`, `find`, `ps`, `netstat`,
+  `crontab`, `exit`); anything else -- `wget`, `curl`, `nc`, `ssh`, `scp`,
+  `telnet`, `ping`, a Python one-liner opening a socket -- falls through to
+  the same `"command not found"` response every other unrecognized command
+  gets. There is no code path in the shell that can dial out, regardless of
+  what an attacker types.
+- **The LLM completion fallback never answers an egress-flavored command.**
+  When `MIRAGE_LLM_SHELL_ENABLED=true`, a command with no builtin may be
+  answered with generated output instead of `"command not found"` (see
+  `internal/deception/completion.go`). That path is gated three ways, and the
+  gate runs in `internal/deception`, never in `internal/shell` -- which still
+  imports no networking package at all:
+  1. Never for a command the interpreter already handles, so curated output
+     is never replaced by an invention.
+  2. Never for a compound line -- anything containing `;`, `&&`, `||`, `|`,
+     `>`, `<`, `$(`, backticks or `&` goes to the real interpreter, so a
+     chained `uptime; wget ...` cannot have its `wget` stage answered by a
+     model.
+  3. Never for an egress-capable tool. `wget`, `curl`, `nc`, `ssh`, `scp`,
+     `telnet`, `ping`, `nslookup`, `dig`, package managers, and language
+     interpreters are all refused by name. Fabricating a plausible
+     "connected... 200 OK" is exactly the fabricated-success problem the
+     `FAKE_SUCCESS` ceiling above exists to prevent, and it stays out of
+     scope even though no real packet is ever sent either way.
+
+  The generation prompt additionally instructs the model never to claim a
+  network operation, download, transfer, or remote login occurred, but that
+  instruction is defense in depth, not the control: the command-name gate is
+  what actually enforces this, and it is tested.
 - **No real payload execution.** Nothing in `internal/shell` shells out to
   the host OS; command output is entirely simulated/templated
   (`internal/shell/fs.go`), never the result of actually running what was
@@ -52,6 +76,16 @@ asserts each resolves immediately to the simulated `"command not found"`
 path, and `internal/deception`'s `TestFakeSuccessNeverMasksARealAttempt`
 locks in that `FAKE_SUCCESS` applied on top still completes immediately with
 empty output.
+
+The completion gate is locked in the same way.
+`TestShouldAttemptCompletionRejectsEveryNoEgressTestCommand`
+(`internal/deception/completion_test.go`) holds a copy of the exact command
+list from `TestNetworkFlavoredCommandsNeverAttemptRealEgress` and asserts the
+fallback refuses every one of them, so the two tests cannot drift apart --
+adding a command to the egress battery without also refusing it in the
+fallback fails the build. `TestIsKnownBuiltinCoversEveryExecBuiltinCase`
+(`internal/shell/known_builtins_test.go`) does the same for the builtin list,
+so a new builtin can never be silently shadowed by a generated response.
 
 ## Disclosed incidents
 

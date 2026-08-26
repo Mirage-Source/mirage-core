@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/mirage-source/mirage-core/internal/api"
+	"github.com/mirage-source/mirage-core/internal/deception"
 	"github.com/mirage-source/mirage-core/internal/store"
 	"github.com/mirage-source/mirage-core/internal/validity"
 )
@@ -91,6 +93,12 @@ func main() {
 			refreshValidity()
 		}
 	}()
+
+	// Read-only view onto the deception service for the dashboard's LLM
+	// panel. Built from the same env config the SSH server uses, but only
+	// its BaseURL/timeouts matter here -- this process never asks for a
+	// policy decision or a completion, only the operator-facing listing.
+	deceptionClient := deception.NewClient(deception.ConfigFromEnv())
 
 	// Read once at startup: the page is embedded in the binary, so a
 	// per-request read would buy nothing and a failure here should stop the
@@ -184,6 +192,49 @@ func main() {
 	r.Get("/api/validity/heartbeat", func(w http.ResponseWriter, r *http.Request) {
 		if s, ok := validitySummaryFor(w, r); ok {
 			writeJSON(w, s.Heartbeat)
+		}
+	})
+
+	r.Get("/api/llm-shell/providers", func(w http.ResponseWriter, r *http.Request) {
+		listing, err := deceptionClient.Providers()
+		if err != nil {
+			log.Printf("fetching LLM provider listing: %v", err)
+			// The deception service being unreachable is an expected state
+			// (it is optional and has no depends_on), so the dashboard gets
+			// a well-formed "not configured" rather than an error banner.
+			writeJSON(w, map[string]any{"configured": false, "providers": []any{}, "active": nil, "reachable": false})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write(listing); err != nil {
+			log.Printf("writing LLM provider listing: %v", err)
+		}
+	})
+
+	r.Post("/api/llm-shell/active", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+			http.Error(w, "expected a JSON body with a non-empty name", http.StatusBadRequest)
+			return
+		}
+		listing, err := deceptionClient.SetActiveProvider(body.Name)
+		if err != nil {
+			log.Printf("switching LLM provider to %q: %v", body.Name, err)
+			// A name the service doesn't know is the caller's mistake, not an
+			// upstream failure -- reporting both as 502 would tell an operator
+			// their deception service is down when they merely typo'd a name.
+			if errors.Is(err, deception.ErrUnknownProvider) {
+				http.Error(w, "unknown provider", http.StatusBadRequest)
+				return
+			}
+			http.Error(w, "failed to switch provider", http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write(listing); err != nil {
+			log.Printf("writing provider switch response: %v", err)
 		}
 	})
 

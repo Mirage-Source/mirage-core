@@ -58,6 +58,7 @@ PostgreSQL  ←  enriched with attacker_class, mitre_techniques, stix_bundle
 | `internal/session/` | Go | Session data model |
 | `internal/store/` | Go | PostgreSQL persistence |
 | `internal/validity/` | Go | Data-validity checks (accept-rate drift, field cardinality, campaign decomposition, heartbeat gaps) served at `/dashboard` |
+| `internal/deception/` | Go | Deception-policy client, and the gate deciding which unknown commands may get an LLM-generated response |
 | `bridge/` | Python | Polling worker, schema adapter, ML pipeline orchestration |
 | `ml/` | Python / PyTorch | Classifier, timing heuristics, tool signature detection |
 | `db/init/` | SQL | PostgreSQL schema migrations |
@@ -112,6 +113,8 @@ A secured REST API exposes the live dataset. All endpoints require an `X-API-Key
 | `GET /api/validity/fields` | Field-cardinality collapse status (`?sensor=`) |
 | `GET /api/validity/campaign` | Campaign-vs-aggregate decomposition (`?sensor=`) |
 | `GET /api/validity/heartbeat` | Sensor uptime / downtime gaps (`?sensor=`) |
+| `GET /api/llm-shell/providers` | Configured LLM completion providers, active one, live counters |
+| `POST /api/llm-shell/active` | Switch the active LLM completion provider |
 | `GET /dashboard` | The data-validity dashboard (`?api_key=` — see below) |
 
 API access is available to researchers on request. All routes require an
@@ -144,6 +147,37 @@ gets caught automatically instead of waiting for an outside reviewer:
 
 All four are computed periodically and served at `/dashboard` and the
 `/api/validity/*` endpoints above.
+
+### LLM shell completion
+
+The simulated shell answers a fixed set of builtins with curated,
+self-consistent output. Everything else has always returned
+`bash: <cmd>: command not found` — both a fingerprint and a dead end, against
+a corpus where only 2.79% of sessions issue any command at all.
+
+With `MIRAGE_LLM_SHELL_ENABLED=true`, commands with no builtin (`uptime`,
+`nproc`, `lspci`, `nvidia-smi`, ...) are instead answered by a configured LLM
+provider. Responses are cached per session, so the same command asked twice
+returns byte-identical output.
+
+Providers are declared in `MIRAGE_LLM_SHELL_PROVIDERS_JSON` and switched live
+from `/dashboard`. Two kinds are supported: `anthropic`, and
+`openai_compatible` — which covers OpenAI proper *and* self-hosted servers
+speaking the same API (Ollama, vLLM, LM Studio) via `base_url`. Config names
+the environment variable holding each key, never the key itself.
+
+**This never fires for** a command the shell already implements, a compound
+line (`;` `&&` `|` `>` `$()` ...), or an egress-capable tool (`wget`, `curl`,
+`nc`, `ssh`, package managers, language interpreters). Those keep resolving
+exactly as before. See the rules of engagement in
+[SECURITY.md](SECURITY.md#rules-of-engagement) — the constraint is enforced by
+tests that share a command list with the existing no-egress battery, not by
+the generation prompt.
+
+Cost is bounded by a per-session cap and a global sliding-window rate limit,
+and a circuit breaker stops calling a failing provider. Every refusal path
+degrades to the ordinary `command not found`, so the honeypot behaves exactly
+as it always has whenever a completion can't be served.
 
 ---
 

@@ -165,9 +165,12 @@ func Start(addr string) {
 
 	deceptionRuntime := deception.NewRuntime(deception.ConfigFromEnv())
 	if deceptionRuntime == nil {
-		log.Printf("Deception policy: disabled")
+		log.Printf("Deception policy: disabled; LLM shell completion: disabled")
 	} else {
-		log.Printf("Deception policy: enabled (apply_actions=%v)", deceptionRuntime.ApplyActions)
+		log.Printf(
+			"Deception policy: %v (apply_actions=%v); LLM shell completion: %v",
+			deceptionRuntime.PolicyEnabled, deceptionRuntime.ApplyActions, deceptionRuntime.CompletionEnabled,
+		)
 	}
 
 	// Bounds the number of in-flight connections (and therefore goroutines
@@ -438,11 +441,37 @@ func handleChannels(conn net.Conn, idleTimeout time.Duration, chans <-chan ssh.N
 // applyDeception asks the deception policy (if enabled) how to respond to
 // one command, runs the interpreter exactly once, and -- only when the
 // policy is also allowed to change shell output (deceptionRuntime.ApplyActions)
-
-func applyDeception(deceptionRuntime *deception.Runtime, interp *shell.Interpreter, sessionID, command string) (response string, code int, baitHits []shell.BaitHit, deceptionAction *string) {
+// -- lets that decision alter the response and its timing.
+//
+// usedLLM reports that the response came from the completion fallback rather
+// than from the interpreter, so the caller can record the right
+// session.ResponseSource against the command.
+func applyDeception(deceptionRuntime *deception.Runtime, interp *shell.Interpreter, sessionID, command string) (response string, code int, baitHits []shell.BaitHit, deceptionAction *string, usedLLM bool) {
 	if deceptionRuntime == nil {
 		response, code, baitHits = interp.Run(command)
-		return response, code, baitHits, nil
+		return response, code, baitHits, nil, false
+	}
+
+	// Tried before the interpreter runs, and only for a command the
+	// interpreter has no builtin for (see deception.ShouldAttemptCompletion,
+	// which also refuses compound lines and anything egress-flavoured). On
+	// success the interpreter is skipped entirely for this command: we
+	// already know the only thing it would produce is "command not found".
+	//
+	// This path deliberately ignores the RL policy: a completion is not one
+	// of its actions, and gating it behind ApplyActions would tie the
+	// engagement fix to a policy that ships shadow-mode-first.
+	if deceptionRuntime.CompletionEnabled {
+		if _, eligible := deception.ShouldAttemptCompletion(command); eligible {
+			if out, exitCode, ok := deceptionRuntime.Client.Complete(sessionID, command); ok {
+				return out, exitCode, nil, nil, true
+			}
+		}
+	}
+
+	if !deceptionRuntime.PolicyEnabled {
+		response, code, baitHits = interp.Run(command)
+		return response, code, baitHits, nil, false
 	}
 
 	baitHint := shell.LooksLikeBaitAccess(command)
@@ -466,7 +495,7 @@ func applyDeception(deceptionRuntime *deception.Runtime, interp *shell.Interpret
 		}
 	}
 
-	return response, code, baitHits, &action
+	return response, code, baitHits, &action, false
 }
 
 func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh.Channel, requests <-chan *ssh.Request, guard *sessionGuard, deceptionRuntime *deception.Runtime) {
@@ -495,7 +524,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 
 			interp := shell.NewInterpreter()
 			beforeCwd := interp.Cwd
-			response, code, baitHits, deceptionAction := applyDeception(deceptionRuntime, interp, guard.sessionID(), payload.Command)
+			response, code, baitHits, deceptionAction, usedLLM := applyDeception(deceptionRuntime, interp, guard.sessionID(), payload.Command)
 			if response != "" {
 				fmt.Fprintf(channel, "%s\r\n", response)
 			}
@@ -524,7 +553,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 				WorkingDirectory: beforeCwd,
 				Response:         &response,
 				ExitCode:         &status,
-				ResponseSource:   responseSourceFor(baitHits),
+				ResponseSource:   responseSourceFor(baitHits, usedLLM),
 				DeceptionAction:  deceptionAction,
 			}
 			cmd = guard.appendCommand(cmd, false)
@@ -612,7 +641,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 				}
 
 				beforeCwd := interp.Cwd
-				response, code, baitHits, deceptionAction := applyDeception(deceptionRuntime, interp, guard.sessionID(), cli)
+				response, code, baitHits, deceptionAction, usedLLM := applyDeception(deceptionRuntime, interp, guard.sessionID(), cli)
 
 				status := code
 				if status == shell.ExitRequested {
@@ -628,7 +657,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 					WorkingDirectory: beforeCwd,
 					Response:         &response,
 					ExitCode:         &status,
-					ResponseSource:   responseSourceFor(baitHits),
+					ResponseSource:   responseSourceFor(baitHits, usedLLM),
 					DeceptionAction:  deceptionAction,
 				}
 				cmd = guard.appendCommand(cmd, true)
@@ -651,9 +680,17 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 	log.Printf("Session ended.")
 }
 
-func responseSourceFor(bait []shell.BaitHit) session.ResponseSource {
+// responseSourceFor records where a command's response actually came from.
+// Bait wins over llm: a bait trigger is the more consequential fact about
+// the command, and the two can't co-occur anyway (the completion fallback
+// only ever fires for commands with no builtin, which cannot touch the
+// planted files).
+func responseSourceFor(bait []shell.BaitHit, usedLLM bool) session.ResponseSource {
 	if len(bait) > 0 {
 		return session.ResponseSourceBaitTriggered
+	}
+	if usedLLM {
+		return session.ResponseSourceLLM
 	}
 	return session.ResponseSourceHardcoded
 }

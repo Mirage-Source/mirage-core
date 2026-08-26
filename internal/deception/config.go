@@ -22,6 +22,18 @@
 // analysis, but the attacker sees exactly the same shell they always have.
 // That is the recommended way to turn this on for the first time on a
 // server that is already live and being watched.
+//
+// A third, fully independent knob controls the LLM shell-completion
+// fallback:
+//
+//   - MIRAGE_LLM_SHELL_ENABLED -- whether a command with no builtin may be
+//     answered by a generated response instead of "command not found".
+//
+// It is independent on purpose: the completion fallback is not an action of
+// the trained RL policy and must be switchable without turning that policy
+// on (or off). See completion.go for which commands are eligible; the same
+// fail-safe rule applies -- any error means the attacker sees exactly the
+// shell they always have.
 package deception
 
 import (
@@ -37,11 +49,20 @@ type Config struct {
 	BaseURL      string
 	Timeout      time.Duration
 	ApplyActions bool
+
+	// CompletionEnabled and CompletionTimeout control the LLM
+	// shell-completion fallback, independently of Enabled/ApplyActions.
+	// CompletionTimeout is much larger than Timeout by default: a model
+	// call is categorically slower than the RL policy's forward pass, and
+	// this one is on the attacker's interactive path.
+	CompletionEnabled bool
+	CompletionTimeout time.Duration
 }
 
 const (
-	defaultBaseURL = "http://127.0.0.1:8787"
-	defaultTimeout = 200 * time.Millisecond
+	defaultBaseURL           = "http://127.0.0.1:8787"
+	defaultTimeout           = 200 * time.Millisecond
+	defaultCompletionTimeout = 4 * time.Second
 )
 
 // ConfigFromEnv reads MIRAGE_DECEPTION_* environment variables. Every
@@ -49,10 +70,12 @@ const (
 // heard of this feature sees no change at all.
 func ConfigFromEnv() Config {
 	return Config{
-		Enabled:      envBool("MIRAGE_DECEPTION_ENABLED", false),
-		BaseURL:      envString("MIRAGE_DECEPTION_URL", defaultBaseURL),
-		Timeout:      envMillis("MIRAGE_DECEPTION_TIMEOUT_MS", defaultTimeout),
-		ApplyActions: envBool("MIRAGE_DECEPTION_APPLY_ACTIONS", false),
+		Enabled:           envBool("MIRAGE_DECEPTION_ENABLED", false),
+		BaseURL:           envString("MIRAGE_DECEPTION_URL", defaultBaseURL),
+		Timeout:           envMillis("MIRAGE_DECEPTION_TIMEOUT_MS", defaultTimeout),
+		ApplyActions:      envBool("MIRAGE_DECEPTION_APPLY_ACTIONS", false),
+		CompletionEnabled: envBool("MIRAGE_LLM_SHELL_ENABLED", false),
+		CompletionTimeout: envMillis("MIRAGE_LLM_SHELL_TIMEOUT_MS", defaultCompletionTimeout),
 	}
 }
 

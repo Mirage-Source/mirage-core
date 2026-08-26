@@ -44,6 +44,13 @@ services:
       MIRAGE_DECEPTION_URL: "http://mirage-deception:8787"
       MIRAGE_DECEPTION_TIMEOUT_MS: "${MIRAGE_DECEPTION_TIMEOUT_MS:-200}"
       MIRAGE_DECEPTION_APPLY_ACTIONS: "${MIRAGE_DECEPTION_APPLY_ACTIONS:-false}"
+      # LLM shell-completion fallback -- independent of the RL policy above.
+      # Off by default; when on, a command with no builtin may be answered by
+      # a generated response instead of "command not found". Never fires for
+      # builtins, compound lines, or egress-flavoured commands (see
+      # internal/deception/completion.go).
+      MIRAGE_LLM_SHELL_ENABLED: "${MIRAGE_LLM_SHELL_ENABLED:-false}"
+      MIRAGE_LLM_SHELL_TIMEOUT_MS: "${MIRAGE_LLM_SHELL_TIMEOUT_MS:-4000}"
       # Identifies this deployment's heartbeat rows for the data-validity
       # dashboard's downtime-vs-silence check (internal/validity). Only
       # matters once more than one sensor writes into a shared/aggregated
@@ -119,6 +126,15 @@ services:
       MIRAGE_DECEPTION_PORT: "8787"
       MIRAGE_DECEPTION_MAX_STEPS: "${MIRAGE_DECEPTION_MAX_STEPS:-25}"
       MIRAGE_DECEPTION_SESSION_TTL_SECONDS: "${MIRAGE_DECEPTION_SESSION_TTL_SECONDS:-900}"
+      # LLM shell completion. Providers are declared as JSON; each entry names
+      # the ENV VAR holding its key, never the key itself. With none declared
+      # the /complete endpoint simply reports itself unavailable.
+      MIRAGE_LLM_SHELL_PROVIDERS_JSON: "${MIRAGE_LLM_SHELL_PROVIDERS_JSON:-}"
+      MIRAGE_LLM_SHELL_ACTIVE_PROVIDER: "${MIRAGE_LLM_SHELL_ACTIVE_PROVIDER:-}"
+      MIRAGE_LLM_SHELL_MAX_PER_SESSION: "${MIRAGE_LLM_SHELL_MAX_PER_SESSION:-25}"
+      MIRAGE_LLM_SHELL_GLOBAL_RATE_LIMIT: "${MIRAGE_LLM_SHELL_GLOBAL_RATE_LIMIT:-600}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
     volumes:
       - ./artifacts:/app/artifacts:ro
     healthcheck:
@@ -147,6 +163,10 @@ services:
       DB_USER: ${DB_USER:-mirage}
       DB_NAME: ${DB_NAME:-mirage}
       API_KEY: ${API_KEY}
+      # Read-only: the dashboard's LLM panel lists/switches providers through
+      # the deception service. Not a depends_on -- the panel degrades to
+      # "not configured" when that service isn't running.
+      MIRAGE_DECEPTION_URL: "http://mirage-deception:8787"
     ports:
       - "127.0.0.1:8080:8080"
     restart: unless-stopped
