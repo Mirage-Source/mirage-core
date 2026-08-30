@@ -1,6 +1,7 @@
 package deception
 
 import (
+	"path"
 	"strings"
 
 	"github.com/mirage-source/mirage-core/internal/shell"
@@ -62,10 +63,18 @@ func ShouldAttemptCompletion(line string) (name string, ok bool) {
 		return "", false
 	}
 	name = fields[0]
-	if shell.IsKnownBuiltin(name) {
+
+	// The denylist/allowlist below are exact-match maps of bare command
+	// names. Checking them against the raw field would let case variation
+	// (WGET) or a path-qualified invocation (/usr/bin/wget, ./wget) slip
+	// past both -- normalize to a lowercased basename for the check only;
+	// the returned name is still the original field (unused by the one
+	// caller today, but kept faithful to what the attacker actually typed).
+	normalized := strings.ToLower(path.Base(name))
+	if shell.IsKnownBuiltin(normalized) {
 		return "", false
 	}
-	if _, bad := egressCapableCommands[name]; bad {
+	if _, bad := egressCapableCommands[normalized]; bad {
 		return "", false
 	}
 	return name, true

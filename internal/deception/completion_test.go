@@ -53,6 +53,26 @@ func TestShouldAttemptCompletionRejectsEveryNoEgressTestCommand(t *testing.T) {
 	}
 }
 
+// TestShouldAttemptCompletionRejectsCaseAndPathVariants closes the gap an
+// earlier audit found: the denylist/allowlist are exact-match maps, so a
+// naive check against the raw first field let case variation or a
+// path-qualified invocation of the exact same binaries slip past both.
+func TestShouldAttemptCompletionRejectsCaseAndPathVariants(t *testing.T) {
+	variants := []string{
+		"WGET http://example.com/a",
+		"Curl http://example.com/b",
+		"PING -c 1 10.0.0.1",
+		"/usr/bin/wget http://example.com/a",
+		"./curl http://example.com/b",
+		"LS -la", // a known builtin, same class of gap
+	}
+	for _, line := range variants {
+		if _, ok := ShouldAttemptCompletion(line); ok {
+			t.Errorf("ShouldAttemptCompletion(%q) = true, want false -- case/path variant of a denied command", line)
+		}
+	}
+}
+
 func TestShouldAttemptCompletionRejectsCompoundLines(t *testing.T) {
 	// A completion replaces the whole line's output, so it may only ever be
 	// attempted for a single simple command. Anything with chaining, pipes,
