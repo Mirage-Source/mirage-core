@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MIRAGE — drawing set for a server that does not exist</title>
-<meta name="description" content="Construction documents for MIRAGE: a production SSH honeypot and internet measurement platform. 100,000+ real attacker sessions captured, structured threat intelligence produced.">
+<meta name="description" content="Construction documents for MIRAGE: a production SSH honeypot and internet measurement platform. 153,361 real attacker sessions captured across two deployments, structured into open, citable threat intelligence.">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Caveat:wght@600&display=swap');
 
@@ -215,12 +215,12 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
       <span class="hero-note">nothing in this building is load-bearing →</span>
 
       <div class="dims">
-        <div class="dim"><b>100,000+</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Sessions captured</span></div>
-        <div class="dim"><b>750+</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Unique source IPs</span></div>
-        <div class="dim"><b>1</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Sensor live · Frankfurt</span></div>
-        <div class="dim"><b>Live</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Continuous capture</span></div>
+        <div class="dim"><b>153,361</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Sessions archived &middot; Frankfurt</span></div>
+        <div class="dim"><b>&mdash;</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Sessions &middot; current sensor</span></div>
+        <div class="dim"><b>&mdash;</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Unique source IPs &middot; current</span></div>
+        <div class="dim"><b>Nuremberg</b><div class="rule"><i class="l"></i><i class="r"></i></div><span>Sensor live since 30 Aug 2026</span></div>
       </div>
-      <div class="dims-note">figures updated daily from live sensor — last update shown below</div>
+      <div class="dims-note">current-sensor figures updated daily &middot; the Frankfurt total is a closed archive and does not move</div>
     </header>
 
     <hr class="rule-h">
@@ -382,7 +382,7 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
       <span class="sec-tab">Tolerances</span>
       <h2>Known deviations</h2>
       <div class="notes" style="max-width:72ch">
-        <p>Single node, single geography. Frankfurt is a major peering hub — results may overrepresent European-routed traffic. The observation window is too short to characterise seasonal or campaign-level periodicity. The sensor now speaks an opt-in PROXY protocol v1 on ingest, so a future multi-node deployment behind a shared relay can still attribute sessions to their real client IP rather than the relay's — not yet exercised, since today's node is directly exposed with no relay in front of it.</p>
+        <p>Two deployments, not one continuous record. The Frankfurt node ran until 26 August 2026 and produced the 153,361-session archive published as dataset versions <b>v1&ndash;v6</b>; it was then decommissioned. The current node has been collecting in Nuremberg since 30 August 2026 and publishes as <b>g2-v1</b> onward. Different host, different address, and a gap in between — the two corpora should not be concatenated, and every export carries a <code>sensor_generation</code> field so they can be told apart. Single node, single geography either way; both cities are major German peering hubs, so results may overrepresent European-routed traffic. The observation window is too short to characterise seasonal or campaign-level periodicity. The sensor now speaks an opt-in PROXY protocol v1 on ingest, so a future multi-node deployment behind a shared relay can still attribute sessions to their real client IP rather than the relay's — not yet exercised, since today's node is directly exposed with no relay in front of it.</p>
         <p>Early sessions were all credential-stuffing with no shell interaction — a real gap in the sensor at the time, since it accepted any credential and couldn't be distinguished from a working login. The sensor now runs a seeded weak-credential allowlist and a simulated interactive shell, and attacker sessions do execute commands and trigger planted bait files (fake credentials, SSH keys) against it.</p>
         <p>The emulated shell originally had no pipes or output redirection — real recon one-liners chaining `| grep` or `> file` would dead-end on the first unimplemented operator. It now parses `|` pipelines (with `grep`/`head`/`tail`/`wc` reading the piped input) and `>`/`>>`/`<` redirects, writing into a per-session filesystem overlay so one attacker's writes never leak into another's session.</p>
         <p>ML pipeline is live. MITRE ATT&CK techniques are mapped per session and all sessions are enriched with attacker classification. Current labels are produced by an interpretable weak-label fallback — a trained classifier checkpoint is in development and will replace these once deployed.</p>
@@ -438,7 +438,7 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
           <tr><td class="it">03</td><td>REST API</td><td>Queryable threat intelligence endpoints</td><td><span class="ok">&#8594; LIVE</span></td></tr>
           <tr><td class="it">04</td><td>PyTorch</td><td>Session classification (weak-label heuristic); trained embedder implemented, awaiting deployment</td><td><span class="ok">&#8594; LIVE</span></td></tr>
           <tr><td class="it">05</td><td>STIX 2.1</td><td>Structured intelligence export</td><td><span class="ok">&#8594; LIVE</span></td></tr>
-          <tr><td class="it">06</td><td>Prometheus + Grafana</td><td>Sensor health and operational metrics</td><td><span class="ok">&#8594; LIVE</span></td></tr>
+          <tr><td class="it">06</td><td>Self-hosted dashboard</td><td>Sensor health, data-validity checks, and heartbeat monitoring, served by the Go API (Prometheus and Grafana retired August 2026)</td><td><span class="ok">&#8594; LIVE</span></td></tr>
         </tbody>
       </table>
     </section>
@@ -460,11 +460,17 @@ td .hold .bl{animation:blink 1.4s step-end infinite}
           <tr>
             <td class="it">B</td>
             <td><a href="https://github.com/Mirage-Source/mirage-core/blob/gh-pages/dataset/latest/REPORT.md">Dataset</a></td>
-            <td>100,000+ sessions with attacker classification, MITRE ATT&CK mapping, and STIX 2.1 bundles, plus a per-command <a href="https://github.com/Mirage-Source/mirage-core/blob/gh-pages/dataset/latest/commands.jsonl">commands.jsonl</a> export (command text, response, exit code) for LLM training. Dataset updated weekly.</td>
+            <td>Sessions with attacker classification, MITRE ATT&CK mapping, and STIX 2.1 bundles, plus a per-command <a href="https://github.com/Mirage-Source/mirage-core/blob/gh-pages/dataset/latest/commands.jsonl">commands.jsonl</a> export (command text, response, exit code) for LLM training. Published weekly. <code>latest</code> tracks the newest version, which follows the current sensor — the closed 153,361-session Frankfurt archive is pinned at <a href="https://github.com/Mirage-Source/mirage-core/blob/gh-pages/dataset/v6/REPORT.md">v6</a> and stays addressable by version.</td>
             <td><span class="ok">&#8594; ISSUED</span></td>
           </tr>
           <tr>
             <td class="it">C</td>
+            <td><a href="https://mirage.vtyagi.dev">Live dashboard</a></td>
+            <td>Aggregate view over the current sensor, updating continuously rather than daily. Depends on the sensor being up; this page does not.</td>
+            <td><span class="ok">&#8594; ISSUED</span></td>
+          </tr>
+          <tr>
+            <td class="it">D</td>
             <td><a href="https://github.com/Mirage-Source/mirage-core/issues/new">Collaborate</a></td>
             <td>Researchers, Honeynet folks, anyone who wants a sensor in a new region or wants to discuss the findings.</td>
             <td><span class="ok">&#8594;<br>OPEN</span></td>
@@ -505,16 +511,15 @@ async function loadStats() {
 
     const dims = document.querySelectorAll('.dim b');
     if (dims.length >= 4) {
-      dims[0].textContent = data.total_sessions.toLocaleString() + '+';
-      dims[1].textContent = data.unique_ips.toLocaleString() + '+';
-      dims[2].textContent = '1';
-      dims[3].textContent = 'Live';
+      dims[1].textContent = data.total_sessions.toLocaleString();
+      dims[2].textContent = data.unique_ips.toLocaleString();
     }
 
     const note = document.querySelector('.dims-note');
     if (note && data.generated_at) {
       const generated = new Date(data.generated_at);
-      note.textContent = `live figures · last updated ${generated.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })} · updated daily`;
+      const gen = data.sensor_generation ? ` · sensor ${data.sensor_generation}` : '';
+      note.textContent = `current sensor${gen} · last updated ${generated.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })} · Frankfurt archive fixed at 153,361 sessions`;
     }
 
     fillTable('top-credentials', data.top_credentials, (row) =>
