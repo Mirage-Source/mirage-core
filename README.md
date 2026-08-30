@@ -21,6 +21,7 @@ _Last updated automatically: 2026-07-29T02:23:35Z_
 The block above is regenerated automatically from the live dataset (see [Keeping this README current](#keeping-this-readme-current)). Sessions that authenticate against the seeded weak-credential list go on to interact with a stateful fake shell; the rest are rejected like a real, minimally hardened `sshd` would reject them.
 
 → [Published dataset and findings report](https://github.com/Mirage-Source/mirage-core/blob/gh-pages/dataset/latest/REPORT.md)
+→ [mirage-web](https://github.com/Mirage-Source/mirage-web) — the public dashboard and operator console over this same sensor
 
 ---
 
@@ -208,6 +209,12 @@ docker compose up --build
 ```
 
 The honeypot listens on port `22` (production) and `2222` (testing/management). PostgreSQL is internal only.
+
+Deploying to a real VPS rather than a local machine? See
+[DEPLOYMENT.md](DEPLOYMENT.md) first — it covers the things this quick-start
+doesn't: moving real admin SSH off port 22 before it conflicts with the
+honeypot, the schema catch-up migrations a fresh clone needs, and wiring up
+`mirage-web`.
 
 ### With ML classifier (optional)
 
