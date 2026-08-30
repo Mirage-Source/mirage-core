@@ -428,3 +428,99 @@ and the breaker stops being shared, which is the real trigger for persisting.
 **My answer before seeing yours:** n/a — implementation-level call made while
 building; noted since "why isn't the provider choice saved?" has a real answer
 worth being able to give.
+
+## 2026-08-30 — mirage-web lives in its own repo, not a mirage-core subdirectory
+
+**Chose:** The collaborator-built dashboard (`mirage-web`, Next.js) is its own
+git repo, checked out as a sibling directory to `mirage-core`
+(`../mirage-web`), not committed inside this repo.
+
+**Why:** mirage-core's schema (`sessions.node_id`, `GET /api/sensors`) is
+already built for multiple honeypot sensors reporting into one central
+API/DB — sensor count scales by adding rows with different `node_id`, not by
+redeploying mirage-core per sensor. mirage-web talks to that one central API
+regardless of sensor count, so its deploy lifecycle (singleton, redeployed
+occasionally) doesn't match mirage-core's (cloned/pulled once per sensor
+node). Bundling it as a subdirectory would drag a full Next.js app onto every
+future sensor host. The collaborator had also already built it as an
+independent unit (own `.gitignore`, README, lockfile), so the repo boundary
+was already drawn in practice.
+
+**Alternative considered:** Subdirectory in mirage-core with
+`docker-compose.yml` building `./mirage-web` directly — rejected once the
+multi-sensor plan came up, since compose can reference a sibling checkout
+just as easily and the deploy topology should drive the repo boundary, not
+compose-file convenience.
+
+**My answer before seeing yours:** n/a — Vinayak asked for my reasoning
+directly rather than answering first; the deciding factor (central API,
+scaling sensors by `node_id` not by redeploying mirage-core) only became
+clear once he named the multi-sensor plan.
+
+## 2026-08-30 — netcup VPS 1000 G12 (Nuremberg, DE) replaces Frankfurt sensor
+
+**Chose:** netcup VPS 1000 G12, Nuremberg DE, flat monthly billing, zero-month
+commitment. ~4GB RAM / 2 vCPU, comfortably clears the compose stack's summed
+memory limits (~3.6GB across postgres/mirage-core/ml-worker/mirage-deception/
+mirage-api).
+
+**Why:** Live-priced against Hetzner (CPX22, 4GB EU, no commitment: €19.99/mo),
+DigitalOcean (Basic Droplet 4GB, no commitment: $24/mo), and Hostinger
+(cheapest 4GB tier only available via a 24-month upfront prepay). netcup was
+roughly half the cost of Hetzner/DO for an equivalent no-commitment box — a
+surprise, since Hetzner has a stronger price-performance reputation, but its
+cheap CX line was sold out everywhere and the in-stock CPX line priced higher
+than expected. Nuremberg (not "no preference Europe") was pinned explicitly
+to keep country-level geo attribution consistent with the retired Frankfurt
+sensor, rather than leaving it to a checkout default that could land in
+Austria or the Netherlands.
+
+**Alternative considered:** Contabo's advertised low price requires a
+24-month prepay, not comparable to the others' pay-monthly terms. Hostinger's
+cheap tier has the same issue. "No preference Europe" (saves ~€1.53/mo) was
+rejected because it trades a known, citable sensor location for an unknown
+one, for a saving too small to matter (~₹150/mo).
+
+**My answer before seeing yours:** n/a — this was pure market research, not a
+design tradeoff with a right/wrong answer to guess at up front.
+
+## 2026-08-30 — Real admin SSH moved to port 2222, honeypot keeps port 22
+
+**Chose:** Host sshd listens on 2222 only; docker-compose's existing
+`"22:2222"` mapping for the mirage-core container is untouched, so the fake
+honeypot SSH is what the public internet reaches on port 22.
+
+**Why:** The container mapping was already fixed in docker-compose.yml before
+this deployment; the only free variable was where real admin access should
+live instead. 2222 was picked over a high random port for memorability, and
+because a scanner sweeping for the honeypot on 22 has no reason to also probe
+2222 specifically for a management port.
+
+**Alternative considered:** A high random port for extra obscurity against
+port-sweep discovery. Rejected as unnecessary — combined with key-only auth
+and now a default-deny ufw policy, the marginal benefit of hiding the port
+number didn't seem worth losing the memorability.
+
+**My answer before seeing yours:** "so remove 2222 from the docker compose of
+Mirage maybe, keep 22 to be the honeytrap port and 2222 for when I wanna ssh
+in" — this is what got implemented as-is.
+
+## 2026-08-30 — Cloudflare Tunnel for mirage-web, not a direct reverse proxy
+
+**Chose:** Cloudflare Tunnel (cloudflared) fronting mirage-web on vtyagi.dev,
+rather than a Caddy/nginx reverse proxy terminating TLS directly on the VPS's
+public IP.
+
+**Why:** Hides the origin IP for the operator console specifically (reducing
+its attack surface independent of the honeypot, which is deliberately fully
+exposed), gives free automatic TLS with no certbot/renewal upkeep, and lets
+ports 80/443 stay closed in ufw entirely. Matches the `baremetal` Cloudflare
+Tunnel pattern already used elsewhere.
+
+**Alternative considered:** Caddy with automatic Let's Encrypt certs on a
+direct A record — simpler, no Cloudflare account dependency, but exposes the
+origin IP and requires opening 80/443 to the internet for ACME + serving.
+
+**My answer before seeing yours:** "Used to use tunnel before can go with
+that again" — consistent with the alternative I'd have proposed anyway; no
+divergence.
