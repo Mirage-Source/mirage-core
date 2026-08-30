@@ -1,13 +1,16 @@
-# Retired 2026-08-26: Mirage is no longer live (no API to poll for stats).
-# Daily cron disabled; workflow_dispatch kept so it can be re-armed by
-# restoring the `schedule` trigger below if the sensor comes back online.
 name: Update Public Stats
 
 permissions:
   contents: write
 
 on:
+  schedule:
+    - cron: '0 0 * * *'
   workflow_dispatch:
+
+env:
+  SENSOR_API: http://127.0.0.1:18080
+  SENSOR_GENERATION: g2
 
 jobs:
   update-stats:
@@ -26,14 +29,25 @@ jobs:
           ref: main
           path: main
 
+      - name: Open forward to the sensor API
+        uses: ./main/.github/actions/sensor-api-tunnel
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          user: ${{ secrets.SENSOR_API_USER }}
+          key: ${{ secrets.SENSOR_API_KEY_SSH }}
+          known-hosts: ${{ secrets.SENSOR_KNOWN_HOSTS }}
+
       - name: Fetch stats from API
         working-directory: gh-pages
         run: |
-          curl -s \
+          set -euo pipefail
+          curl -fsS \
             -H "X-API-Key: ${{ secrets.API_KEY }}" \
-            "${{ secrets.API_URL }}/api/stats" \
+            "${SENSOR_API}/api/stats" \
             -o stats.json
-          jq --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '. + {generated_at: $t}' stats.json > stats.json.tmp
+          jq --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg g "${SENSOR_GENERATION}" \
+             '. + {generated_at: $t, sensor_generation: $g}' stats.json > stats.json.tmp
           mv stats.json.tmp stats.json
 
       - name: Commit updated stats (gh-pages)

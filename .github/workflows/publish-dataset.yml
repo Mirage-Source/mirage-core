@@ -1,13 +1,16 @@
-# Retired 2026-08-26: Mirage is no longer live (no API to export from).
-# Weekly cron disabled; workflow_dispatch kept so it can be re-armed by
-# restoring the `schedule` trigger below if the sensor comes back online.
 name: Publish Dataset
 
 permissions:
   contents: write
 
 on:
+  schedule:
+    - cron: '0 3 * * 0'
   workflow_dispatch:
+
+env:
+  SENSOR_API: http://127.0.0.1:18080
+  SENSOR_GENERATION: g2
 
 jobs:
   publish-dataset:
@@ -33,30 +36,44 @@ jobs:
       - name: Install dependencies
         run: pip install -r main/scripts/requirements.txt
 
+      - name: Open forward to the sensor API
+        uses: ./main/.github/actions/sensor-api-tunnel
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          user: ${{ secrets.SENSOR_API_USER }}
+          key: ${{ secrets.SENSOR_API_KEY_SSH }}
+          known-hosts: ${{ secrets.SENSOR_KNOWN_HOSTS }}
+
       - name: Determine next version number
         id: version
         run: |
+          set -euo pipefail
           mkdir -p gh-pages/dataset
-          last=$(ls gh-pages/dataset | grep -E '^v[0-9]+$' | sed 's/v//' | sort -n | tail -1 || true)
+          last=$(ls gh-pages/dataset \
+                 | grep -E "^${SENSOR_GENERATION}-v[0-9]+$" \
+                 | sed "s/^${SENSOR_GENERATION}-v//" \
+                 | sort -n | tail -1 || true)
           next=$(( ${last:-0} + 1 ))
-          echo "version=v${next}" >> "$GITHUB_OUTPUT"
+          echo "version=${SENSOR_GENERATION}-v${next}" >> "$GITHUB_OUTPUT"
 
       - name: Run export
         working-directory: main
         run: |
           python3 scripts/export_dataset.py \
-            --api-url "${{ secrets.API_URL }}" \
+            --api-url "${SENSOR_API}" \
             --api-key "${{ secrets.API_KEY }}" \
             --geo-asn-csv data/geo/dbip-asn-lite.csv \
             --geo-country-csv data/geo/dbip-country-lite.csv \
             --out-dir ../gh-pages/dataset \
-            --version "${{ steps.version.outputs.version }}"
+            --version "${{ steps.version.outputs.version }}" \
+            --sensor-generation "${SENSOR_GENERATION}"
 
       - name: Run commands export
         working-directory: main
         run: |
           python3 scripts/export_commands_dataset.py \
-            --api-url "${{ secrets.API_URL }}" \
+            --api-url "${SENSOR_API}" \
             --api-key "${{ secrets.API_KEY }}" \
             --out-dir ../gh-pages/dataset \
             --version "${{ steps.version.outputs.version }}" \

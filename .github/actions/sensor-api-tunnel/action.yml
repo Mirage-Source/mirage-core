@@ -1,0 +1,57 @@
+name: Sensor API tunnel
+description: >
+  Opens a background SSH port-forward to the sensor's mirage-api, which binds
+  127.0.0.1:8080 on the VPS and is not routed through the Cloudflare Tunnel.
+  The API is left listening on 127.0.0.1:<local-port> for the rest of the job.
+  The key is expected to be pinned to forwarding only; see DEPLOYMENT.md.
+
+inputs:
+  host:
+    description: Sensor host or IP.
+    required: true
+  port:
+    description: Admin sshd port on the sensor (not 22 -- that is the honeypot).
+    required: true
+  user:
+    description: SSH user the restricted key belongs to.
+    required: true
+  key:
+    description: Private key, restricted to permitopen=127.0.0.1:8080.
+    required: true
+  known-hosts:
+    description: >
+      Pinned known_hosts line(s) for the sensor, so the runner verifies the host
+      rather than trusting whatever answers on first contact.
+    required: true
+  local-port:
+    description: Port the API is forwarded to on the runner.
+    required: false
+    default: "18080"
+
+runs:
+  using: composite
+  steps:
+    - name: Open SSH forward to mirage-api
+      shell: bash
+      run: |
+        set -euo pipefail
+        install -m 700 -d ~/.ssh
+        printf '%s\n' "${{ inputs.key }}" > ~/.ssh/sensor_api
+        chmod 600 ~/.ssh/sensor_api
+        printf '%s\n' "${{ inputs.known-hosts }}" >> ~/.ssh/known_hosts
+
+        ssh -f -N \
+          -o ExitOnForwardFailure=yes \
+          -o StrictHostKeyChecking=yes \
+          -o IdentitiesOnly=yes \
+          -o ServerAliveInterval=30 \
+          -i ~/.ssh/sensor_api \
+          -p "${{ inputs.port }}" \
+          -L "${{ inputs.local-port }}:127.0.0.1:8080" \
+          "${{ inputs.user }}@${{ inputs.host }}"
+
+        timeout 5 bash -c ": > /dev/tcp/127.0.0.1/${{ inputs.local-port }}" || {
+          echo "::error::SSH forward is not listening on 127.0.0.1:${{ inputs.local-port }}"
+          exit 1
+        }
+        echo "mirage-api reachable at http://127.0.0.1:${{ inputs.local-port }}"

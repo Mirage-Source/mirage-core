@@ -162,7 +162,15 @@ def main():
     parser.add_argument("--geo-asn-csv", required=True)
     parser.add_argument("--geo-country-csv", required=True)
     parser.add_argument("--out-dir", required=True)
-    parser.add_argument("--version", required=True, help="e.g. v12")
+    parser.add_argument("--version", required=True, help="e.g. g2-v12")
+    parser.add_argument(
+        "--sensor-generation",
+        help=(
+            "identifier for the sensor deployment this data came from, e.g. "
+            "'g2'. Recorded in stats_summary.json so versions collected by "
+            "different sensors are not silently joined."
+        ),
+    )
     # Off by default: current exports use the real client_ip.
     parser.add_argument(
         "--anonymize-ips",
@@ -217,6 +225,8 @@ def main():
     summary["generated_at"] = export["generated_at"]
     summary["version"] = args.version
     summary["ip_anonymized"] = args.anonymize_ips
+    if args.sensor_generation:
+        summary["sensor_generation"] = args.sensor_generation
 
     with open(out_dir / "stats_summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)

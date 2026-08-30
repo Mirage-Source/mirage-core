@@ -524,3 +524,101 @@ origin IP and requires opening 80/443 to the internet for ACME + serving.
 **My answer before seeing yours:** "Used to use tunnel before can go with
 that again" — consistent with the alternative I'd have proposed anyway; no
 divergence.
+
+## 2026-08-30 — Runner reaches the sensor API over an SSH forward, not a public hostname
+
+**Chose:** `update-stats.yml` and `publish-dataset.yml` are re-armed on their
+original schedules and open a short-lived SSH port-forward to
+`127.0.0.1:8080` on the sensor (shared composite action
+`.github/actions/sensor-api-tunnel`), using a key pinned in `authorized_keys`
+to `permitopen="127.0.0.1:8080",command="/bin/false"`. The API stays off the
+Cloudflare Tunnel and off the public internet. `API_URL` is retired.
+
+**Why:** The alternative that keeps the API private *and* is simpler to
+operate — running the exports on the VPS under systemd timers — requires a
+git credential with push access to the public repo to live on the honeypot
+host. That host is the one machine deliberately exposed on port 22; a
+container escape currently yields honeypot data, and under that design would
+yield repo write access. The forward puts no credential on the sensor at all.
+Second reason: a failing systemd timer is silent, and the failure mode is a
+dataset that quietly stops updating; a failing scheduled workflow emails.
+
+**Alternative considered:** (a) A second tunnel hostname for the API, guarded
+only by the shared `X-API-Key` — rejected as new public attack surface for the
+operator-side API, which is exactly what the Cloudflare Tunnel decision was
+meant to avoid. (b) Inverting to VPS-side systemd timers — rejected on the
+blast-radius and observability grounds above.
+
+**My answer before seeing yours:** "leaning towards inverting it and running
+exports on the VPS" — asked for a recommendation first, then went with the
+forward once the push-credential-on-the-honeypot consequence was spelled out.
+
+---
+
+## 2026-08-30 — Dataset restarts as a new series (`g2-v1`), not `v7`
+
+**Chose:** `publish-dataset.yml` carries `SENSOR_GENERATION=g2` and numbers
+within the generation, so the Nuremberg sensor publishes `g2-v1` onward while
+Frankfurt's `v1`…`v6` stay frozen. `export_dataset.py` gained
+`--sensor-generation`, stamped into `stats_summary.json`.
+
+**Why:** The two corpora come from different hosts, different IPs and a gap in
+collection. Continuing the counter would make `v7` look like more of `v6`
+while being a near-empty first week from an unrelated vantage point, and
+anything downstream that concatenates versions would silently produce a
+dataset that no single sensor ever observed.
+
+**Alternative considered:** Continue at `v7` on the same `IP_SALT`
+(comparable hashed IPs across the cut, but no marker for the discontinuity),
+or continue at `v7` with a rotated salt (breaks the join by accident rather
+than by declaration).
+
+**My answer before seeing yours:** picked "new series, note the
+discontinuity" from the options offered; no divergence.
+
+---
+
+## 2026-08-30 — deploy.yml stays on workflow_dispatch
+
+**Chose:** Left manual. Only the stale "Mirage is no longer live" header was
+removed.
+
+**Why:** The box was just hand-configured, and the deploy script still assumes
+`~/mirage-core` and does not apply the hand-written migrations from
+`internal/store/migrations/` that `db/init/` is behind on. Auto-deploying on
+every merge to main before those two gaps close means a merge can leave the
+sensor schema-behind with no one watching.
+
+**Alternative considered:** Restore the `push` trigger, either as-is or
+bundled with fixes to the path and a migration catch-up loop. Deferred rather
+than rejected — the fixes are worth doing, just not as a side effect of
+re-arming the data workflows.
+
+**My answer before seeing yours:** picked "keep workflow_dispatch only" from
+the options offered; no divergence.
+
+---
+
+## 2026-08-30 — Two separate keys on the sensor, not one reused deploy key
+
+**Chose:** Generated `mirage_deploy` (shell access, `deploy.yml` only) and
+`mirage_api_forward` (pinned to `permitopen="127.0.0.1:8080",command="/bin/false"`,
+data workflows only) and installed both in root's `authorized_keys` on
+152.53.239.121. `deploy.yml`'s `cd ~/mirage-core` corrected to
+`/opt/mirage/mirage-core`, which is where the clone actually is. `API_URL`
+deleted from the repo secrets.
+
+**Why:** The two workflows need different amounts of power — one needs a shell
+to run `docker compose`, the other needs one TCP forward — and giving both the
+same key means a leaked data-workflow secret is a shell on the sensor. The
+`command="/bin/false"` restriction is verified, not assumed: with the forward
+key, `ssh ... 'echo I_GOT_A_SHELL'` exits 1 with no output, `-L
+18080:127.0.0.1:8080` succeeds and serves `/api/stats`, and `-L
+15432:127.0.0.1:5432` binds locally but the connection is reset on first byte.
+
+**Alternative considered:** One deploy key for all three workflows, which is
+what the retired setup did. Rejected once the keys had to be regenerated
+anyway — the split costs one extra secret and no operational complexity.
+
+**My answer before seeing yours:** n/a — mechanical follow-through on the
+forward decision above.

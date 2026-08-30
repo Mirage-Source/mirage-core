@@ -183,3 +183,73 @@ API or defensively null-guard before calling `.filter()`/`.slice()`/`.map()`
 on it — both `GetCommandExport` and `GetStats` were fixed to initialize their
 slice fields explicitly rather than leaving them nil; keep that pattern for
 anything new.
+
+---
+
+## 7. Re-arming the GitHub Actions workflows on a new instance
+
+`go-tests.yml` and `ml-tests.yml` never depended on a live sensor and need
+nothing. The other three do, and every deploy-related secret in the repo
+predates whatever box you are standing up now — none of them are reusable as-is.
+
+### The API is not public, and shouldn't become public
+
+`mirage-api` binds `127.0.0.1:8080` and the Cloudflare Tunnel routes only
+mirage-web. `update-stats` and `publish-dataset` therefore open a short-lived
+SSH port-forward to the sensor for the length of the job
+(`.github/actions/sensor-api-tunnel`), and talk to `http://127.0.0.1:18080`.
+
+Generate a key used *only* for that forward — not the deploy key:
+
+```bash
+ssh-keygen -t ed25519 -N "" -C "mirage-api-forward" -f ~/.ssh/mirage_api_forward
+```
+
+Add the public half to the sensor's `~/.ssh/authorized_keys` pinned so it can
+do nothing except open that one forward:
+
+```
+no-pty,no-agent-forwarding,no-X11-forwarding,no-user-rc,permitopen="127.0.0.1:8080",command="/bin/false" ssh-ed25519 AAAA... mirage-api-forward
+```
+
+`command="/bin/false"` is not bypassed by the workflow: `ssh -N` opens no
+session channel, so the forced command never runs. Anyone who steals the key
+and tries to get a shell hits `/bin/false` instead.
+
+Pin the host key rather than letting the runner trust first contact:
+
+```bash
+ssh-keyscan -p 2222 <sensor-ip>
+```
+
+### Secrets to set
+
+| Secret | Value |
+| --- | --- |
+| `DEPLOY_HOST` | new sensor IP |
+| `DEPLOY_PORT` | admin sshd port (2222, per section 0) |
+| `DEPLOY_USER` | user for `deploy.yml`'s shell access |
+| `DEPLOY_KEY` | full-shell deploy key, `deploy.yml` only |
+| `SENSOR_API_USER` | user owning the restricted forward key |
+| `SENSOR_API_KEY_SSH` | private half of `mirage_api_forward` |
+| `SENSOR_KNOWN_HOSTS` | the `ssh-keyscan` output above |
+| `API_KEY` | must equal `API_KEY` in the sensor's `.env` |
+| `IP_SALT` | HMAC salt for the commands export |
+
+`API_URL` is no longer read by anything and can be deleted.
+
+### Dataset versioning across sensors
+
+`publish-dataset.yml` carries `SENSOR_GENERATION` (`g2` for Nuremberg) and
+names versions `g2-v1`, `g2-v2`, …, numbering within the generation only. The
+Frankfurt series (`v1`…`v6`) stays where it is and is never appended to, and
+`export_dataset.py --sensor-generation` stamps the same identifier into
+`stats_summary.json`. Bump it when the sensor is replaced again.
+
+### deploy.yml stays manual
+
+Left on `workflow_dispatch` deliberately. The script targets
+`/opt/mirage/mirage-core`, which is where the Nuremberg clone lives; check that
+first if the checkout ever moves. The remaining gap is that the migration
+catch-up in section 3 is still manual — the deploy script does not run it, so a
+rebuild onto a fresh volume can come up schema-behind.
