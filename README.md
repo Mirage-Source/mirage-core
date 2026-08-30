@@ -8,7 +8,10 @@ MIRAGE exposes a convincing fake SSH server, captures every credential attempt a
 
 ## Live findings
 
-MIRAGE has been running continuously on a Frankfurt VPS. As of the latest snapshot:
+MIRAGE runs on a Nuremberg VPS, collecting since 2026-08-30. An earlier
+deployment in Frankfurt ran until 2026-08-26; its data is published separately
+as dataset versions `v1`-`v6` and is not continuous with the current series. As
+of the latest snapshot:
 
 <!-- STATS:START -->
 - **1,874 sessions** captured from **11 unique source IPs** (1,874 in the last 24h)
