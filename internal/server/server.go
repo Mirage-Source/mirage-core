@@ -291,6 +291,14 @@ func Start(addr string) {
 		guard := &sessionGuard{sess: &sess}
 		go func() {
 			defer func() { <-connSlots }()
+			// A panic anywhere in attacker-reachable code (shell interpreter,
+			// deception client, session bookkeeping) must never take down
+			// every other connection -- recover scopes it to this one.
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("recovered panic in handleConnection for %v: %v", handlerConn.RemoteAddr(), r)
+				}
+			}()
 			handleConnection(handlerConn, config, guard, db, idleTimeout, handshakeTimeout, deceptionRuntime)
 		}() //this will handle the connection concurrently, bounded by connSlots
 	}
@@ -428,6 +436,11 @@ func handleChannels(conn net.Conn, idleTimeout time.Duration, chans <-chan ssh.N
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("recovered panic in handleSessionRequests for %v: %v", conn.RemoteAddr(), r)
+					}
+				}()
 				handleSessionRequests(conn, idleTimeout, channel, requests, guard, deceptionRuntime)
 			}()
 		default:
