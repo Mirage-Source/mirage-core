@@ -14,7 +14,9 @@ import (
 )
 
 func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
-	stats := &api.HoneypotStats{}
+	stats := &api.HoneypotStats{
+		CoordinatedIPs: []api.CoordinatedIPGroup{},
+	}
 
 	// Total sessions
 	if err := db.QueryRow(`
@@ -595,6 +597,7 @@ func GetCommandExport(db *sql.DB, after string, limit int) (*api.ExportCommandsR
 
 	resp := &api.ExportCommandsResponse{
 		GeneratedAt: fmt.Sprintf("%d", time.Now().UnixMilli()),
+		Commands:    []api.ExportCommand{},
 	}
 
 	var lastTS int64
