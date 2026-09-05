@@ -868,3 +868,21 @@ its own look; out of scope here.
 **My answer before seeing yours:** n/a — the fork (which layer owns the
 limit) was posed directly as a choice among three options; "unified cap in
 sessionGuard.appendCommand" was the answer given, not mine to diverge from.
+
+---
+
+## 2026-09-05 — Named the compose network so mirage-web can join it
+
+**Chose:** `networks.default.name: mirage_net` in `docker-compose.yml`,
+instead of leaving it as compose's auto-generated `mirage-core_default`.
+
+**Why:** mirage-web is being containerized in its own repo with its own
+compose file, and needs to reach `mirage-api` by service name rather than
+through the host's `127.0.0.1:8080` loopback publish. `external: true` in
+another compose file needs a name that won't silently change if this
+directory is ever renamed or re-cloned elsewhere.
+
+**Alternative considered:** none — a mechanical prerequisite for the
+mirage-web containerization decision below, not an independent choice.
+
+**My answer before seeing yours:** n/a — mechanical follow-through.

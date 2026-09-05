@@ -177,3 +177,10 @@ services:
 
 volumes:
   postgres_data:
+
+networks:
+  default:
+    # Named explicitly so mirage-web's separate compose file (own repo) can
+    # join it as an `external` network by a stable name instead of guessing
+    # compose's auto-generated "<project>_default".
+    name: mirage_net
