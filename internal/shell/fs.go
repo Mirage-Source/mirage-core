@@ -456,11 +456,11 @@ func (s *Interpreter) lsListing(n *Node, action string) string {
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "total %d\n", n.Total)
+	fmt.Fprintf(&b, "total %d\r\n", n.Total)
 	for _, e := range entries {
-		fmt.Fprintf(&b, "%s %2d %-6s %-6s %5d %s %s\n", e.mode, 1, e.owner, e.group, e.size, e.mtime, e.name)
+		fmt.Fprintf(&b, "%s %2d %-6s %-6s %5d %s %s\r\n", e.mode, 1, e.owner, e.group, e.size, e.mtime, e.name)
 	}
-	return strings.TrimRight(b.String(), "\n")
+	return strings.TrimRight(b.String(), "\r\n")
 }
 
 // LooksLikeBaitAccess is a cheap, pre-execution heuristic for whether a raw
