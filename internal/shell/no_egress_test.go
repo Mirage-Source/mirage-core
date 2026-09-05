@@ -76,7 +76,7 @@ func TestNetworkFlavoredCommandsNeverAttemptRealEgress(t *testing.T) {
 	for _, cmd := range commands {
 		cmd := cmd
 		t.Run(cmd, func(t *testing.T) {
-			s := NewInterpreter()
+			s := NewInterpreter("ubuntu")
 			done := make(chan struct{})
 			var out string
 			var code int

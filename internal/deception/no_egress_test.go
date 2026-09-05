@@ -28,7 +28,7 @@ func TestFakeSuccessNeverMasksARealAttempt(t *testing.T) {
 	for _, cmd := range commands {
 		cmd := cmd
 		t.Run(cmd, func(t *testing.T) {
-			interp := shell.NewInterpreter()
+			interp := shell.NewInterpreter("ubuntu")
 			done := make(chan struct{})
 			var response string
 			var code int

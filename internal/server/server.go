@@ -53,6 +53,20 @@ func (g *sessionGuard) sessionID() string {
 	return g.sess.SessionID
 }
 
+// username is safe to read without the mutex for the same reason sessionID
+// is: PasswordCallback appends every attempt to AuthAttempts during the
+// handshake, entirely before any channel goroutine exists, and the ssh
+// library stops calling it the moment one attempt succeeds -- so the last
+// entry is always the credential this connection actually authenticated
+// with.
+func (g *sessionGuard) username() string {
+	attempts := g.sess.AuthAttempts
+	if len(attempts) == 0 {
+		return ""
+	}
+	return attempts[len(attempts)-1].Username
+}
+
 // appendCommand assigns SequenceNumber (and, if computeDelay, InterCommandDelayMS
 // relative to the previous command across ALL channels on this connection)
 // and appends atomically, so two channels can never be assigned the same
@@ -577,7 +591,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 
 			log.Printf("Executing command: %s", payload.Command)
 
-			interp := shell.NewInterpreter()
+			interp := shell.NewInterpreter(guard.username())
 			beforeCwd := interp.Cwd
 			response, code, baitHits, deceptionAction, usedLLM := applyDeception(deceptionRuntime, interp, guard.sessionID(), payload.Command)
 			if response != "" {
@@ -624,7 +638,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 			req.Reply(true, nil)
 			fmt.Fprintf(channel, "Welcome to Ubuntu 22.04.3 LTS\r\n")
 
-			interp := shell.NewInterpreter()
+			interp := shell.NewInterpreter(guard.username())
 
 			for {
 				if guard.commandCount() >= maxCommandsPerSession {

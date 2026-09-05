@@ -670,3 +670,37 @@ push, gated on protecting the endpoint) was asked and answered directly; poll
 vs. LISTEN/NOTIFY and the atomic-bool/never-nil `Runtime` change are the
 mechanical follow-through on that answer.
 
+---
+
+## 2026-09-05 — Login identity: full root emulation, not just the prompt symbol
+
+**Chose:** `whoami`, `id`, the prompt's `user@host` and `#`/`$` character,
+home directory (`~`/`cd` with no args), and new-file ownership on `>`/`>>`
+all now derive from `conn.User()` (threaded through as
+`sessionGuard.username()` → `shell.NewInterpreter(username)`). Only `root`
+gets its own identity (`/root`, `uid=0(root)`, `#`); every other accepted
+username in `config/weak_credentials.txt` (`admin`, `mysql`, `postgres`,
+`guest`, ...) still collapses onto the existing single `ubuntu` identity.
+
+**Why:** `weak_credentials.txt` accepts `root` logins, but the shell
+previously hardcoded `"ubuntu"`/`uid=1000`/`/home/ubuntu` regardless of which
+username actually authenticated — so a `root` login got a `$` prompt, and
+`whoami` would contradict the prompt's own `user@host` the moment either one
+changed. A real box ties the `#`/`$` convention to UID, not login method, so
+fixing only the prompt character while leaving `whoami`/`id` saying `ubuntu`
+would have introduced a new, sharper contradiction (prompt says root,
+`whoami` says otherwise) — worse than the original single-identity gap. The
+non-root service-account usernames (`mysql`, `postgres`, ...) deliberately
+don't get their own identities: a real box would never hand any of those an
+interactive shell at all, so modeling them as `ubuntu` is the realistic
+choice, not a shortcut.
+
+**Alternative considered:** flip only the prompt's trailing character based
+on login username, leaving `whoami`/`id`/home dir untouched. Rejected for the
+self-contradiction reason above — surfaced directly during the discussion
+that led here.
+
+**My answer before seeing yours:** n/a — asked directly as a choice between
+"just the prompt symbol," "full per-identity emulation for root," or leaving
+the gap as-is; "full per-identity emulation for root" was the answer given,
+not mine to diverge from.

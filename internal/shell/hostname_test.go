@@ -14,7 +14,7 @@ var hostnamePattern = regexp.MustCompile(`^ip-172-31-\d{1,3}-\d{1,3}$`)
 // a hostname must agree with the interpreter's own Hostname for the whole
 // session, and different sessions should typically get different values.
 func TestHostnameIsRandomizedAndSelfConsistent(t *testing.T) {
-	s := NewInterpreter()
+	s := NewInterpreter("ubuntu")
 
 	if !hostnamePattern.MatchString(s.Hostname) {
 		t.Fatalf("Hostname %q does not match the expected ip-172-31-x-y shape", s.Hostname)
@@ -61,7 +61,7 @@ func TestHostnameIsRandomizedAndSelfConsistent(t *testing.T) {
 func TestHostnameVariesAcrossSessions(t *testing.T) {
 	seen := map[string]bool{}
 	for i := 0; i < 20; i++ {
-		seen[NewInterpreter().Hostname] = true
+		seen[NewInterpreter("ubuntu").Hostname] = true
 	}
 	if len(seen) < 2 {
 		t.Fatalf("20 fresh interpreters produced only %d distinct hostname(s): %v", len(seen), seen)

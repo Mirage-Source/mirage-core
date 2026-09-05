@@ -6,7 +6,7 @@ import (
 )
 
 func TestPsAuxListsStoryConsistentProcesses(t *testing.T) {
-	s := NewInterpreter()
+	s := NewInterpreter("ubuntu")
 	out, code, _ := s.Run("ps aux")
 	if code != 0 {
 		t.Fatalf("ps aux failed: %s", out)
@@ -19,7 +19,7 @@ func TestPsAuxListsStoryConsistentProcesses(t *testing.T) {
 }
 
 func TestNetstatAgreesWithPsAndNginxConfig(t *testing.T) {
-	s := NewInterpreter()
+	s := NewInterpreter("ubuntu")
 	out, code, _ := s.Run("netstat -tulpn")
 	if code != 0 {
 		t.Fatalf("netstat failed: %s", out)
@@ -41,7 +41,7 @@ func TestNetstatAgreesWithPsAndNginxConfig(t *testing.T) {
 }
 
 func TestCrontabListEmptyMatchesRealBehavior(t *testing.T) {
-	s := NewInterpreter()
+	s := NewInterpreter("ubuntu")
 	out, code, _ := s.Run("crontab -l")
 	if code != 1 || out != "no crontab for ubuntu" {
 		t.Fatalf("crontab -l = %q (code %d), want \"no crontab for ubuntu\" (code 1)", out, code)
@@ -49,7 +49,7 @@ func TestCrontabListEmptyMatchesRealBehavior(t *testing.T) {
 }
 
 func TestWhichOnlyReportsCommandsTheShellCanActuallyRun(t *testing.T) {
-	s := NewInterpreter()
+	s := NewInterpreter("ubuntu")
 
 	out, code, _ := s.Run("which ls cat")
 	if code != 0 || !strings.Contains(out, "ls") || !strings.Contains(out, "cat") {
@@ -70,7 +70,7 @@ func TestWhichOnlyReportsCommandsTheShellCanActuallyRun(t *testing.T) {
 }
 
 func TestFindWalksTheSameTreeAsLs(t *testing.T) {
-	s := NewInterpreter()
+	s := NewInterpreter("ubuntu")
 	out, code, _ := s.Run("find /home/ubuntu -type f")
 	if code != 0 {
 		t.Fatalf("find failed: %s", out)
@@ -87,7 +87,7 @@ func TestFindWalksTheSameTreeAsLs(t *testing.T) {
 }
 
 func TestFindNameFiltersByGlob(t *testing.T) {
-	s := NewInterpreter()
+	s := NewInterpreter("ubuntu")
 	out, code, _ := s.Run("find /etc -name *.conf")
 	if code != 0 {
 		t.Fatalf("find -name failed: %s", out)
@@ -101,7 +101,7 @@ func TestFindNameFiltersByGlob(t *testing.T) {
 }
 
 func TestFindRespectsSurfaceBaitGating(t *testing.T) {
-	s := NewInterpreter()
+	s := NewInterpreter("ubuntu")
 	// Without SURFACE_BAIT, the hidden .aws dir must not be discoverable via find.
 	out, _, _ := s.Run("find /home/ubuntu")
 	if strings.Contains(out, "/home/ubuntu/.aws") {

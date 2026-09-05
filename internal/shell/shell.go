@@ -17,7 +17,8 @@ import (
 	"github.com/mirage-source/mirage-core/internal/session"
 )
 
-const homeDir = "/home/ubuntu"
+const ubuntuHomeDir = "/home/ubuntu"
+const rootHomeDir = "/root"
 
 // hostnamePlaceholder marks the spot in a static fs.go Content/EnrichedContent
 // string where this session's randomized hostname belongs (see
@@ -67,17 +68,45 @@ type BaitHit struct {
 // way they would in a real shell. overlay/overlayChildren hold this
 // session's own `>`/`>>` writes (fs.go's writeFile/lookup) so they never
 // leak into another session or mutate the shared fs map.
+//
+// Username/HomeDir are fixed for the life of the session, derived once in
+// NewInterpreter from the credential the attacker actually authenticated
+// with -- whoami, id, the prompt's user@host and #/$ character, and cd/~
+// resolution all read from these two fields rather than a hardcoded
+// "ubuntu", so a root login looks like root throughout, not a root login
+// into what whoami then claims is an ubuntu box.
 type Interpreter struct {
 	Cwd      string
 	Env      map[string]string
 	Hostname string
+	Username string
+	HomeDir  string
 
 	overlay         map[string]*Node
 	overlayChildren map[string][]string
 }
 
-func NewInterpreter() *Interpreter {
-	return &Interpreter{Cwd: homeDir, Env: map[string]string{}, Hostname: randomHostname()}
+// NewInterpreter derives the emulated identity from the username the
+// attacker authenticated as. Only "root" gets its own identity (prompt #,
+// uid 0, /root) -- every other accepted username in
+// config/weak_credentials.txt (admin, mysql, postgres, ...) is a service
+// account a real box would never hand an interactive shell to, so those all
+// still land on the one ordinary "ubuntu" identity, same as before this
+// distinction existed.
+func NewInterpreter(username string) *Interpreter {
+	homeDir := ubuntuHomeDir
+	identity := "ubuntu"
+	if username == "root" {
+		homeDir = rootHomeDir
+		identity = "root"
+	}
+	return &Interpreter{
+		Cwd:      homeDir,
+		Env:      map[string]string{},
+		Hostname: randomHostname(),
+		Username: identity,
+		HomeDir:  homeDir,
+	}
 }
 
 // expandHostname substitutes this session's Hostname into a static fs.go
@@ -90,8 +119,14 @@ func (s *Interpreter) expandHostname(content string) string {
 }
 
 // Prompt renders the current PS1-style prompt for this interpreter's cwd.
+// The trailing character follows the real convention of tracking UID, not
+// login method: root gets #, everyone else gets $.
 func (s *Interpreter) Prompt() string {
-	return fmt.Sprintf("ubuntu@%s:%s$ ", s.Hostname, displayPath(s.Cwd))
+	promptChar := "$"
+	if s.Username == "root" {
+		promptChar = "#"
+	}
+	return fmt.Sprintf("%s@%s:%s%s ", s.Username, s.Hostname, displayPath(s.Cwd, s.HomeDir), promptChar)
 }
 
 // Run executes one line of input (which may contain `;`/`&&`/`||`-chained
@@ -440,7 +475,7 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 		return strings.Join(args, " "), 0
 
 	case "whoami":
-		return "ubuntu", 0
+		return s.Username, 0
 
 	case "pwd":
 		return s.Cwd, 0
@@ -449,6 +484,9 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 		return s.Hostname, 0
 
 	case "id":
+		if s.Username == "root" {
+			return "uid=0(root) gid=0(root) groups=0(root)", 0
+		}
 		return "uid=1000(ubuntu) gid=1000(ubuntu) groups=1000(ubuntu),27(sudo)", 0
 
 	case "uname":
@@ -653,7 +691,7 @@ func (s *Interpreter) lsBuiltin(args []string, action string) (string, int) {
 }
 
 func (s *Interpreter) cdBuiltin(args []string) (string, int) {
-	target := homeDir
+	target := s.HomeDir
 	if len(args) >= 1 {
 		target = args[0]
 	}

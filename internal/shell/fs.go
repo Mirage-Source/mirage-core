@@ -328,7 +328,7 @@ func init() {
 // absolute form and the node at that path, if any. s.overlay (this
 // session's `>`/`>>` writes) shadows the shared base filesystem.
 func (s *Interpreter) lookup(target string) (string, *Node) {
-	clean := resolvePath(s.Cwd, target)
+	clean := s.resolvePath(target)
 	if n, ok := s.overlay[clean]; ok {
 		return clean, n
 	}
@@ -343,7 +343,7 @@ func (s *Interpreter) lookup(target string) (string, *Node) {
 // overlay -- never the shared base fs map. The parent directory must
 // already exist; this shell has no mkdir.
 func (s *Interpreter) writeFile(target, content string, appendMode bool) (string, int) {
-	clean := resolvePath(s.Cwd, target)
+	clean := s.resolvePath(target)
 	parentPath := path.Dir(clean)
 	_, parent := s.lookup(parentPath)
 	if parent == nil || parent.Type != NodeDir {
@@ -365,7 +365,7 @@ func (s *Interpreter) writeFile(target, content string, appendMode bool) (string
 		s.overlay = map[string]*Node{}
 	}
 	s.overlay[clean] = &Node{
-		Path: clean, Type: NodeFile, Mode: "-rw-r--r--", Owner: "ubuntu", Group: "ubuntu",
+		Path: clean, Type: NodeFile, Mode: "-rw-r--r--", Owner: s.Username, Group: s.Username,
 		MTime: time.Now().UTC().Format("Jan _2 15:04"), Content: newContent,
 	}
 
@@ -394,14 +394,15 @@ func (s *Interpreter) writeFile(target, content string, appendMode bool) (string
 	return "", 0
 }
 
-func resolvePath(cwd, target string) string {
+func (s *Interpreter) resolvePath(target string) string {
+	cwd := s.Cwd
 	if target == "" {
 		return cwd
 	}
 	if target == "~" {
-		target = homeDir
+		target = s.HomeDir
 	} else if strings.HasPrefix(target, "~/") {
-		target = homeDir + target[1:]
+		target = s.HomeDir + target[1:]
 	}
 	if strings.HasPrefix(target, "/") {
 		return path.Clean(target)
@@ -409,10 +410,10 @@ func resolvePath(cwd, target string) string {
 	return path.Clean(path.Join(cwd, target))
 }
 
-// displayPath renders a prompt/pwd-style path, collapsing the home directory
-// to ~ the way a real bash PS1 does.
-func displayPath(p string) string {
-	const home = "/home/ubuntu"
+// displayPath renders a prompt/pwd-style path, collapsing this session's own
+// home directory to ~ the way a real bash PS1 does -- root's ~ is /root, not
+// /home/ubuntu, so home is passed in rather than hardcoded.
+func displayPath(p, home string) string {
 	if p == home {
 		return "~"
 	}
