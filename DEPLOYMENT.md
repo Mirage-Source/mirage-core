@@ -95,7 +95,8 @@ idempotent — safe to re-run, safe even if some already applied via `db/init`):
 
 ```bash
 for f in 003_deception 004_command_response 005_ml_intelligence_catchup \
-         007_ingress_source 008_sensor_heartbeats 009_drop_grafana_role; do
+         007_ingress_source 008_sensor_heartbeats 009_drop_grafana_role \
+         010_runtime_flags; do
   docker compose exec -T postgres psql -U mirage -d mirage \
       < internal/store/migrations/${f}.sql
 done

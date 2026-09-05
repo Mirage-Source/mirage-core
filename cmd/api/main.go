@@ -238,6 +238,72 @@ func main() {
 		}
 	})
 
+	// The two flags this endpoint owns are exactly the console's Control tab
+	// switches marked writable in mirage-web docs/API-GAPS.md §4 -- everything
+	// else on that tab (llm_shell_enabled, stix_enabled, intel_use_llm, the
+	// rate/timeout limits) is still env-only, owned by other containers, and
+	// mirage-web fills those in itself from its own environment. See
+	// DECISIONS.md for why this stayed scoped to just these two.
+	writeRuntimeConfig := func(w http.ResponseWriter, flags store.RuntimeFlags) {
+		writeJSON(w, map[string]any{
+			"deception_enabled":       flags.DeceptionEnabled,
+			"deception_apply_actions": flags.DeceptionApplyActions,
+			"updated_at":              flags.UpdatedAt,
+			"updated_by":              flags.UpdatedBy,
+		})
+	}
+
+	r.Get("/api/config", func(w http.ResponseWriter, r *http.Request) {
+		flags, err := store.LoadRuntimeFlags(db)
+		if err != nil {
+			log.Printf("loading runtime flags: %v", err)
+			http.Error(w, "failed to load runtime configuration", http.StatusInternalServerError)
+			return
+		}
+		writeRuntimeConfig(w, flags)
+	})
+
+	r.Put("/api/config", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			DeceptionEnabled      *bool  `json:"deception_enabled"`
+			DeceptionApplyActions *bool  `json:"deception_apply_actions"`
+			UpdatedBy             string `json:"updated_by"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		if body.DeceptionEnabled == nil && body.DeceptionApplyActions == nil {
+			http.Error(w, "expected at least one of deception_enabled, deception_apply_actions", http.StatusBadRequest)
+			return
+		}
+		updatedBy := body.UpdatedBy
+		if updatedBy == "" {
+			updatedBy = "console"
+		}
+		if body.DeceptionEnabled != nil {
+			if err := store.SetRuntimeFlag(db, "deception_enabled", *body.DeceptionEnabled, updatedBy); err != nil {
+				log.Printf("setting deception_enabled: %v", err)
+				http.Error(w, "failed to save runtime configuration", http.StatusInternalServerError)
+				return
+			}
+		}
+		if body.DeceptionApplyActions != nil {
+			if err := store.SetRuntimeFlag(db, "deception_apply_actions", *body.DeceptionApplyActions, updatedBy); err != nil {
+				log.Printf("setting deception_apply_actions: %v", err)
+				http.Error(w, "failed to save runtime configuration", http.StatusInternalServerError)
+				return
+			}
+		}
+		flags, err := store.LoadRuntimeFlags(db)
+		if err != nil {
+			log.Printf("reloading runtime flags after write: %v", err)
+			http.Error(w, "saved, but failed to read back the new configuration", http.StatusInternalServerError)
+			return
+		}
+		writeRuntimeConfig(w, flags)
+	})
+
 	r.Get("/api/stats", func(w http.ResponseWriter, r *http.Request) {
 		stats, err := store.GetStats(db)
 		if err != nil {

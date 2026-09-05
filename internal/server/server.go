@@ -164,14 +164,10 @@ func Start(addr string) {
 	}
 
 	deceptionRuntime := deception.NewRuntime(deception.ConfigFromEnv())
-	if deceptionRuntime == nil {
-		log.Printf("Deception policy: disabled; LLM shell completion: disabled")
-	} else {
-		log.Printf(
-			"Deception policy: %v (apply_actions=%v); LLM shell completion: %v",
-			deceptionRuntime.PolicyEnabled, deceptionRuntime.ApplyActions, deceptionRuntime.CompletionEnabled,
-		)
-	}
+	log.Printf(
+		"Deception policy: %v (apply_actions=%v); LLM shell completion: %v",
+		deceptionRuntime.PolicyEnabled.Load(), deceptionRuntime.ApplyActions.Load(), deceptionRuntime.CompletionEnabled,
+	)
 
 	// Bounds the number of in-flight connections (and therefore goroutines
 	// and per-connection memory) a flood can force us to hold onto. Without
@@ -206,6 +202,9 @@ func Start(addr string) {
 	heartbeatInterval := envDuration("SENSOR_HEARTBEAT_INTERVAL_SECONDS", 60*time.Second)
 	stopHeartbeat := validity.StartHeartbeat(db, sensorID, heartbeatInterval, log.Printf)
 	defer stopHeartbeat()
+
+	stopFlagPoll := watchRuntimeFlags(db, deceptionRuntime, envDuration("MIRAGE_RUNTIME_FLAGS_POLL_SECONDS", 3*time.Second))
+	defer stopFlagPoll()
 
 	for {
 		conn, err := listener.Accept()
@@ -364,6 +363,45 @@ func envBool(key string, fallback bool) bool {
 	return b
 }
 
+// watchRuntimeFlags keeps rt.PolicyEnabled/ApplyActions in sync with the
+// runtime_flags table, so an operator's toggle in the console's Control tab
+// (mirage-web docs/API-GAPS.md §4) reaches an already-running process
+// without a restart. Polling rather than LISTEN/NOTIFY: the documented
+// contract for this feature is "applies on the next connection, no restart",
+// not sub-second push, and a plain poll needs no extra long-lived DB
+// connection or reconnect handling on top of the pool store.Connect already
+// gives every other caller in this process.
+//
+// Fails silent on a query error (logged, not fatal): a DB hiccup should
+// leave the policy at its last-known value, exactly like every other
+// deception.Client call already fails safe to ActionMinimal on error.
+func watchRuntimeFlags(db *sql.DB, rt *deception.Runtime, interval time.Duration) (stop func()) {
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				flags, err := store.LoadRuntimeFlags(db)
+				if err != nil {
+					log.Printf("polling runtime flags: %v", err)
+					continue
+				}
+				if prev := rt.PolicyEnabled.Swap(flags.DeceptionEnabled); prev != flags.DeceptionEnabled {
+					log.Printf("Deception policy: %v -> %v (console)", prev, flags.DeceptionEnabled)
+				}
+				if prev := rt.ApplyActions.Swap(flags.DeceptionApplyActions); prev != flags.DeceptionApplyActions {
+					log.Printf("Deception apply_actions: %v -> %v (console)", prev, flags.DeceptionApplyActions)
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
+	return func() { close(done) }
+}
+
 func resolveRemoteAddr(pp *proxyproto.Conn, fallback net.Addr) (addr *net.TCPAddr, ingressSource, proxyNodeID string) {
 	if pp != nil {
 		if tcpAddr, dstRaw, found := pp.RealRemoteAddr(); found {
@@ -482,7 +520,7 @@ func applyDeception(deceptionRuntime *deception.Runtime, interp *shell.Interpret
 		}
 	}
 
-	if !deceptionRuntime.PolicyEnabled {
+	if !deceptionRuntime.PolicyEnabled.Load() {
 		response, code, baitHits = interp.Run(command)
 		return response, code, baitHits, nil, false
 	}
@@ -494,13 +532,17 @@ func applyDeception(deceptionRuntime *deception.Runtime, interp *shell.Interpret
 	}
 	action := decision.Action
 
+	// Read once: this can be toggled concurrently by watchRuntimeFlags, and
+	// the exec/apply decision below must agree with itself for one command.
+	applyActions := deceptionRuntime.ApplyActions.Load()
+
 	execAction := ""
-	if deceptionRuntime.ApplyActions {
+	if applyActions {
 		execAction = action
 	}
 	response, code, baitHits = interp.RunWithDeception(command, execAction)
 
-	if deceptionRuntime.ApplyActions {
+	if applyActions {
 		var delay time.Duration
 		response, code, delay = deception.Apply(action, response, code)
 		if delay > 0 {

@@ -622,3 +622,51 @@ anyway — the split costs one extra secret and no operational complexity.
 
 **My answer before seeing yours:** n/a — mechanical follow-through on the
 forward decision above.
+
+---
+
+## 2026-09-05 — Runtime flags: Postgres table + poll, not LISTEN/NOTIFY or an admin port
+
+**Chose:** A `runtime_flags` table (`internal/store/migrations/010_runtime_flags.sql`),
+scoped to exactly the two flags mirage-web's `docs/API-GAPS.md §4` marks as
+the ones that matter (`deception_enabled`, `deception_apply_actions`).
+`deception.Runtime.PolicyEnabled`/`ApplyActions` became `atomic.Bool` instead
+of plain `bool`, and `NewRuntime` now always returns non-nil (previously nil
+meant "everything off" — that invariant is gone, since a live toggle needs a
+real `*Runtime` to flip even when it started fully disabled).
+`internal/server.watchRuntimeFlags` polls the table every
+`MIRAGE_RUNTIME_FLAGS_POLL_SECONDS` (default 3s) on `mirage-core`'s existing
+DB connection and swaps the atomics; `mirage-api` gets a plain
+`GET/PUT /api/config` that reads/writes the same table.
+
+**Why:** The dashboard toggle was explicitly asked for, gated on the
+mutating endpoint actually being protected since "it would be out on the
+web" — `PUT /api/config` inherits the same `X-API-Key` middleware every
+other mirage-api route already has, and on the browser side mirage-web's
+`src/proxy.ts` gates all of `/api/console/*` behind the operator session
+cookie, so nothing new had to be built for that part. That left only the
+propagation question. mirage-core's own documented contract for this feature
+(mirage-web's Control tab copy: "Changes take effect on the next connection.
+No restart, no redeploy.") never promised sub-second push, so a poll
+comfortably clears the bar with far less code than LISTEN/NOTIFY: no
+persistent listener connection to reconnect on drop, no trigger to maintain,
+and the failure mode on a DB hiccup is "stays at the last-known value,"
+identical to how every other `deception.Client` call already fails safe.
+
+**Alternative considered:** Postgres `LISTEN/NOTIFY` for true instant push.
+Rejected for now — strictly better propagation latency, but real added
+complexity (a dedicated long-lived listener connection, reconnect/backoff
+handling) for a feature whose own spec only asks for "no restart." Also
+considered: an admin HTTP endpoint directly on `mirage-core`, mirroring the
+existing LLM-provider-active pattern in `mirage-deception`. Rejected because
+`mirage-core` is the one process in this stack directly reachable from the
+whole internet by design (it's the honeypot) — adding any inbound admin
+surface to it, even API-key-gated, grows that attack surface for a feature
+that doesn't need it: `mirage-core` already holds an outbound DB connection
+it can poll on, so no new port was necessary at all.
+
+**My answer before seeing yours:** n/a — the persistence model (DB-backed +
+push, gated on protecting the endpoint) was asked and answered directly; poll
+vs. LISTEN/NOTIFY and the atomic-bool/never-nil `Runtime` change are the
+mechanical follow-through on that answer.
+

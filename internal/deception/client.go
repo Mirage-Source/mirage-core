@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -29,33 +30,36 @@ type Decision struct {
 }
 
 // Runtime bundles a Client with the switches internal/server needs to thread
-// through its connection-handling call chain. A nil *Runtime means "every
-// feature in this package is off", and every call site in internal/server
-// treats that as "behave exactly as before this package existed".
+// through its connection-handling call chain.
 //
-// PolicyEnabled and CompletionEnabled are independent: either alone is
-// enough to make NewRuntime return non-nil, and each call site checks the
-// one it needs.
+// PolicyEnabled and ApplyActions are atomic.Bool, not plain bool: the
+// operator console's Control tab can flip either one live (see
+// internal/store's runtime_flags table and the poller started in
+// internal/server.Start), so any goroutine handling an in-flight command can
+// observe a change made mid-session, with no restart. CompletionEnabled
+// (the separate LLM shell-completion fallback) is not part of that toggle
+// yet and stays a plain bool, fixed at startup.
+//
+// A *Runtime is never nil once constructed by NewRuntime -- constructing it
+// is what makes a later live PolicyEnabled/ApplyActions flip possible even
+// when both started false, so "everything off" is represented by the atomic
+// bools being false, not by the pointer being nil.
 type Runtime struct {
 	Client            *Client
-	PolicyEnabled     bool
-	ApplyActions      bool
+	PolicyEnabled     atomic.Bool
+	ApplyActions      atomic.Bool
 	CompletionEnabled bool
 }
 
-// NewRuntime returns nil only when both features are disabled, so callers can
-// construct it once at startup and pass the (possibly nil) result down
-// unconditionally.
+// NewRuntime always returns a non-nil Runtime; see the type doc for why.
 func NewRuntime(cfg Config) *Runtime {
-	if !cfg.Enabled && !cfg.CompletionEnabled {
-		return nil
-	}
-	return &Runtime{
+	rt := &Runtime{
 		Client:            NewClient(cfg),
-		PolicyEnabled:     cfg.Enabled,
-		ApplyActions:      cfg.ApplyActions,
 		CompletionEnabled: cfg.CompletionEnabled,
 	}
+	rt.PolicyEnabled.Store(cfg.Enabled)
+	rt.ApplyActions.Store(cfg.ApplyActions)
+	return rt
 }
 
 // Client calls the deception inference service (ml/mirage/deception/serve.py).

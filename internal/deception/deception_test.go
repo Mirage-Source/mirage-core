@@ -70,6 +70,33 @@ func TestConfigFromEnvIgnoresGarbageValues(t *testing.T) {
 	}
 }
 
+func TestNewRuntimeNeverReturnsNil(t *testing.T) {
+	rt := NewRuntime(Config{})
+	if rt == nil {
+		t.Fatal("NewRuntime(Config{}) = nil, want a non-nil Runtime with everything off -- the console's Control tab needs a live target to flip on later")
+	}
+	if rt.PolicyEnabled.Load() {
+		t.Error("PolicyEnabled = true, want false for a zero-value Config")
+	}
+	if rt.ApplyActions.Load() {
+		t.Error("ApplyActions = true, want false for a zero-value Config")
+	}
+}
+
+func TestRuntimeFlagsToggleAfterConstruction(t *testing.T) {
+	rt := NewRuntime(Config{Enabled: false, ApplyActions: false})
+
+	rt.PolicyEnabled.Store(true)
+	if !rt.PolicyEnabled.Load() {
+		t.Error("PolicyEnabled did not stick after Store(true) -- this is exactly what watchRuntimeFlags relies on to apply a console toggle without a restart")
+	}
+
+	rt.ApplyActions.Store(true)
+	if !rt.ApplyActions.Load() {
+		t.Error("ApplyActions did not stick after Store(true)")
+	}
+}
+
 func TestApplyStallAddsDelayLeavesResponseUnchanged(t *testing.T) {
 	response, code, delay := Apply(ActionStall, "hello", 0)
 	if response != "hello" || code != 0 {
