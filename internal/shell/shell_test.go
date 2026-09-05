@@ -212,7 +212,7 @@ func TestRunWithDeceptionEmptyActionMatchesRun(t *testing.T) {
 
 func TestEnrichRevealsPythonHistory(t *testing.T) {
 	s := NewInterpreter("ubuntu")
-	out, code, _ := s.RunWithDeception("ls", "ENRICH")
+	out, code, _ := s.RunWithDeception("ls -la", "ENRICH")
 	if code != 0 {
 		t.Fatalf("ls failed: %s", out)
 	}
@@ -221,7 +221,7 @@ func TestEnrichRevealsPythonHistory(t *testing.T) {
 	}
 
 	s2 := NewInterpreter("ubuntu")
-	out2, _, _ := s2.Run("ls")
+	out2, _, _ := s2.Run("ls -la")
 	if strings.Contains(out2, ".python_history") {
 		t.Fatalf("expected .python_history hidden without ENRICH, got: %s", out2)
 	}
@@ -249,13 +249,13 @@ func TestEnrichAddsUbuntuCodename(t *testing.T) {
 
 func TestSurfaceBaitRevealsAwsCredentials(t *testing.T) {
 	s := NewInterpreter("ubuntu")
-	out, _, _ := s.RunWithDeception("ls", "SURFACE_BAIT")
+	out, _, _ := s.RunWithDeception("ls -la", "SURFACE_BAIT")
 	if !strings.Contains(out, ".aws") {
 		t.Fatalf("expected SURFACE_BAIT to reveal .aws, got: %s", out)
 	}
 
 	s2 := NewInterpreter("ubuntu")
-	out2, _, _ := s2.Run("ls")
+	out2, _, _ := s2.Run("ls -la")
 	if strings.Contains(out2, ".aws") {
 		t.Fatalf("expected .aws hidden without SURFACE_BAIT, got: %s", out2)
 	}

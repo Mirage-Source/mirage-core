@@ -678,16 +678,24 @@ func (s *Interpreter) catBuiltin(args []string, bait *[]BaitHit, action string, 
 
 func (s *Interpreter) lsBuiltin(args []string, action string) (string, int) {
 	target := s.Cwd
+	var longFormat, showAll bool
 	for _, a := range args {
 		if !strings.HasPrefix(a, "-") {
 			target = a
+			continue
+		}
+		if strings.Contains(a, "l") {
+			longFormat = true
+		}
+		if strings.Contains(a, "a") {
+			showAll = true
 		}
 	}
 	_, n := s.lookup(target)
 	if n == nil || n.Type != NodeDir {
 		return "ls: cannot access '" + target + "': No such file or directory", 2
 	}
-	return s.lsListing(n, action), 0
+	return s.lsListing(n, action, longFormat, showAll), 0
 }
 
 func (s *Interpreter) cdBuiltin(args []string) (string, int) {

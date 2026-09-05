@@ -704,3 +704,31 @@ that led here.
 "just the prompt symbol," "full per-identity emulation for root," or leaving
 the gap as-is; "full per-identity emulation for root" was the answer given,
 not mine to diverge from.
+
+---
+
+## 2026-09-06 — `ls` learns its flags; long-form entry order stays as-is
+
+**Chose:** `lsBuiltin`/`lsListing` now branch on `-l` (long format) and `-a`
+(dotfiles + `.`/`..`), matching real `ls`: bare `ls` and `ls -a` are short
+form (names only, alphabetically sorted, no `total` header); `-l`/`-la`/`-al`
+are the long format. The long-format entry order is left exactly as it was
+(declaration order in `fs.go`, not alphabetical) — only the new short-form
+path sorts.
+
+**Why:** An attacker testing the honeypot noticed bare `ls` and `ls -la`
+produced identical output — the builtin never looked at its args at all.
+Not sorting the long-format path was a deliberate scope limit, not an
+oversight: every existing `-la`-shaped test and the deception
+ConditionalChildren/bait-reveal logic (`ENRICH`/`SURFACE_BAIT`) depend on
+today's declaration order, and re-sorting that path risked disturbing
+behavior nobody asked to change, for a mismatch (unsorted `ls -la`) far less
+likely to be noticed than the flag bug itself was.
+
+**Alternative considered:** Sort both forms for full realism in one pass.
+Rejected for now as unnecessary scope growth on top of the actual reported
+bug — worth revisiting only if it's independently flagged.
+
+**My answer before seeing yours:** n/a — reported directly as a bug, not
+posed as a design choice; the sort-only-short-form split is the one
+judgment call made while fixing it.

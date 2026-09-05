@@ -3,6 +3,7 @@ package shell
 import (
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -423,12 +424,19 @@ func displayPath(p, home string) string {
 	return p
 }
 
-// lsListing renders `ls -la`-style output for a directory node. action is
-// the deception decision for this turn ("" if none/not applied) -- any
-// ConditionalChildren whose Action matches it are included alongside the
-// always-shown Children, deterministically (declaration order), followed by
-// any files this session wrote into n.Path via a `>`/`>>` redirect.
-func (s *Interpreter) lsListing(n *Node, action string) string {
+// lsListing renders `ls`-style output for a directory node, matching real
+// ls's flag semantics: bare `ls` and `ls -a` are short form (names only, no
+// "total" header), `-l`/`-la`/`-al` are long form (permissions/owner/size),
+// and dotfiles plus the synthetic "."/".." entries only appear when showAll
+// is set. action is the deception decision for this turn ("" if none/not
+// applied) -- any ConditionalChildren whose Action matches it are included
+// alongside the always-shown Children, deterministically (declaration
+// order), followed by any files this session wrote into n.Path via a
+// `>`/`>>` redirect. Real ls sorts alphabetically by default; the long-form
+// path deliberately does NOT (kept exactly as before this method learned
+// about flags, to avoid disturbing every existing -la-shaped test/behavior)
+// -- only the short form (the new code path) sorts.
+func (s *Interpreter) lsListing(n *Node, action string, longFormat, showAll bool) string {
 	type entry struct {
 		name  string
 		mode  string
@@ -437,9 +445,12 @@ func (s *Interpreter) lsListing(n *Node, action string) string {
 		size  int64
 		mtime string
 	}
-	entries := []entry{
-		{".", n.Mode, n.Owner, n.Group, 4096, n.MTime},
-		{"..", "drwxr-xr-x", "root", "root", 4096, n.MTime},
+	var entries []entry
+	if showAll {
+		entries = append(entries,
+			entry{".", n.Mode, n.Owner, n.Group, 4096, n.MTime},
+			entry{"..", "drwxr-xr-x", "root", "root", 4096, n.MTime},
+		)
 	}
 	names := append([]string{}, n.Children...)
 	for _, cc := range n.ConditionalChildren {
@@ -449,11 +460,23 @@ func (s *Interpreter) lsListing(n *Node, action string) string {
 	}
 	names = append(names, s.overlayChildren[n.Path]...)
 	for _, name := range names {
+		if !showAll && strings.HasPrefix(name, ".") {
+			continue
+		}
 		_, child := s.lookup(path.Join(n.Path, name))
 		if child == nil {
 			continue
 		}
 		entries = append(entries, entry{name, child.Mode, child.Owner, child.Group, sizeOf(child), child.MTime})
+	}
+
+	if !longFormat {
+		visible := make([]string, 0, len(entries))
+		for _, e := range entries {
+			visible = append(visible, e.name)
+		}
+		sort.Strings(visible)
+		return strings.Join(visible, "  ")
 	}
 
 	var b strings.Builder
