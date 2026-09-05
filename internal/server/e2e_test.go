@@ -178,6 +178,92 @@ func startTestSensor(t *testing.T, addr string) (string, string, string) {
 	return addr, testUser, testPass
 }
 
+// TestExecFloodCannotExceedSharedSessionCap is the regression test for the
+// bug an attacker (testing this honeypot, not attacking it maliciously)
+// found: the "exec" SSH channel type has no read loop, so it never went
+// through MaxInput or maxCommandsPerSession at all, and nothing capped how
+// many "exec" channels one connection could open. Opening many of them
+// accumulated unbounded memory in sessionGuard.sess.Commands until the
+// connection closed, bypassing both guardrails the interactive "shell"
+// path already had. Fixed by moving the cap into sessionGuard.appendCommand
+// itself, the one choke point every channel funnels through -- this test
+// proves that fix by actually flooding a real connection with real exec
+// channels and confirming both that the connection gets cut off and that
+// Postgres never receives more than maxCommandsPerSession rows for it.
+func TestExecFloodCannotExceedSharedSessionCap(t *testing.T) {
+	if os.Getenv("MIRAGE_E2E_TEST") == "" {
+		t.Skip("set MIRAGE_E2E_TEST=1 against a reachable, migrated Postgres to run this test (see .github/workflows/go-tests.yml's e2e-test job)")
+	}
+
+	db := connectTestDB(t)
+	addr, testUser, testPass := startTestSensor(t, "127.0.0.1:32223")
+
+	config := &ssh.ClientConfig{
+		User:            testUser,
+		Auth:            []ssh.AuthMethod{ssh.Password(testPass)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         5 * time.Second,
+	}
+	client, err := ssh.Dial("tcp", addr, config)
+	if err != nil {
+		t.Fatalf("dialing real sensor: %v", err)
+	}
+	defer client.Close()
+
+	const attempts = maxCommandsPerSession + 25
+	var succeeded, refused int
+	for i := 0; i < attempts; i++ {
+		sess, err := client.NewSession()
+		if err != nil {
+			refused++
+			continue // connection was closed server-side -- exactly the fix
+		}
+		if err := sess.Run("echo flood"); err != nil {
+			refused++
+		} else {
+			succeeded++
+		}
+		sess.Close()
+	}
+
+	if refused == 0 {
+		t.Fatalf("expected the connection to be cut off once the cap was hit; all %d exec attempts succeeded (cap not enforced)", attempts)
+	}
+	t.Logf("%d exec channels succeeded, %d refused (cap enforced) out of %d attempted", succeeded, refused, attempts)
+
+	// The authoritative check: no matter how many channels this one
+	// connection tried, Postgres must never show more rows than the cap
+	// for its session -- proving the memory-accumulation path, not just
+	// the client-visible refusal, was actually closed.
+	//
+	// Not filtered on outcome: recordOutcome is first-wins, and the exec
+	// path calls it after every individual successful channel, so the
+	// very first of the 500 accepted exec channels already locked the
+	// session's outcome to "clean_disconnect" long before the 501st
+	// channel ever tripped the cap. That's a real, separate pre-existing
+	// quirk this test incidentally surfaced -- worth its own look, but not
+	// what this test is about, so it's not asserted on here.
+	var commandCount int
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := db.QueryRow(
+			`SELECT command_count FROM sessions
+			 WHERE client_ip = '127.0.0.1' AND command_count > 0
+			 ORDER BY start_ms DESC LIMIT 1`,
+		).Scan(&commandCount)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no session row appeared in Postgres within 5s: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if commandCount > maxCommandsPerSession {
+		t.Errorf("command_count = %d, want <= %d (maxCommandsPerSession)", commandCount, maxCommandsPerSession)
+	}
+}
+
 func writeThrowawayHostKey(t *testing.T, path string) {
 	t.Helper()
 	_, priv, err := ed25519.GenerateKey(rand.Reader)

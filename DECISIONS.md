@@ -819,3 +819,52 @@ Postgres, not in-process" was asked and answered directly earlier in
 conversation; this entry documents the implementation, including the
 log.Fatal/gating wrinkle discovered while building it, which wasn't
 anticipated when the choice was made.
+
+---
+
+## 2026-09-06 — Exec-channel resource exhaustion: unified cap in sessionGuard.appendCommand
+
+**Chose:** `sessionGuard.appendCommand` (`internal/server/server.go`) is now
+the single enforcement point for `maxCommandsPerSession` and a new
+`maxSessionInputBytes` (256KB, chosen as headroom over what the shell
+path's own `maxCommandsPerSession * MaxInput` already implies in
+combination, ≈127KB) across *every* channel one connection opens combined
+— not per-channel. Both `exec` and `shell` call sites now check the
+returned `ok bool`; on `false`, the command is not stored, no bait events
+are recorded for it (would violate the `bait_interactions` FK otherwise),
+`recordOutcome(OutcomeCommandLimitReached)` fires, and the whole connection
+is closed (`conn.Close()`), not just the offending channel.
+
+**Why:** an attacker testing the honeypot found that the `exec` SSH channel
+type has no read loop, so it never went through `MaxInput` or
+`maxCommandsPerSession` at all — both were only ever checked inside the
+`shell` case's interactive loop. Since SSH allows a connection to
+multiplex unlimited channels and nothing here capped that, a connection
+opening many `exec` channels (each bypassing both existing guardrails)
+could accumulate unbounded memory in `sess.Commands`, which only ever
+flushes to Postgres once every channel on the connection finishes
+(`handleChannels`'s `wg.Wait()` then `finalize`). A unified check in the
+one function every append already funnels through closes this for `exec`,
+`shell`, and any future channel type at once, rather than duplicating
+per-path checks that had already drifted out of sync once (that drift is
+exactly how this gap existed in the first place).
+
+**Alternative considered:** duplicating `MaxInput`/`maxCommandsPerSession`
+checks directly into the `exec` branch, or capping channel *count* in
+`handleChannels` at accept time. Both were posed and rejected in favor of
+the unified choke point — this fork was asked and answered directly.
+
+`internal/server/e2e_test.go`'s new `TestExecFloodCannotExceedSharedSessionCap`
+proved the fix against a real connection (500 exec channels accepted,
+exactly at the cap, then the connection closed and 25 further attempts
+refused) and incidentally surfaced a separate, pre-existing quirk not fixed
+here: the `exec` path calls `recordOutcome(OutcomeCleanDisconnect)` after
+every individual successful channel, and `recordOutcome` is first-wins, so
+a connection's very first successful `exec` channel permanently locks in
+`clean_disconnect` as the recorded outcome regardless of what happens on
+later channels on the same connection (including hitting this cap). Worth
+its own look; out of scope here.
+
+**My answer before seeing yours:** n/a — the fork (which layer owns the
+limit) was posed directly as a choice among three options; "unified cap in
+sessionGuard.appendCommand" was the answer given, not mine to diverge from.

@@ -29,6 +29,17 @@ import (
 const MaxInput = 255
 const maxCommandsPerSession = 500
 
+// maxSessionInputBytes bounds total raw command input across every channel
+// on one connection combined -- exec and shell alike. Chosen as headroom
+// over what the shell path's own two existing caps already imply in
+// combination (maxCommandsPerSession * MaxInput ≈ 500*255 ≈ 127KB): this
+// is a backstop, not a new restriction on legitimate interactive use.
+// See sessionGuard.appendCommand -- this is the single choke point that
+// closes the gap an "exec" channel bypassed (it never went through
+// MaxInput or maxCommandsPerSession at all, since exec has no read loop
+// and no per-request check of its own).
+const maxSessionInputBytes = 256 * 1024
+
 const defaultIdleTimeout = 120 * time.Second
 const defaultHandshakeTimeout = 20 * time.Second
 const defaultMaxConcurrentConnections = 500
@@ -41,9 +52,10 @@ const defaultMaxConcurrentConnections = 500
 // primary-key collision in the DB, silently dropping whichever channel's
 // commands lost the race. See SESSION_NOTES.md for how this was found.
 type sessionGuard struct {
-	mu   sync.Mutex
-	sess *session.Session
-	once sync.Once
+	mu         sync.Mutex
+	sess       *session.Session
+	once       sync.Once
+	inputBytes int
 }
 
 // sessionID is safe to read without the mutex -- it is set once in Start()
@@ -71,9 +83,29 @@ func (g *sessionGuard) username() string {
 // relative to the previous command across ALL channels on this connection)
 // and appends atomically, so two channels can never be assigned the same
 // sequence number.
-func (g *sessionGuard) appendCommand(cmd session.Command, computeDelay bool) session.Command {
+//
+// This is also the one choke point that enforces maxCommandsPerSession and
+// maxSessionInputBytes across every channel a connection opens combined --
+// not just per-channel. The shell path's own read loop already bounds a
+// single line to MaxInput and pre-checks commandCount() before running a
+// command at all, but "exec" has no read loop and no check of its own: a
+// connection that opens many "exec" channels (SSH allows unlimited channels
+// per connection; nothing here capped that) each carrying an uncapped
+// command string bypassed both existing guardrails entirely, accumulating
+// unbounded memory in g.sess.Commands until the connection closed and
+// finally flushed to Postgres. ok is false the moment either cap would be
+// exceeded; cmd is returned unappended and unmodified in that case, and the
+// caller must not also call appendBaitEvents for it (its EventID was never
+// stored, so a bait_interactions row referencing it would violate that
+// table's foreign key at SaveSession time).
+func (g *sessionGuard) appendCommand(cmd session.Command, computeDelay bool) (session.Command, bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+
+	if len(g.sess.Commands) >= maxCommandsPerSession ||
+		g.inputBytes+len(cmd.RawInputB64) > maxSessionInputBytes {
+		return cmd, false
+	}
 
 	cmd.SequenceNumber = len(g.sess.Commands)
 	if computeDelay && len(g.sess.Commands) > 0 {
@@ -81,7 +113,8 @@ func (g *sessionGuard) appendCommand(cmd session.Command, computeDelay bool) ses
 		cmd.InterCommandDelayMS = &prev
 	}
 	g.sess.Commands = append(g.sess.Commands, cmd)
-	return cmd
+	g.inputBytes += len(cmd.RawInputB64)
+	return cmd, true
 }
 
 func (g *sessionGuard) appendBaitEvents(commandEventID string, hits []shell.BaitHit) {
@@ -625,7 +658,21 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 				ResponseSource:   responseSourceFor(baitHits, usedLLM),
 				DeceptionAction:  deceptionAction,
 			}
-			cmd = guard.appendCommand(cmd, false)
+			var ok bool
+			cmd, ok = guard.appendCommand(cmd, false)
+			if !ok {
+				// exec has no read loop and no MaxInput/maxCommandsPerSession
+				// check of its own -- a connection opening many "exec"
+				// channels (SSH allows unlimited channels per connection)
+				// bypassed both entirely. Once the shared cap trips, close
+				// the whole connection rather than just this channel, so
+				// opening further channels can't continue the same abuse.
+				log.Printf("Session command/input-volume limit reached via exec channel from %v; closing connection", conn.RemoteAddr())
+				guard.recordOutcome(session.OutcomeCommandLimitReached)
+				channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{Status: uint32(1)}))
+				conn.Close()
+				return
+			}
 			guard.appendBaitEvents(cmd.EventID, baitHits)
 
 			// Send exit status to notify client of success/failure
@@ -729,7 +776,17 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 					ResponseSource:   responseSourceFor(baitHits, usedLLM),
 					DeceptionAction:  deceptionAction,
 				}
-				cmd = guard.appendCommand(cmd, true)
+				var ok bool
+				cmd, ok = guard.appendCommand(cmd, true)
+				if !ok {
+					// The outer loop's commandCount() check above already
+					// keeps this from firing on count alone; this is the
+					// input-byte-volume backstop, shared with the exec path.
+					log.Printf("Session input-volume limit reached from %v; closing connection", conn.RemoteAddr())
+					guard.recordOutcome(session.OutcomeCommandLimitReached)
+					conn.Close()
+					return
+				}
 				guard.appendBaitEvents(cmd.EventID, baitHits)
 
 				if code == shell.ExitRequested {

@@ -65,4 +65,4 @@ jobs:
           DB_USER: mirage
           DB_PASSWORD: e2e-test-password
           DB_NAME: mirage
-        run: go test ./internal/server/... -run TestEndToEndSSHSessionPersistsToDatabase -v
+        run: go test ./internal/server/... -run 'TestEndToEndSSHSessionPersistsToDatabase|TestExecFloodCannotExceedSharedSessionCap' -v -timeout 120s
