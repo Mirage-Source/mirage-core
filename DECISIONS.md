@@ -732,3 +732,38 @@ bug — worth revisiting only if it's independently flagged.
 **My answer before seeing yours:** n/a — reported directly as a bug, not
 posed as a design choice; the sort-only-short-form split is the one
 judgment call made while fixing it.
+
+---
+
+## 2026-09-06 — Recon output variance: procedural, seeded per session, not a template pool
+
+**Chose:** `ps`/`netstat`/`/proc/uptime` now derive from a per-session
+`BootTime`, `SessionStart`, and `pids` map (`internal/shell/shell.go`),
+fixed once in `NewInterpreter` exactly like `Hostname` already was. PIDs are
+jittered within the same relative bands the old hardcoded values occupied
+(so the story -- sshd early, gunicorn/nginx later, bash/ps most recent --
+survives); `ps`'s daemon `START` column and `/proc/uptime`'s two numbers
+derive from `BootTime`; `netstat` reads the same `s.pids` map `ps` does, so
+they never disagree within one session. `uname -r`/`-v` (kernel
+version/build string) deliberately stay static across every session.
+
+**Why:** procedurally deriving from one consistent seed, rather than picking
+from a small pool of hardcoded template outputs, avoids recreating the exact
+bug just fixed on `Hostname` (a bounded pool is enumerable, just N times
+slower than a single hardcoded value, and an attacker who reconnects enough
+times to see the pool cycle gets a different but equally real tell). Keeping
+kernel version static is deliberate, not a leftover gap: distinct real hosts
+booted from the same AMI legitimately share an identical kernel build --
+varying it would manufacture a new inconsistency instead of removing one.
+
+**Alternative considered:** A pool of 5-10 fully pre-written `ps`/`netstat`
+tables to pick from per session. Rejected per the enumerability reasoning
+above -- this was explicitly weighed against procedural generation earlier
+in the same discussion that led to this entry, and procedural was the
+answer given.
+
+**My answer before seeing yours:** n/a — this fork was posed and answered
+directly earlier in conversation ("procedurally derive... from a per-session
+seed... internally consistent" vs. "a small pool of realistic templates");
+this entry documents the implementation of the answer already given, not a
+fresh choice.

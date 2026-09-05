@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mirage-source/mirage-core/internal/session"
 )
@@ -36,6 +37,63 @@ const hostnamePlaceholder = "{{hostname}}"
 // matter which session they landed in.
 func randomHostname() string {
 	return fmt.Sprintf("ip-172-31-%d-%d", 1+rand.Intn(254), 1+rand.Intn(254))
+}
+
+// randomBootTime picks a plausible boot time for this session's box: 1 hour
+// to 60 days of uptime, matching a long-running EC2 instance rather than one
+// freshly rebooted for every attacker. Backs ps's daemon START column and
+// /proc/uptime.
+func randomBootTime() time.Time {
+	uptime := time.Duration(60+rand.Intn(60*24*60)) * time.Minute
+	return time.Now().Add(-uptime)
+}
+
+// randomPIDs assigns each named process in the psOutput/netstatOutput story
+// a per-session PID, jittered within the same band the original hardcoded
+// values occupied (so the story -- sshd started early, gunicorn/nginx later,
+// bash/ps most recent -- stays intact) rather than a single hardcoded set
+// every session shares. init is deliberately NOT randomized: PID 1 is always
+// init on a real Linux box, session or no session.
+func randomPIDs() map[string]int {
+	nginxMaster := 850 + rand.Intn(150)
+	gunicorn1 := 1100 + rand.Intn(200)
+	bash := 2000 + rand.Intn(200)
+	return map[string]int{
+		"sshd":         400 + rand.Intn(150),
+		"cron":         580 + rand.Intn(150),
+		"rsyslogd":     600 + rand.Intn(150),
+		"nginx_master": nginxMaster,
+		"nginx_worker": nginxMaster + 1,
+		"gunicorn1":    gunicorn1,
+		"gunicorn2":    gunicorn1 + 1,
+		"bash":         bash,
+		"ps":           bash + 50 + rand.Intn(100),
+	}
+}
+
+// procUptimeNode builds this session's /proc/uptime content from bootTime:
+// seconds since boot, then a smaller "idle time" figure (a single-core-
+// equivalent idle-time accumulator, always somewhat less than uptime --
+// real /proc/uptime's second field can even exceed the first on a multi-core
+// box, but staying under it is the simpler, always-plausible choice here).
+func procUptimeNode(bootTime time.Time) *Node {
+	uptimeSeconds := time.Since(bootTime).Seconds()
+	idleSeconds := uptimeSeconds * (0.7 + rand.Float64()*0.25)
+	return &Node{
+		Path: "/proc/uptime", Type: NodeFile, Mode: "-r--r--r--", Owner: "root", Group: "root",
+		MTime:   "Jul 11 09:11",
+		Content: fmt.Sprintf("%.2f %.2f", uptimeSeconds, idleSeconds),
+	}
+}
+
+// formatPsStart renders a process's start time the way real `ps` does: HH:MM
+// if it started on the same calendar day as now, otherwise "Mon02" (e.g.
+// "Jul11").
+func formatPsStart(start, now time.Time) string {
+	if start.Year() == now.Year() && start.YearDay() == now.YearDay() {
+		return start.Format("15:04")
+	}
+	return start.Format("Jan02")
 }
 
 // ExitRequested is the sentinel exit code returned when the attacker types
@@ -82,6 +140,18 @@ type Interpreter struct {
 	Username string
 	HomeDir  string
 
+	// BootTime, SessionStart, and pids back ps/netstat/`/proc/uptime` --
+	// fixed once per session, like Hostname, so a patient attacker
+	// reconnecting can't fingerprint the honeypot by noticing every
+	// low-level system fact is byte-identical across sessions. Kernel
+	// version (uname -r/-v) is deliberately NOT varied here -- see
+	// unameOutput -- real hosts booted from the same image legitimately
+	// share it; only host-specific facts (uptime, PIDs, process start
+	// times) should differ.
+	BootTime     time.Time
+	SessionStart time.Time
+	pids         map[string]int
+
 	overlay         map[string]*Node
 	overlayChildren map[string][]string
 }
@@ -100,13 +170,20 @@ func NewInterpreter(username string) *Interpreter {
 		homeDir = rootHomeDir
 		identity = "root"
 	}
-	return &Interpreter{
-		Cwd:      homeDir,
-		Env:      map[string]string{},
-		Hostname: randomHostname(),
-		Username: identity,
-		HomeDir:  homeDir,
+	s := &Interpreter{
+		Cwd:          homeDir,
+		Env:          map[string]string{},
+		Hostname:     randomHostname(),
+		Username:     identity,
+		HomeDir:      homeDir,
+		BootTime:     randomBootTime(),
+		SessionStart: time.Now(),
+		pids:         randomPIDs(),
 	}
+	s.overlay = map[string]*Node{
+		"/proc/uptime": procUptimeNode(s.BootTime),
+	}
+	return s
 }
 
 // expandHostname substitutes this session's Hostname into a static fs.go
@@ -531,10 +608,10 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 		return s.findBuiltin(args, action)
 
 	case "ps":
-		return psOutput(args), 0
+		return s.psOutput(args), 0
 
 	case "netstat":
-		return netstatOutput(), 0
+		return s.netstatOutput(), 0
 
 	case "crontab":
 		return crontabBuiltin(args)
@@ -1030,37 +1107,47 @@ func findMatches(p string, n *Node, namePattern string, typeFilter byte) bool {
 // second randomization axis. args is accepted (matching every other
 // flag-tolerant builtin here) but unused -- every flag combination this
 // interpreter is likely to see (aux, -ef, -aux) wants the same table.
-func psOutput(args []string) string {
+// psOutput renders a `ps aux`-style process table. PIDs come from this
+// session's s.pids (see randomPIDs) rather than hardcoded values, and daemon
+// START times are derived from s.BootTime -- both fixed once per session, so
+// two connections show a plausibly different but internally consistent
+// picture instead of the exact same table every time. netstatOutput below
+// must agree with this on any PID/name it also shows (sshd, gunicorn, nginx).
+func (s *Interpreter) psOutput(args []string) string {
+	daemonStart := formatPsStart(s.BootTime, s.SessionStart)
+	shellStart := formatPsStart(s.SessionStart, s.SessionStart)
 	rows := []string{
 		"USER         PID  %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND",
-		"root           1   0.0  0.1 168456 11024 ?        Ss   Jul11   0:03 /sbin/init",
-		"root         482   0.0  0.1  16812  8760 ?        Ss   Jul11   0:00 /usr/sbin/sshd -D",
-		"root         611   0.0  0.2  55880 18220 ?        Ss   Jul11   0:00 /usr/sbin/cron -f",
-		"syslog       618   0.0  0.1 222968  9040 ?        Ssl  Jul11   0:01 /usr/sbin/rsyslogd -n",
-		"root         881   0.0  0.1  55164 10552 ?        Ss   Jul11   0:00 nginx: master process /usr/sbin/nginx",
-		"www-data     882   0.0  0.1  55592  7280 ?        S    Jul11   0:00 nginx: worker process",
-		"ubuntu      1147   0.2  1.4 178452 57316 ?        Sl   09:12   0:14 /home/ubuntu/.local/bin/gunicorn app.wsgi:application --bind 127.0.0.1:8000",
-		"ubuntu      1148   0.1  1.3 178452 55908 ?        S    09:12   0:09 /home/ubuntu/.local/bin/gunicorn app.wsgi:application --bind 127.0.0.1:8000",
-		"ubuntu      2031   0.0  0.0  10404  5192 pts/0    Ss   14:02   0:00 -bash",
-		"ubuntu      2114   0.0  0.0  10744  3364 pts/0    R+   14:03   0:00 ps aux",
+		fmt.Sprintf("root           1   0.0  0.1 168456 11024 ?        Ss   %-5s   0:03 /sbin/init", daemonStart),
+		fmt.Sprintf("root       %5d   0.0  0.1  16812  8760 ?        Ss   %-5s   0:00 /usr/sbin/sshd -D", s.pids["sshd"], daemonStart),
+		fmt.Sprintf("root       %5d   0.0  0.2  55880 18220 ?        Ss   %-5s   0:00 /usr/sbin/cron -f", s.pids["cron"], daemonStart),
+		fmt.Sprintf("syslog     %5d   0.0  0.1 222968  9040 ?        Ssl  %-5s   0:01 /usr/sbin/rsyslogd -n", s.pids["rsyslogd"], daemonStart),
+		fmt.Sprintf("root       %5d   0.0  0.1  55164 10552 ?        Ss   %-5s   0:00 nginx: master process /usr/sbin/nginx", s.pids["nginx_master"], daemonStart),
+		fmt.Sprintf("www-data   %5d   0.0  0.1  55592  7280 ?        S    %-5s   0:00 nginx: worker process", s.pids["nginx_worker"], daemonStart),
+		fmt.Sprintf("ubuntu     %5d   0.2  1.4 178452 57316 ?        Sl   %-5s   0:14 /home/ubuntu/.local/bin/gunicorn app.wsgi:application --bind 127.0.0.1:8000", s.pids["gunicorn1"], daemonStart),
+		fmt.Sprintf("ubuntu     %5d   0.1  1.3 178452 55908 ?        S    %-5s   0:09 /home/ubuntu/.local/bin/gunicorn app.wsgi:application --bind 127.0.0.1:8000", s.pids["gunicorn2"], daemonStart),
+		fmt.Sprintf("ubuntu     %5d   0.0  0.0  10404  5192 pts/0    Ss   %-5s   0:00 -bash", s.pids["bash"], shellStart),
+		fmt.Sprintf("ubuntu     %5d   0.0  0.0  10744  3364 pts/0    R+   %-5s   0:00 ps aux", s.pids["ps"], shellStart),
 	}
 	return strings.Join(rows, "\r\n")
 }
 
-// netstatOutput returns a static "netstat -tulpn"-style listening-socket
-// table. Every entry has to agree with a service the rest of the filesystem
-// story implies is running (see psOutput above): nginx on :80, gunicorn on
+// netstatOutput returns a "netstat -tulpn"-style listening-socket table.
+// Every entry has to agree with a service the rest of the filesystem story
+// implies is running (see psOutput above): nginx on :80, gunicorn on
 // 127.0.0.1:8000 (not externally reachable, matching nginx's proxy_pass
-// target in fs.go), sshd on :22. The Postgres the app's DATABASE_URL points
-// at (10.0.4.12:5432, see .env) is deliberately absent -- it's a different
-// host, so it would never appear in this box's own netstat.
-func netstatOutput() string {
+// target in fs.go), sshd on :22 -- and, since this session's PIDs, on the
+// same PIDs psOutput just showed for those processes. The Postgres the
+// app's DATABASE_URL points at (10.0.4.12:5432, see .env) is deliberately
+// absent -- it's a different host, so it would never appear in this box's
+// own netstat.
+func (s *Interpreter) netstatOutput() string {
 	rows := []string{
 		"Active Internet connections (only servers)",
 		"Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name",
-		"tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      482/sshd",
-		"tcp        0      0 127.0.0.1:8000          0.0.0.0:*               LISTEN      1147/gunicorn",
-		"tcp6       0      0 :::80                   :::*                    LISTEN      881/nginx",
+		fmt.Sprintf("tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      %d/sshd", s.pids["sshd"]),
+		fmt.Sprintf("tcp        0      0 127.0.0.1:8000          0.0.0.0:*               LISTEN      %d/gunicorn", s.pids["gunicorn1"]),
+		fmt.Sprintf("tcp6       0      0 :::80                   :::*                    LISTEN      %d/nginx", s.pids["nginx_master"]),
 	}
 	return strings.Join(rows, "\r\n")
 }
