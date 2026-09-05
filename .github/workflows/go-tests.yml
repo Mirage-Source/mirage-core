@@ -21,3 +21,48 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./...
+
+  # Drives the real thing: a real TCP listener (server.Start, the exact
+  # function cmd/mirage/main.go calls), a real ssh client dialing it, a real
+  # interactive session, and a real Postgres row read back afterward. See
+  # internal/server/e2e_test.go's doc comment for why this needs its own job
+  # (Start log.Fatal's the whole test binary on a setup problem) rather than
+  # folding into the `test` job above, which must stay fast and DB-free.
+  e2e-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: mirage
+          POSTGRES_PASSWORD: e2e-test-password
+          POSTGRES_DB: mirage
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mirage -d mirage"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # Mirrors db/init/, applied by hand since GitHub's postgres service
+      # doesn't run docker-entrypoint-initdb.d scripts the way the compose
+      # volume mount does locally.
+      - name: Apply schema
+        run: |
+          for f in db/init/*.sql; do
+            psql "postgresql://mirage:e2e-test-password@localhost:5432/mirage" -f "$f"
+          done
+      - name: Run end-to-end test
+        env:
+          MIRAGE_E2E_TEST: "1"
+          DB_HOST: localhost
+          DB_PORT: "5432"
+          DB_USER: mirage
+          DB_PASSWORD: e2e-test-password
+          DB_NAME: mirage
+        run: go test ./internal/server/... -run TestEndToEndSSHSessionPersistsToDatabase -v

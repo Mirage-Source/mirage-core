@@ -767,3 +767,55 @@ directly earlier in conversation ("procedurally derive... from a per-session
 seed... internally consistent" vs. "a small pool of realistic templates");
 this entry documents the implementation of the answer already given, not a
 fresh choice.
+
+---
+
+## 2026-09-06 — Real end-to-end SSH→session→DB test, its own CI job, gated by an env var
+
+**Chose:** `internal/server/e2e_test.go` drives the actual thing: a real
+`Start(addr)` (the exact function `cmd/mirage/main.go` calls) listening on a
+real TCP port, a real `golang.org/x/crypto/ssh` client dialing it and
+authenticating with a throwaway weak credential, a real interactive PTY
+session, then a real row read back from Postgres afterward. It's skipped
+unless `MIRAGE_E2E_TEST` is set, and runs in a new, separate `e2e-test` job
+in `.github/workflows/go-tests.yml` with a `services: postgres:` container,
+rather than folding into the existing `test` job.
+
+**Why:** `Start` calls `log.Fatal` (not a returned error) on every setup
+failure -- a missing hostkey, an unreachable DB, a failed bind -- which
+kills the whole test binary process, not just one test. That's correct for
+a real server entrypoint but makes it unsafe to run unconditionally
+alongside every other fast, DB-free unit test: a Postgres hiccup in that
+job would take down unrelated test results with a cryptic process exit
+instead of a clean failure. Gating by an env var plus a dedicated job
+contains that risk to one job whose only purpose is this test. Real
+sockets/real client/real DB (not an in-process call, not a faked store)
+was the explicit ask: the whole point of an end-to-end test is covering the
+wire-level dispatch unit tests of the pieces can't (the `exec`-vs-`shell`
+channel-type branching in `handleSessionRequests` in particular, which is
+exactly the class of thing tested manually earlier this same session).
+
+This test immediately justified itself: run against `db/init/*.sql` alone
+(matching a genuinely fresh clone, not the hand-applied
+`internal/store/migrations/` list), it failed with
+`column "ingress_source" of relation "sessions" does not exist` --
+`db/init/` was missing `003_deception.sql`, `004_command_response.sql`, and
+`007_ingress_source.sql`'s columns entirely, a real gap `DEPLOYMENT.md` had
+already partially documented but not closed. Added
+`db/init/005_deception_and_ingress.sql` to close it; `DEPLOYMENT.md` §3
+updated to reflect that a fresh clone no longer needs manual catch-up (the
+catch-up list is now relevant only to the pre-existing production sensor,
+which predates several `db/init/` files existing at all).
+
+**Alternative considered:** An in-process test calling `internal/server`'s
+unexported handler functions directly, skipping the real socket/SSH
+handshake, and/or a fake/mocked store instead of real Postgres. Rejected --
+this was the exact fork posed and answered earlier in conversation ("the
+whole point... is exactly the wire-level dispatch... faking either the
+socket or the DB defeats that").
+
+**My answer before seeing yours:** n/a — "real TCP + real ssh client + real
+Postgres, not in-process" was asked and answered directly earlier in
+conversation; this entry documents the implementation, including the
+log.Fatal/gating wrinkle discovered while building it, which wasn't
+anticipated when the choice was made.

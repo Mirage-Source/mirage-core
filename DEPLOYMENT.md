@@ -79,19 +79,26 @@ chmod 644 config/hostkey
 
 ---
 
-## 3. Schema catch-up: a fresh clone starts behind
+## 3. Schema catch-up: only needed for the pre-existing production sensor
 
 `db/init/*.sql` only runs once, automatically, against an *empty* Postgres
 data directory — that's a Postgres-image behavior, not a mirage-core choice.
 `internal/store/migrations/` holds the incremental patches applied by hand to
-the already-running production sensor over time, and **`db/init/` was not kept
-fully in sync with them**. A brand-new deploy from a fresh clone will hit
-`pq: column "deception_action" does not exist` (and similar) the first time
-the data-validity dashboard queries a column that only exists via a
-hand-applied migration.
+the already-running production sensor over time.
 
-After your first `docker compose up`, catch up in order (all are
-idempotent — safe to re-run, safe even if some already applied via `db/init`):
+**As of `internal/server/e2e_test.go`'s real end-to-end test (a real SSH
+client against a real listener against a truly fresh Postgres, applying only
+`db/init/*.sql`), `db/init/` is caught up** — it previously wasn't
+(`005_deception_and_ingress.sql` closes the gap the test caught:
+`commands.deception_action`/`response_text`/`exit_code` and
+`sessions.ingress_source`/`proxy_node_id` were missing from a fresh clone
+entirely). A brand-new deploy from a fresh clone no longer needs any manual
+catch-up.
+
+The catch-up below is only relevant if you're bringing the **pre-existing**
+production sensor's already-populated database up to the latest schema (it
+predates several `db/init/` files being added at all, so those never ran
+there):
 
 ```bash
 for f in 003_deception 004_command_response 005_ml_intelligence_catchup \
@@ -102,10 +109,12 @@ for f in 003_deception 004_command_response 005_ml_intelligence_catchup \
 done
 ```
 
-Skip `006_grafana_readonly_role.sql` — it creates the Grafana read-only role
-that `009` immediately retires (Prometheus/Grafana are retired; see README).
-Running `009` alone against a fresh DB that never had `006` applied is an
-explicit documented no-op, which is exactly what you want here.
+All of these are idempotent — safe to re-run, and safe even on a fresh
+database that already has everything from `db/init/`, which is exactly what
+they'll find there now. Skip `006_grafana_readonly_role.sql` — it creates the
+Grafana read-only role that `009` immediately retires (Prometheus/Grafana are
+retired; see README). Running `009` alone against a DB that never had `006`
+applied is an explicit documented no-op, which is exactly what you want here.
 
 ---
 
