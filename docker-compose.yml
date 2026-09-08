@@ -56,8 +56,22 @@ services:
       # matters once more than one sensor writes into a shared/aggregated
       # setup -- a single deployment can leave this at the default.
       SENSOR_ID: "${SENSOR_ID:-default}"
+      # Off by default -- unset MIRAGE_FLEET_API_KEY makes fleet.Client a
+      # no-op (see internal/fleet), so this sensor behaves identically
+      # whether or not a mirage-fleet instance exists or is reachable, same
+      # fail-safe pattern as MIRAGE_DECEPTION_ENABLED above.
+      MIRAGE_FLEET_URL: "${MIRAGE_FLEET_URL:-}"
+      MIRAGE_FLEET_API_KEY: "${MIRAGE_FLEET_API_KEY:-}"
+      MIRAGE_FLEET_TIMEOUT_MS: "${MIRAGE_FLEET_TIMEOUT_MS:-3000}"
+      MIRAGE_FLEET_HEARTBEAT_INTERVAL_SECONDS: "${MIRAGE_FLEET_HEARTBEAT_INTERVAL_SECONDS:-60}"
+      MIRAGE_FLEET_QUEUE_PATH: "/app/data/fleet_queue.jsonl"
     volumes:
       - ./config/hostkey:/app/config/hostkey:ro
+      # Must survive container restarts: this is where an undelivered
+      # session's data lives while mirage-fleet is unreachable (see
+      # DECISIONS.md "delivery reliability" in mirage-fleet) -- losing it on
+      # every redeploy would defeat the point of queuing at all.
+      - fleet_queue:/app/data
     ports:
       - "22:2222"
     restart: unless-stopped
@@ -177,6 +191,7 @@ services:
 
 volumes:
   postgres_data:
+  fleet_queue:
 
 networks:
   default:

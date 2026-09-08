@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/mirage-source/mirage-core/internal/deception"
+	"github.com/mirage-source/mirage-core/internal/fleet"
 	"github.com/mirage-source/mirage-core/internal/proxyproto"
 	"github.com/mirage-source/mirage-core/internal/session"
 	"github.com/mirage-source/mirage-core/internal/shell"
@@ -163,12 +164,18 @@ func (g *sessionGuard) recordOutcome(outcome session.Outcome) {
 // finalize persists the session exactly once, no matter how many channels
 // or goroutines call it -- callers should call this only after every
 // channel on the connection has finished (see handleChannels).
-func (g *sessionGuard) finalize(db *sql.DB) {
+//
+// fleetClient.PushSession runs regardless of whether the local save
+// succeeded: it's an independent copy for the (optional) central
+// mirage-fleet store, not dependent on the local DB being healthy, and it
+// never blocks or fails this call -- see internal/fleet.Client's doc.
+func (g *sessionGuard) finalize(db *sql.DB, fleetClient *fleet.Client) {
 	g.once.Do(func() {
 		g.recordOutcome(session.OutcomeConnectionReset) // fallback if no channel ever recorded one
 		if err := store.SaveSession(db, g.sess); err != nil {
 			log.Printf("Error saving session: %v", err)
 		}
+		fleetClient.PushSession(g.sess)
 	})
 }
 
@@ -249,6 +256,26 @@ func Start(addr string) {
 	heartbeatInterval := envDuration("SENSOR_HEARTBEAT_INTERVAL_SECONDS", 60*time.Second)
 	stopHeartbeat := validity.StartHeartbeat(db, sensorID, heartbeatInterval, log.Printf)
 	defer stopHeartbeat()
+
+	// Off by default (MIRAGE_FLEET_URL/MIRAGE_FLEET_API_KEY unset) --
+	// fleetClient.enabled() is false and every method on it is then a
+	// no-op, same fail-safe pattern as deceptionRuntime above. See
+	// internal/fleet for why this exists and mirage-fleet's DECISIONS.md
+	// (sibling repo) for the design this implements.
+	fleetQueuePath := os.Getenv("MIRAGE_FLEET_QUEUE_PATH")
+	if fleetQueuePath == "" {
+		fleetQueuePath = "data/fleet_queue.jsonl"
+	}
+	fleetQueue, err := fleet.NewQueue(fleetQueuePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fleetTimeout := time.Duration(envInt("MIRAGE_FLEET_TIMEOUT_MS", 3000)) * time.Millisecond
+	fleetClient := fleet.NewClient(os.Getenv("MIRAGE_FLEET_URL"), os.Getenv("MIRAGE_FLEET_API_KEY"), fleetTimeout, fleetQueue)
+
+	fleetHeartbeatInterval := envDuration("MIRAGE_FLEET_HEARTBEAT_INTERVAL_SECONDS", heartbeatInterval)
+	stopFleetHeartbeat := fleet.StartHeartbeat(fleetClient, fleetHeartbeatInterval)
+	defer stopFleetHeartbeat()
 
 	stopFlagPoll := watchRuntimeFlags(db, deceptionRuntime, envDuration("MIRAGE_RUNTIME_FLAGS_POLL_SECONDS", 3*time.Second))
 	defer stopFlagPoll()
@@ -345,7 +372,7 @@ func Start(addr string) {
 					log.Printf("recovered panic in handleConnection for %v: %v", handlerConn.RemoteAddr(), r)
 				}
 			}()
-			handleConnection(handlerConn, config, guard, db, idleTimeout, handshakeTimeout, deceptionRuntime)
+			handleConnection(handlerConn, config, guard, db, idleTimeout, handshakeTimeout, deceptionRuntime, fleetClient)
 		}() //this will handle the connection concurrently, bounded by connSlots
 	}
 }
@@ -461,7 +488,7 @@ func resolveRemoteAddr(pp *proxyproto.Conn, fallback net.Addr) (addr *net.TCPAdd
 	return nil, session.IngressSourceDirect, ""
 }
 
-func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGuard, db *sql.DB, idleTimeout, handshakeTimeout time.Duration, deceptionRuntime *deception.Runtime) {
+func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGuard, db *sql.DB, idleTimeout, handshakeTimeout time.Duration, deceptionRuntime *deception.Runtime, fleetClient *fleet.Client) {
 	defer conn.Close()
 
 	log.Printf("New connection from %v", conn.RemoteAddr())
@@ -474,7 +501,7 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGua
 		// would otherwise persist the credentials that were tried here.
 		if len(guard.sess.AuthAttempts) > 0 {
 			guard.recordOutcome(session.OutcomeAuthFailed)
-			guard.finalize(db)
+			guard.finalize(db, fleetClient)
 		}
 		return
 	}
@@ -500,14 +527,14 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGua
 	}
 	log.Printf("Client Version: %s", sshConn.ClientVersion())
 	go ssh.DiscardRequests(reqs)
-	handleChannels(conn, idleTimeout, chans, guard, db, deceptionRuntime)
+	handleChannels(conn, idleTimeout, chans, guard, db, deceptionRuntime, fleetClient)
 }
 
 // handleChannels accepts every "session" channel on this connection and
 // waits for all of them to finish before finalizing -- a connection may open
 // more than one, and the session must only be persisted once, after every
 // channel has stopped mutating it.
-func handleChannels(conn net.Conn, idleTimeout time.Duration, chans <-chan ssh.NewChannel, guard *sessionGuard, db *sql.DB, deceptionRuntime *deception.Runtime) {
+func handleChannels(conn net.Conn, idleTimeout time.Duration, chans <-chan ssh.NewChannel, guard *sessionGuard, db *sql.DB, deceptionRuntime *deception.Runtime, fleetClient *fleet.Client) {
 	var wg sync.WaitGroup
 	for newChannel := range chans {
 		log.Printf("New channel type: %s", newChannel.ChannelType())
@@ -533,7 +560,7 @@ func handleChannels(conn net.Conn, idleTimeout time.Duration, chans <-chan ssh.N
 		}
 	}
 	wg.Wait()
-	guard.finalize(db)
+	guard.finalize(db, fleetClient)
 }
 
 // applyDeception asks the deception policy (if enabled) how to respond to
