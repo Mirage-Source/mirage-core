@@ -79,6 +79,39 @@ chmod 644 config/hostkey
 
 ---
 
+## 2a. `fleet_queue` volume: same non-root-user problem, for the local retry queue
+
+The same class of bug as the hostkey issue above, hit for real on the
+Nuremberg sensor once `MIRAGE_FLEET_URL`/`MIRAGE_FLEET_API_KEY` were actually
+turned on: Docker creates a brand-new named volume owned by `root:root`, but
+`mirage-core` writes to `MIRAGE_FLEET_QUEUE_PATH` (`/app/data/...` by
+default) as `USER mirage` (uid 999). Unlike the hostkey (a read), this is a
+write, so the fix isn't a chmod on a host-side file — there's no host-side
+file, it's a volume. A fresh clone building the image no longer hits this at
+all (the `Dockerfile` now `mkdir`s and `chown`s `/app/data` before `USER
+mirage`, so a *new* volume gets that ownership copied in on first creation).
+
+If you're fixing an **already-existing** volume from before that Dockerfile
+fix (as the Nuremberg deploy needed), a straight `docker exec -u root
+<container> chown ...` doesn't require anything special, but if your
+environment restricts root-exec into a running container, a disposable
+helper container mounting the same volume works too and needs no elevated
+exec at all:
+
+```bash
+docker run --rm -v mirage-core_fleet_queue:/data alpine chown -R 999:999 /data
+```
+
+Symptom if you miss this: sessions saved locally exactly as normal (this
+never touches the honeypot's core save path), but any fleet push that fails
+also fails to fall into the local retry queue —
+`fleet: queuing session ... also failed: opening queue file: ... permission
+denied` in the logs. That's a silent hole in the "no data loss" guarantee
+the queue exists for, not a crash, so it's easy to miss until you're
+specifically looking for it.
+
+---
+
 ## 3. Schema catch-up: only needed for the pre-existing production sensor
 
 `db/init/*.sql` only runs once, automatically, against an *empty* Postgres
