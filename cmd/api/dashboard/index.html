@@ -102,11 +102,10 @@
 </main>
 
 <script>
-const params = new URLSearchParams(location.search);
-const apiKey = params.get('api_key') || '';
-
+// Auth rides on the HttpOnly cookie set by /dashboard/login, so the key is
+// never in this page's URL and nothing here can read it.
 async function api(path) {
-  const res = await fetch(path, { headers: apiKey ? { 'X-API-Key': apiKey } : {} });
+  const res = await fetch(path);
   if (!res.ok) throw new Error(path + ': HTTP ' + res.status);
   return res.json();
 }
@@ -214,7 +213,7 @@ async function loadLLM() {
     try {
       const res = await fetch('/api/llm-shell/active', {
         method: 'POST',
-        headers: Object.assign({ 'Content-Type': 'application/json' }, apiKey ? { 'X-API-Key': apiKey } : {}),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: ev.target.value }),
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -249,8 +248,7 @@ async function init() {
   } catch (e) {
     const err = document.getElementById('error');
     err.style.display = 'block';
-    err.textContent = 'Failed to load dashboard data: ' + e.message +
-      (apiKey ? '' : ' (no ?api_key= in the URL?)');
+    err.textContent = 'Failed to load dashboard data: ' + e.message;
   }
 }
 init();

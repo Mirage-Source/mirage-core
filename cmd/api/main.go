@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/subtle"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -119,29 +119,66 @@ func main() {
 
 	r := chi.NewRouter()
 
-	r.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			presented := r.Header.Get("X-API-Key")
-			if presented == "" {
-				presented = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-			}
-			if presented == "" {
-				// The dashboard page itself is a plain browser navigation,
-				// which can't set a custom header -- accepted here as a
-				// deliberate, documented trade-off (see DECISIONS.md) so
-				// /dashboard?api_key=... works, not a general bypass: the
-				// header/bearer path above is still tried first.
-				presented = r.URL.Query().Get("api_key")
-			}
-			if subtle.ConstantTimeCompare([]byte(presented), []byte(apiKey)) != 1 {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
-			}
-
-			next.ServeHTTP(w, r)
+	// Trades the API key for the dashboard cookie. Outside the gate below,
+	// since presenting the key is how a caller gets through it.
+	r.Post("/dashboard/login", func(w http.ResponseWriter, r *http.Request) {
+		presented := r.FormValue("api_key")
+		if presented == "" {
+			presented = r.Header.Get("X-API-Key")
+		}
+		if subtle.ConstantTimeCompare([]byte(presented), []byte(apiKey)) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		value, maxAge := issueSession(apiKey, time.Now())
+		http.SetCookie(w, &http.Cookie{
+			Name:     dashboardCookie,
+			Value:    value,
+			Path:     "/",
+			MaxAge:   maxAge,
+			HttpOnly: true,
+			SameSite: http.SameSiteStrictMode,
+			Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
 		})
+		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 	})
 
+	r.Get("/dashboard/login", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if _, err := w.Write(loginPage); err != nil {
+			log.Printf("writing login page: %v", err)
+		}
+	})
+
+	r.Group(func(r chi.Router) {
+		r.Use(gate(apiKey))
+		routes(r, db, apiKey, sensorNames, vcache, deceptionClient, dashboardPage)
+	})
+
+	srv := &http.Server{
+		Addr:              ":8080",
+		Handler:           r,
+		ReadTimeout:       15 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	log.Println("API server listening on :8080")
+	if err := srv.ListenAndServe(); err != nil {
+		log.Fatalf("starting server: %v", err)
+	}
+}
+
+func routes(
+	r chi.Router,
+	db *sql.DB,
+	apiKey string,
+	sensorNames []string,
+	vcache *validityCache,
+	deceptionClient *deception.Client,
+	dashboardPage []byte,
+) {
 	r.Get("/dashboard", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if _, err := w.Write(dashboardPage); err != nil {
@@ -495,17 +532,4 @@ func main() {
 		}
 	})
 
-	srv := &http.Server{
-		Addr:              ":8080",
-		Handler:           r,
-		ReadTimeout:       15 * time.Second,
-		ReadHeaderTimeout: 5 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
-
-	log.Println("API server listening on :8080")
-	if err := srv.ListenAndServe(); err != nil {
-		log.Fatalf("starting server: %v", err)
-	}
 }

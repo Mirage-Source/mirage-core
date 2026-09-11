@@ -119,12 +119,15 @@ A secured REST API exposes the live dataset. All endpoints require an `X-API-Key
 | `GET /api/validity/heartbeat` | Sensor uptime / downtime gaps (`?sensor=`) |
 | `GET /api/llm-shell/providers` | Configured LLM completion providers, active one, live counters |
 | `POST /api/llm-shell/active` | Switch the active LLM completion provider |
-| `GET /dashboard` | The data-validity dashboard (`?api_key=` — see below) |
+| `GET /dashboard` | The data-validity dashboard (sign in at `/dashboard/login`) |
 
 API access is available to researchers on request. All routes require an
-`X-API-Key` header or `Authorization: Bearer` token, except `/dashboard`,
-which also accepts the key as `?api_key=` since a browser navigation can't
-set a custom header — see `DECISIONS.md` for the trade-off that implies.
+`X-API-Key` header or `Authorization: Bearer` token. A browser navigation
+can't set either, so `/dashboard` also accepts a cookie: POST the key once to
+`/dashboard/login` (the form at `GET /dashboard/login` does this) and the
+dashboard's own requests ride the cookie from there. The key is never put in a
+URL — it would land in access logs, shell history and browser history.
+Rotating `API_KEY` invalidates every outstanding cookie.
 
 Prometheus and Grafana have been retired in favor of `/dashboard` — see
 the data-validity toolkit section below.
