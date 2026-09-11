@@ -27,7 +27,7 @@ func TestClientCompleteSuccess(t *testing.T) {
 	defer srv.Close()
 
 	client := NewClient(Config{BaseURL: srv.URL, CompletionTimeout: time.Second})
-	out, code, ok := client.Complete("sess-1", "uptime")
+	out, code, ok := client.Complete("sess-1", "uptime", ShellContext{})
 	if !ok {
 		t.Fatal("Complete() ok = false, want true")
 	}
@@ -51,7 +51,7 @@ func TestClientCompleteRespectsAvailableFalse(t *testing.T) {
 	defer srv.Close()
 
 	client := NewClient(Config{BaseURL: srv.URL, CompletionTimeout: time.Second})
-	if _, _, ok := client.Complete("sess-1", "uptime"); ok {
+	if _, _, ok := client.Complete("sess-1", "uptime", ShellContext{}); ok {
 		t.Error("Complete() ok = true for available=false, want false")
 	}
 }
@@ -66,7 +66,7 @@ func TestClientCompleteRejectsEmptyOutput(t *testing.T) {
 	defer srv.Close()
 
 	client := NewClient(Config{BaseURL: srv.URL, CompletionTimeout: time.Second})
-	if _, _, ok := client.Complete("sess-1", "uptime"); ok {
+	if _, _, ok := client.Complete("sess-1", "uptime", ShellContext{}); ok {
 		t.Error("Complete() ok = true for blank output, want false")
 	}
 }
@@ -78,7 +78,7 @@ func TestClientCompleteFailsSafeOnNon200(t *testing.T) {
 	defer srv.Close()
 
 	client := NewClient(Config{BaseURL: srv.URL, CompletionTimeout: time.Second})
-	if _, _, ok := client.Complete("sess-1", "uptime"); ok {
+	if _, _, ok := client.Complete("sess-1", "uptime", ShellContext{}); ok {
 		t.Error("Complete() ok = true on HTTP 500, want false")
 	}
 }
@@ -91,7 +91,7 @@ func TestClientCompleteFailsSafeOnMalformedJSON(t *testing.T) {
 	defer srv.Close()
 
 	client := NewClient(Config{BaseURL: srv.URL, CompletionTimeout: time.Second})
-	if _, _, ok := client.Complete("sess-1", "uptime"); ok {
+	if _, _, ok := client.Complete("sess-1", "uptime", ShellContext{}); ok {
 		t.Error("Complete() ok = true on malformed JSON, want false")
 	}
 }
@@ -99,7 +99,7 @@ func TestClientCompleteFailsSafeOnMalformedJSON(t *testing.T) {
 func TestClientCompleteFailsSafeOnConnectionRefused(t *testing.T) {
 	// Port 1 is reserved and nothing should be listening there.
 	client := NewClient(Config{BaseURL: "http://127.0.0.1:1", CompletionTimeout: 200 * time.Millisecond})
-	if _, _, ok := client.Complete("sess-1", "uptime"); ok {
+	if _, _, ok := client.Complete("sess-1", "uptime", ShellContext{}); ok {
 		t.Error("Complete() ok = true on connection refused, want false")
 	}
 }
@@ -116,7 +116,7 @@ func TestClientCompleteFailsSafeOnTimeout(t *testing.T) {
 
 	client := NewClient(Config{BaseURL: srv.URL, CompletionTimeout: 50 * time.Millisecond})
 	start := time.Now()
-	_, _, ok := client.Complete("sess-1", "uptime")
+	_, _, ok := client.Complete("sess-1", "uptime", ShellContext{})
 	elapsed := time.Since(start)
 
 	if ok {
@@ -142,7 +142,7 @@ func TestCompleteUsesCompletionTimeoutNotPolicyTimeout(t *testing.T) {
 		Timeout:           20 * time.Millisecond,
 		CompletionTimeout: 2 * time.Second,
 	})
-	if _, _, ok := client.Complete("sess-1", "uptime"); !ok {
+	if _, _, ok := client.Complete("sess-1", "uptime", ShellContext{}); !ok {
 		t.Error("Complete() ok = false -- it appears to be using the policy timeout")
 	}
 }

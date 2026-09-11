@@ -118,6 +118,14 @@ class ProviderSpec:
         base_url: Only for ``openai_compatible``; points at OpenAI proper when
             unset, or at any OpenAI-compatible server (Ollama, vLLM, LM Studio)
             when set.
+        max_tokens: Ceiling passed to the provider's completion call.
+            Hosted providers (Claude, GPT) reliably stop on their own, so
+            1024 is a harmless upper bound for them. A small self-hosted
+            model can fail to stop cleanly and ramble to the ceiling instead
+            -- on CPU-only hardware that turns one unlucky prompt into a
+            guaranteed timeout rather than a bounded one. Operators running
+            a local provider should set this much lower (order of 100-200)
+            to fail fast into the existing timeout/circuit-breaker instead.
     """
 
     name: str
@@ -125,6 +133,7 @@ class ProviderSpec:
     model: str
     api_key_env: str | None = None
     base_url: str | None = None
+    max_tokens: int = 1024
 
     @classmethod
     def list_from_json(cls, raw: str) -> list[ProviderSpec]:
@@ -141,6 +150,7 @@ class ProviderSpec:
                     model=entry["model"],
                     api_key_env=entry.get("api_key_env"),
                     base_url=entry.get("base_url"),
+                    max_tokens=entry.get("max_tokens", 1024),
                 )
             )
         return specs
@@ -152,6 +162,7 @@ class ProviderSpec:
             "provider": self.kind,
             "model": self.model,
             "base_url": self.base_url,
+            "max_tokens": self.max_tokens,
         }
 
 
@@ -169,11 +180,13 @@ class AnthropicProvider:
         model: str = DEFAULT_ANTHROPIC_MODEL,
         api_key_env: str | None = None,
         hostname: str = "ip-172-31-14-52",
+        max_tokens: int = 1024,
         client: Any | None = None,
     ) -> None:
         self.model = model
         self.api_key_env = api_key_env
         self.hostname = hostname
+        self.max_tokens = max_tokens
         self._client = client
 
     def _ensure_client(self) -> Any:
@@ -190,7 +203,7 @@ class AnthropicProvider:
         client = self._ensure_client()
         response = client.messages.create(
             model=self.model,
-            max_tokens=1024,
+            max_tokens=self.max_tokens,
             system=_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": _build_user_prompt(command, self.hostname)}],
             tools=[
@@ -221,12 +234,14 @@ class OpenAICompatibleProvider:
         api_key_env: str | None = None,
         base_url: str | None = None,
         hostname: str = "ip-172-31-14-52",
+        max_tokens: int = 1024,
         client: Any | None = None,
     ) -> None:
         self.model = model
         self.api_key_env = api_key_env
         self.base_url = base_url
         self.hostname = hostname
+        self.max_tokens = max_tokens
         self._client = client
 
     def _ensure_client(self) -> Any:
@@ -248,7 +263,7 @@ class OpenAICompatibleProvider:
         client = self._ensure_client()
         response = client.chat.completions.create(
             model=self.model,
-            max_tokens=1024,
+            max_tokens=self.max_tokens,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": _build_user_prompt(command, self.hostname)},
@@ -272,7 +287,10 @@ def build_providers(specs: list[ProviderSpec], hostname: str = "ip-172-31-14-52"
     for spec in specs:
         if spec.kind == "anthropic":
             providers[spec.name] = AnthropicProvider(
-                model=spec.model, api_key_env=spec.api_key_env, hostname=hostname
+                model=spec.model,
+                api_key_env=spec.api_key_env,
+                hostname=hostname,
+                max_tokens=spec.max_tokens,
             )
         elif spec.kind == "openai_compatible":
             providers[spec.name] = OpenAICompatibleProvider(
@@ -280,6 +298,7 @@ def build_providers(specs: list[ProviderSpec], hostname: str = "ip-172-31-14-52"
                 api_key_env=spec.api_key_env,
                 base_url=spec.base_url,
                 hostname=hostname,
+                max_tokens=spec.max_tokens,
             )
         else:
             raise ValueError(f"unknown provider kind {spec.kind!r} for provider {spec.name!r}")

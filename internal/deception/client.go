@@ -141,6 +141,18 @@ func (c *Client) Decide(sessionID, command string, baitHit bool) (Decision, erro
 type completeRequest struct {
 	SessionID string `json:"session_id"`
 	Command   string `json:"command"`
+	ShellContext
+}
+
+// ShellContext is the session's own view of the box, sent so a generated
+// response agrees with what the interpreter has already shown this attacker.
+// Without it the service prompts from one process-wide hostname while
+// internal/shell randomizes one per session, so the two contradict each other
+// -- a stronger tell than the fixed hostname randomHostname replaced.
+type ShellContext struct {
+	Hostname string `json:"hostname,omitempty"`
+	Cwd      string `json:"cwd,omitempty"`
+	Username string `json:"username,omitempty"`
 }
 
 type completeResponse struct {
@@ -160,8 +172,8 @@ type completeResponse struct {
 // the interpreter's ordinary command-not-found path), so distinguishing the
 // reasons would only invite a caller to treat one of them as fatal. The
 // service logs the specific cause on its own side.
-func (c *Client) Complete(sessionID, command string) (output string, exitCode int, ok bool) {
-	body, err := json.Marshal(completeRequest{SessionID: sessionID, Command: command})
+func (c *Client) Complete(sessionID, command string, shell ShellContext) (output string, exitCode int, ok bool) {
+	body, err := json.Marshal(completeRequest{SessionID: sessionID, Command: command, ShellContext: shell})
 	if err != nil {
 		return "", 0, false
 	}

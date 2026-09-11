@@ -37,7 +37,7 @@ class CountingProvider:
         self.calls: list[str] = []
         self.output = output
 
-    def complete(self, command: str, session_id: str) -> str:
+    def complete(self, command: str, session_id: str, shell=None) -> str:
         self.calls.append(command)
         return f"{self.output}:{command}:{len(self.calls)}"
 
@@ -47,7 +47,7 @@ class FailingProvider:
         self.calls = 0
         self.exc = exc or RuntimeError("provider exploded")
 
-    def complete(self, command: str, session_id: str) -> str:
+    def complete(self, command: str, session_id: str, shell=None) -> str:
         self.calls += 1
         raise self.exc
 
@@ -200,7 +200,7 @@ def test_success_resets_the_failure_counter() -> None:
         def __init__(self) -> None:
             self.calls = 0
 
-        def complete(self, command: str, session_id: str) -> str:
+        def complete(self, command: str, session_id: str, shell=None) -> str:
             self.calls += 1
             if command == "bad":
                 raise RuntimeError("nope")
@@ -222,7 +222,7 @@ def test_success_resets_the_failure_counter() -> None:
 
 def test_blank_provider_output_is_not_offered_as_a_completion() -> None:
     class BlankProvider:
-        def complete(self, command: str, session_id: str) -> str:
+        def complete(self, command: str, session_id: str, shell=None) -> str:
             return "   \n  "
 
     engine, _, _ = make_engine(provider=BlankProvider())
@@ -231,7 +231,7 @@ def test_blank_provider_output_is_not_offered_as_a_completion() -> None:
 
 def test_output_is_truncated_to_the_configured_cap() -> None:
     class HugeProvider:
-        def complete(self, command: str, session_id: str) -> str:
+        def complete(self, command: str, session_id: str, shell=None) -> str:
             return "x" * 100_000
 
     engine, _, _ = make_engine(provider=HugeProvider(), max_output_chars=500)
@@ -451,3 +451,54 @@ def test_set_active_endpoint_switches_provider() -> None:
         httpd.shutdown()
 
     assert engine.active == "b"
+
+
+def test_prompt_uses_the_sessions_own_hostname_not_the_process_default():
+    """internal/shell randomizes a hostname per session. A provider prompting
+    from one process-wide value contradicts the prompt the attacker is looking
+    at -- a stronger tell than the fixed hostname it replaced."""
+    from mirage.deception.completion import ShellContext, _build_user_prompt
+
+    shell = ShellContext(hostname="ip-172-31-99-7", cwd="/var/www", username="deploy")
+    prompt = _build_user_prompt("lsof -i", "ip-172-31-14-52", shell)
+
+    assert "ip-172-31-99-7" in prompt
+    assert "ip-172-31-14-52" not in prompt
+    assert "/var/www" in prompt
+    assert "deploy" in prompt
+
+
+def test_prompt_falls_back_to_the_configured_hostname_when_context_is_empty():
+    from mirage.deception.completion import ShellContext, _build_user_prompt
+
+    prompt = _build_user_prompt("lsof -i", "ip-172-31-14-52", ShellContext())
+    assert "ip-172-31-14-52" in prompt
+
+
+def test_shell_context_is_read_from_the_request_payload():
+    from mirage.deception.completion import ShellContext
+
+    shell = ShellContext.from_payload(
+        {"session_id": "s", "command": "c", "hostname": "ip-10-0-0-1", "cwd": "/root", "username": "root"}
+    )
+    assert (shell.hostname, shell.cwd, shell.username) == ("ip-10-0-0-1", "/root", "root")
+
+    # A caller that predates the field sends nothing, and must still work.
+    assert ShellContext.from_payload({"session_id": "s"}) == ShellContext()
+
+
+def test_engine_hands_the_context_to_the_provider():
+    from mirage.deception.completion import CompletionEngine, ShellContext
+
+    seen = {}
+
+    class RecordingProvider:
+        def complete(self, command, session_id, shell=None):
+            seen["shell"] = shell
+            return "out"
+
+    engine = CompletionEngine({"p": RecordingProvider()}, active="p")
+    shell = ShellContext(hostname="ip-172-31-5-5", cwd="/tmp", username="ubuntu")
+    engine.complete("sess-1", "lsof -i", shell)
+
+    assert seen["shell"] == shell

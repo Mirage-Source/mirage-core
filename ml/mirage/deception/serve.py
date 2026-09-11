@@ -8,7 +8,11 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .actions import DeceptionAction
-from .completion import CompletionEngine, engine_from_env as completion_engine_from_env
+from .completion import (
+    CompletionEngine,
+    ShellContext,
+    engine_from_env as completion_engine_from_env,
+)
 from .live import LiveDeceptionEngine, load_engine_from_env
 
 __all__ = ["make_handler", "main"]
@@ -132,13 +136,14 @@ def make_handler(
             try:
                 session_id = str(payload["session_id"])
                 command = str(payload.get("command", ""))
+                shell = ShellContext.from_payload(payload)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("malformed /complete request: %s", exc)
                 self._json(200, unavailable)
                 return
 
             try:
-                result = completion.complete(session_id, command)
+                result = completion.complete(session_id, command, shell)
             except Exception as exc:  # noqa: BLE001 -- must never take the shell down
                 logger.exception("completion failed; reporting unavailable: %s", exc)
                 result = unavailable

@@ -600,7 +600,12 @@ func applyDeception(deceptionRuntime *deception.Runtime, interp *shell.Interpret
 	// engagement fix to a policy that ships shadow-mode-first.
 	if deceptionRuntime.CompletionEnabled {
 		if _, eligible := deception.ShouldAttemptCompletion(command); eligible {
-			if out, exitCode, ok := deceptionRuntime.Client.Complete(sessionID, command); ok {
+			shellCtx := deception.ShellContext{
+				Hostname: interp.Hostname,
+				Cwd:      interp.Cwd,
+				Username: interp.Username,
+			}
+			if out, exitCode, ok := deceptionRuntime.Client.Complete(sessionID, command, shellCtx); ok {
 				return out, exitCode, nil, nil, true
 			}
 		}
