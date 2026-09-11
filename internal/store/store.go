@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -52,6 +53,73 @@ func envInt(key string, fallback int) int {
 	}
 	return n
 }
+
+// Postgres caps a statement at 65535 bind parameters.
+const maxBindParams = 65535
+
+// valuesClause builds "($1,$2),($3,$4)" for rows of cols columns each, so a
+// batch of rows goes in one statement instead of one round trip apiece.
+func valuesClause(rows, cols int) string {
+	var b strings.Builder
+	n := 1
+	for r := 0; r < rows; r++ {
+		if r > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteByte('(')
+		for c := 0; c < cols; c++ {
+			if c > 0 {
+				b.WriteByte(',')
+			}
+			b.WriteByte('$')
+			b.WriteString(strconv.Itoa(n))
+			n++
+		}
+		b.WriteByte(')')
+	}
+	return b.String()
+}
+
+// execBatch inserts len(args)/cols rows, splitting into as few statements as
+// maxBindParams allows. table and columns are package constants below, never
+// caller input -- the row values are the only thing that ever reaches the
+// database as data, and they go through bind parameters.
+//
+// Multi-row VALUES rather than pq.CopyIn: a session carries at most
+// maxCommandsPerSession (500) commands, so 500*13 = 6500 parameters fits one
+// statement comfortably. CopyIn wins in the tens of thousands, at the cost of
+// its own prepared statement, deferred error reporting, and not interleaving
+// with the other inserts in this transaction.
+func execBatch(tx *sql.Tx, table, columns string, cols int, args []any) error {
+	if len(args) == 0 {
+		return nil
+	}
+	perStatement := (maxBindParams / cols) * cols
+	for start := 0; start < len(args); start += perStatement {
+		end := start + perStatement
+		if end > len(args) {
+			end = len(args)
+		}
+		chunk := args[start:end]
+		query := fmt.Sprintf(
+			"INSERT INTO %s (%s) VALUES %s",
+			table, columns, valuesClause(len(chunk)/cols, cols),
+		)
+		if _, err := tx.Exec(query, chunk...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+const (
+	authAttemptColumns = "session_id, timestamp_ms, method, username, credential, success"
+	commandColumns     = "event_id, session_id, sequence_number, timestamp_ms, " +
+		"inter_command_delay_ms, raw_input_b64, parsed_command, parsed_args, " +
+		"working_directory, response_text, exit_code, response_source, deception_action"
+	baitColumns = "event_id, session_id, timestamp_ms, bait_id, bait_type, " +
+		"access_type, triggered_by_command_event_id"
+)
 
 func SaveSession(db *sql.DB, sess *session.Session) error {
 	tx, err := db.Begin()
@@ -103,70 +171,41 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 		return fmt.Errorf("inserting session: %w", err)
 	}
 
+	authArgs := make([]any, 0, len(sess.AuthAttempts)*6)
 	for _, a := range sess.AuthAttempts {
-		_, err = tx.Exec(`
-	   		INSERT INTO auth_attempts (
-				session_id, timestamp_ms, method, username, credential, success
-			) VALUES (
-				$1, $2, $3, $4, $5, $6
-			)
-		`,
-			sess.SessionID, a.TimestampMS, a.Method, a.Username, a.Credential, a.Success,
-		)
-		if err != nil {
-			return fmt.Errorf("inserting auth attempt: %w", err)
-		}
+		authArgs = append(authArgs,
+			sess.SessionID, a.TimestampMS, a.Method, a.Username, a.Credential, a.Success)
+	}
+	if err := execBatch(tx, "auth_attempts", authAttemptColumns, 6, authArgs); err != nil {
+		return fmt.Errorf("inserting auth attempts: %w", err)
 	}
 
+	commandArgs := make([]any, 0, len(sess.Commands)*13)
 	for _, c := range sess.Commands {
 		argsBytes, err := json.Marshal(c.ParsedArgs)
 		if err != nil {
 			return fmt.Errorf("marshaling parsed args: %w", err)
 		}
-
-		_, err = tx.Exec(`
-			INSERT INTO commands (
-				event_id, session_id, sequence_number,
-				timestamp_ms, inter_command_delay_ms,
-				raw_input_b64, parsed_command, parsed_args,
-				working_directory, response_text, exit_code,
-				response_source, deception_action
-			) VALUES (
-				$1, $2, $3,
-				$4, $5,
-				$6, $7, $8,
-				$9, $10, $11,
-				$12, $13
-			)
-		`, c.EventID, sess.SessionID, c.SequenceNumber,
+		commandArgs = append(commandArgs,
+			c.EventID, sess.SessionID, c.SequenceNumber,
 			c.TimestampMS, c.InterCommandDelayMS,
 			c.RawInputB64, c.ParsedCommand, argsBytes,
 			c.WorkingDirectory, c.Response, c.ExitCode,
-			c.ResponseSource, c.DeceptionAction,
-		)
-		if err != nil {
-			return fmt.Errorf("inserting command: %w", err)
-		}
+			c.ResponseSource, c.DeceptionAction)
+	}
+	if err := execBatch(tx, "commands", commandColumns, 13, commandArgs); err != nil {
+		return fmt.Errorf("inserting commands: %w", err)
 	}
 
+	baitArgs := make([]any, 0, len(sess.BaitEvents)*7)
 	for _, b := range sess.BaitEvents {
-		_, err = tx.Exec(`
-			INSERT INTO bait_interactions (
-				event_id, session_id, timestamp_ms,
-				bait_id, bait_type, access_type,
-				triggered_by_command_event_id
-			) VALUES (
-				$1, $2, $3,
-				$4, $5, $6,
-				$7
-			)
-		`, b.EventID, sess.SessionID, b.TimestampMS,
+		baitArgs = append(baitArgs,
+			b.EventID, sess.SessionID, b.TimestampMS,
 			b.BaitID, b.BaitType, b.AccessType,
-			b.TriggeredByCommandEventID,
-		)
-		if err != nil {
-			return fmt.Errorf("inserting bait interaction: %w", err)
-		}
+			b.TriggeredByCommandEventID)
+	}
+	if err := execBatch(tx, "bait_interactions", baitColumns, 7, baitArgs); err != nil {
+		return fmt.Errorf("inserting bait interactions: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
