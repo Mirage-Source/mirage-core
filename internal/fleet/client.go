@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -60,6 +61,12 @@ func (c *Client) PushSession(sess *session.Session) {
 		return
 	}
 	if err := c.post("/v1/ingest/sessions", body); err != nil {
+		var permanent PermanentError
+		if errors.As(err, &permanent) {
+			log.Printf("fleet: session %s permanently rejected (%v), dropping", sess.SessionID, err)
+			c.queue.countPermanentDrop()
+			return
+		}
 		log.Printf("fleet: pushing session %s failed, queuing for retry: %v", sess.SessionID, err)
 		if qerr := c.queue.Enqueue(body); qerr != nil {
 			log.Printf("fleet: queuing session %s also failed: %v", sess.SessionID, qerr)
@@ -88,10 +95,15 @@ func (c *Client) DrainQueue() {
 	if !c.enabled() {
 		return
 	}
+	before := c.queue.Stats()
 	if err := c.queue.Drain(func(payload []byte) error {
 		return c.post("/v1/ingest/sessions", payload)
 	}); err != nil {
 		log.Printf("fleet: draining retry queue: %v", err)
+	}
+	if after := c.queue.Stats(); after != before {
+		log.Printf("fleet: queue drops so far -- permanent=%d oversized=%d evicted=%d",
+			after.DroppedPermanent, after.DroppedOversized, after.DroppedEvicted)
 	}
 }
 
@@ -113,6 +125,12 @@ func (c *Client) post(path string, body []byte) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 300 {
+		// 4xx means fleet will answer the same way next time -- retrying it
+		// forever only crowds the queue. 408/429 are the two that do clear.
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 &&
+			resp.StatusCode != http.StatusRequestTimeout && resp.StatusCode != http.StatusTooManyRequests {
+			return PermanentError{Status: resp.StatusCode}
+		}
 		return fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 	return nil

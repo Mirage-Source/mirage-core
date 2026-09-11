@@ -65,6 +65,7 @@ services:
       MIRAGE_FLEET_TIMEOUT_MS: "${MIRAGE_FLEET_TIMEOUT_MS:-3000}"
       MIRAGE_FLEET_HEARTBEAT_INTERVAL_SECONDS: "${MIRAGE_FLEET_HEARTBEAT_INTERVAL_SECONDS:-60}"
       MIRAGE_FLEET_QUEUE_PATH: "/app/data/fleet_queue.jsonl"
+      MIRAGE_FLEET_QUEUE_MAX_BYTES: "${MIRAGE_FLEET_QUEUE_MAX_BYTES:-67108864}"
     volumes:
       - ./config/hostkey:/app/config/hostkey:ro
       # Must survive container restarts: this is where an undelivered

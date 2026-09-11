@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-func TestQueueDrainRetriesOnlyFailedLines(t *testing.T) {
+func TestQueueDrainRetriesOnlyUndeliveredLines(t *testing.T) {
 	dir := t.TempDir()
-	q, err := NewQueue(filepath.Join(dir, "sub", "queue.jsonl"))
+	q, err := NewQueue(filepath.Join(dir, "sub", "queue.jsonl"), 0)
 	if err != nil {
 		t.Fatalf("NewQueue: %v", err)
 	}
@@ -20,21 +20,25 @@ func TestQueueDrainRetriesOnlyFailedLines(t *testing.T) {
 	}
 
 	var sent []string
+	failB := true
 	err = q.Drain(func(payload []byte) error {
 		sent = append(sent, string(payload))
-		if string(payload) == `{"session_id":"b"}` {
-			return errFail // "b" keeps failing
+		if failB && string(payload) == `{"session_id":"b"}` {
+			return errFail
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("Drain: %v", err)
 	}
-	if len(sent) != 3 {
-		t.Fatalf("expected all 3 lines attempted once, got %d: %v", len(sent), sent)
+	// Drain stops at the first transient failure: fleet being unreachable
+	// means "c" would fail too, one timeout at a time.
+	if len(sent) != 2 {
+		t.Fatalf("expected the drain to stop at the failed line, got %d: %v", len(sent), sent)
 	}
 
-	// Second drain: only "b" should still be queued.
+	// Second drain: "b" and "c" are both still queued, in order.
+	failB = false
 	sent = nil
 	err = q.Drain(func(payload []byte) error {
 		sent = append(sent, string(payload))
@@ -43,8 +47,9 @@ func TestQueueDrainRetriesOnlyFailedLines(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Drain (2nd): %v", err)
 	}
-	if len(sent) != 1 || sent[0] != `{"session_id":"b"}` {
-		t.Fatalf("expected only the previously-failed line retried, got %v", sent)
+	want := []string{`{"session_id":"b"}`, `{"session_id":"c"}`}
+	if !equalLines(sent, want) {
+		t.Fatalf("second drain sent %v, want %v", sent, want)
 	}
 
 	// File should now be gone (queue fully drained).
@@ -55,7 +60,7 @@ func TestQueueDrainRetriesOnlyFailedLines(t *testing.T) {
 
 func TestQueueDrainOnMissingFileIsNoop(t *testing.T) {
 	dir := t.TempDir()
-	q, err := NewQueue(filepath.Join(dir, "queue.jsonl"))
+	q, err := NewQueue(filepath.Join(dir, "queue.jsonl"), 0)
 	if err != nil {
 		t.Fatalf("NewQueue: %v", err)
 	}

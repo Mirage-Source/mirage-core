@@ -266,7 +266,7 @@ func Start(addr string) {
 	if fleetQueuePath == "" {
 		fleetQueuePath = "data/fleet_queue.jsonl"
 	}
-	fleetQueue, err := fleet.NewQueue(fleetQueuePath)
+	fleetQueue, err := fleet.NewQueue(fleetQueuePath, envInt("MIRAGE_FLEET_QUEUE_MAX_BYTES", 0))
 	if err != nil {
 		log.Fatal(err)
 	}
