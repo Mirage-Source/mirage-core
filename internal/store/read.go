@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/lib/pq"
 	"github.com/mirage-source/mirage-core/internal/api"
@@ -411,7 +412,7 @@ func GetSessionByID(
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("session not found")
+			return nil, ErrSessionNotFound
 		}
 		return nil, err
 	}
@@ -527,15 +528,26 @@ func GetSessionReport(
 const defaultCommandExportLimit = 2000
 const maxCommandExportLimit = 10000
 
-// encodeCommandCursor/decodeCommandCursor pack the keyset-pagination cursor
-// for GetCommandExport as "timestamp_ms:event_id" -- commands.timestamp_ms
-// alone isn't guaranteed unique across sessions, so event_id breaks ties and
-// keeps pagination stable even if two commands share a millisecond.
-func encodeCommandCursor(timestampMS int64, eventID string) string {
+// Sentinel errors, so handlers can map a cause to a status with errors.Is
+// rather than by comparing message text -- which silently stops matching the
+// moment a caller wraps with %w, as everything in this package does.
+var (
+	ErrSessionNotFound = errors.New("session not found")
+	ErrInvalidCursor   = errors.New("invalid cursor")
+)
+
+const defaultSessionExportLimit = 2000
+const maxSessionExportLimit = 10000
+
+// encodeKeysetCursor/decodeKeysetCursor pack a keyset-pagination cursor as
+// "<int>:<id>". Both exports need one: neither commands.timestamp_ms nor
+// sessions.start_ms is unique, so the id breaks ties and keeps pagination
+// stable when two rows share a millisecond.
+func encodeKeysetCursor(timestampMS int64, eventID string) string {
 	return fmt.Sprintf("%d:%s", timestampMS, eventID)
 }
 
-func decodeCommandCursor(cursor string) (timestampMS int64, eventID string, ok bool) {
+func decodeKeysetCursor(cursor string) (timestampMS int64, eventID string, ok bool) {
 	tsPart, idPart, found := strings.Cut(cursor, ":")
 	if !found || idPart == "" {
 		return 0, "", false
@@ -567,9 +579,9 @@ func GetCommandExport(db *sql.DB, after string, limit int) (*api.ExportCommandsR
 	afterTS := int64(-1) // sentinel below any real unix-ms timestamp
 	afterID := ""
 	if after != "" {
-		ts, id, ok := decodeCommandCursor(after)
+		ts, id, ok := decodeKeysetCursor(after)
 		if !ok {
-			return nil, fmt.Errorf("invalid cursor: %q", after)
+			return nil, fmt.Errorf("%w: %q", ErrInvalidCursor, after)
 		}
 		afterTS, afterID = ts, id
 	}
@@ -652,7 +664,7 @@ func GetCommandExport(db *sql.DB, after string, limit int) (*api.ExportCommandsR
 
 	resp.CommandCount = len(resp.Commands)
 	if resp.CommandCount == limit {
-		cursor := encodeCommandCursor(lastTS, lastID)
+		cursor := encodeKeysetCursor(lastTS, lastID)
 		resp.NextCursor = &cursor
 	}
 

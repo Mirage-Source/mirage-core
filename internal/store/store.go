@@ -7,6 +7,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/mirage-source/mirage-core/internal/api"
 	"github.com/mirage-source/mirage-core/internal/session"
+	"math"
 	"os"
 	"strconv"
 	"time"
@@ -174,9 +175,29 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 	return nil
 }
 
-func GetExportData(db *sql.DB) (*api.ExportResponse, error) {
-	resp := &api.ExportResponse{
-		GeneratedAt: fmt.Sprintf("%d", time.Now().UnixMilli()),
+// GetExportPage returns one page of the session-level export, newest first,
+// ordered by (start_ms DESC, session_id DESC). after is an opaque cursor from
+// a previous page's NextCursor ("" for the first page).
+//
+// Keyset rather than OFFSET, for the same reason GetCommandExport uses it:
+// each page's query cost stays independent of how deep the caller already is.
+// This export was unpaginated and fully materialized until the corpus passed
+// 54k sessions, at which point the LATERAL-per-row scan plus a whole-response
+// encode began racing cmd/api's 15s WriteTimeout -- which truncates the body
+// mid-JSON rather than failing cleanly.
+func GetExportPage(db *sql.DB, after string, limit int) (*api.ExportResponse, error) {
+	if limit <= 0 || limit > maxSessionExportLimit {
+		limit = defaultSessionExportLimit
+	}
+
+	afterStart := int64(math.MaxInt64) // sentinel above any real unix-ms timestamp
+	afterID := "\uffff"
+	if after != "" {
+		start, id, ok := decodeKeysetCursor(after)
+		if !ok {
+			return nil, fmt.Errorf("%w: %q", ErrInvalidCursor, after)
+		}
+		afterStart, afterID = start, id
 	}
 
 	rows, err := db.Query(`
@@ -214,13 +235,22 @@ func GetExportData(db *sql.DB) (*api.ExportResponse, error) {
 			FROM auth_attempts aa
 			WHERE aa.session_id = s.session_id
 		) a ON true
-		ORDER BY s.start_ms DESC
-	`)
+		WHERE s.start_ms < $1 OR (s.start_ms = $1 AND s.session_id < $2)
+		ORDER BY s.start_ms DESC, s.session_id DESC
+		LIMIT $3
+	`, afterStart, afterID, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
+	resp := &api.ExportResponse{
+		GeneratedAt: fmt.Sprintf("%d", time.Now().UnixMilli()),
+		Sessions:    []api.ExportSession{},
+	}
+
+	var lastStart int64
+	var lastID string
 	for rows.Next() {
 		var item api.ExportSession
 		var mitreRaw []byte
@@ -254,6 +284,7 @@ func GetExportData(db *sql.DB) (*api.ExportResponse, error) {
 		}
 
 		resp.Sessions = append(resp.Sessions, item)
+		lastStart, lastID = item.StartMS, item.SessionID
 	}
 
 	if err := rows.Err(); err != nil {
@@ -261,6 +292,10 @@ func GetExportData(db *sql.DB) (*api.ExportResponse, error) {
 	}
 
 	resp.SessionCount = len(resp.Sessions)
+	if resp.SessionCount == limit {
+		cursor := encodeKeysetCursor(lastStart, lastID)
+		resp.NextCursor = &cursor
+	}
 
 	return resp, nil
 }

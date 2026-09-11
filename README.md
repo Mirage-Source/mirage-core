@@ -109,7 +109,7 @@ A secured REST API exposes the live dataset. All endpoints require an `X-API-Key
 | `GET /api/sessions` | Paginated session list |
 | `GET /api/sessions/{id}` | Full session with ML intelligence overlay |
 | `GET /api/sessions/{id}/report` | Structured report with embedded STIX 2.1 bundle |
-| `GET /api/export` | Full session export (used by the weekly dataset job) |
+| `GET /api/export` | Session export. Cursor-paginated with `?limit=` (+ `?after=`); without `limit` the full corpus is streamed page by page (used by the weekly dataset job) |
 | `GET /api/export/commands` | Full command export, cursor-paginated (`?after=`, `?limit=`) |
 | `GET /api/sensors` | Configured dashboard sensors |
 | `GET /api/validity/summary` | All four data-validity checks for one sensor (`?sensor=`) |

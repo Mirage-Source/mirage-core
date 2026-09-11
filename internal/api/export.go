@@ -24,6 +24,7 @@ type ExportResponse struct {
 	GeneratedAt  string          `json:"generated_at"`
 	SessionCount int             `json:"session_count"`
 	Sessions     []ExportSession `json:"sessions"`
+	NextCursor   *string         `json:"next_cursor,omitempty"`
 }
 
 // ExportCommand is one command/response pair, flattened with enough session

@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -68,6 +69,9 @@ func main() {
 	sensors, err := store.LoadSensors(db)
 	if err != nil {
 		log.Fatalf("loading sensor configuration: %v", err)
+	}
+	if len(sensors) == 0 {
+		log.Fatal("no sensors configured; every route below is keyed on at least one")
 	}
 	sensorNames := make([]string, len(sensors))
 	for i, s := range sensors {
@@ -379,7 +383,7 @@ func main() {
 		}
 		sess, err := store.GetSessionByID(db, sessionID)
 		if err != nil {
-			if err.Error() == "session not found" {
+			if errors.Is(err, store.ErrSessionNotFound) {
 				http.Error(w, "session not found", http.StatusNotFound)
 				return
 			}
@@ -399,7 +403,7 @@ func main() {
 		}
 		report, err := store.GetSessionReport(db, sessionID)
 		if err != nil {
-			if err.Error() == "session not found" {
+			if errors.Is(err, store.ErrSessionNotFound) {
 				http.Error(w, "session not found", http.StatusNotFound)
 				return
 			}
@@ -412,21 +416,49 @@ func main() {
 		}
 	})
 
+	// A "limit" asks for one page; without one the caller gets the whole
+	// corpus, streamed page by page. The full dump is kept as the default so
+	// existing consumers (mirage-web's corpus cache, the dataset publisher)
+	// keep working unchanged while they move onto cursors.
 	r.Get("/api/export", func(w http.ResponseWriter, r *http.Request) {
-		export, err := store.GetExportData(db)
-		if err != nil {
-			http.Error(
-				w,
-				"failed to generate export",
-				http.StatusInternalServerError,
-			)
+		fetch := func(after string, limit int) (*api.ExportResponse, error) {
+			return store.GetExportPage(db, after, limit)
+		}
+
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			limit, err := strconv.Atoi(raw)
+			if err != nil || limit <= 0 {
+				http.Error(w, "invalid limit", http.StatusBadRequest)
+				return
+			}
+			page, err := fetch(r.URL.Query().Get("after"), limit)
+			if err != nil {
+				if errors.Is(err, store.ErrInvalidCursor) {
+					http.Error(w, "invalid cursor", http.StatusBadRequest)
+					return
+				}
+				log.Printf("generating export page: %v", err)
+				http.Error(w, "failed to generate export", http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, page)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
+		// The full dump outlasts the server-wide WriteTimeout on a corpus this
+		// size, and that timeout truncates the body mid-JSON rather than
+		// failing cleanly. Extend it for this one route.
+		if rc := http.NewResponseController(w); rc != nil {
+			if err := rc.SetWriteDeadline(time.Now().Add(exportWriteTimeout)); err != nil {
+				log.Printf("extending export write deadline: %v", err)
+			}
+		}
 
-		if err := json.NewEncoder(w).Encode(export); err != nil {
-			log.Printf("encoding export response: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		if err := streamExport(w, fmt.Sprintf("%d", time.Now().UnixMilli()), fetch); err != nil {
+			// Headers are already sent, so this cannot become a status code.
+			// The truncated body fails the client's parse, which is visible.
+			log.Printf("streaming export: %v", err)
 		}
 	})
 
@@ -444,7 +476,7 @@ func main() {
 
 		export, err := store.GetCommandExport(db, after, limit)
 		if err != nil {
-			if strings.HasPrefix(err.Error(), "invalid cursor") {
+			if errors.Is(err, store.ErrInvalidCursor) {
 				http.Error(w, "invalid cursor", http.StatusBadRequest)
 				return
 			}
