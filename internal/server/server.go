@@ -488,6 +488,17 @@ func resolveRemoteAddr(pp *proxyproto.Conn, fallback net.Addr) (addr *net.TCPAdd
 	return nil, session.IngressSourceDirect, ""
 }
 
+// refreshDeadlines pushes both the read and the write deadline out by idle.
+// SetDeadline sets both, but only the read half was ever refreshed, so every
+// session died idle after the handshake however active it was -- writes
+// (prompt, echo, response) failed with i/o timeout and the session was
+// recorded as connection_reset with a truncated duration.
+func refreshDeadlines(conn net.Conn, idle time.Duration) {
+	t := time.Now().Add(idle)
+	conn.SetReadDeadline(t)
+	conn.SetWriteDeadline(t)
+}
+
 func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGuard, db *sql.DB, idleTimeout, handshakeTimeout time.Duration, deceptionRuntime *deception.Runtime, fleetClient *fleet.Client) {
 	defer conn.Close()
 
@@ -506,8 +517,9 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGua
 		return
 	}
 	// Handshake succeeded; from here on a silent connection is bounded by
-	// the idle timeout instead of hanging forever.
-	conn.SetDeadline(time.Now().Add(idleTimeout))
+	// the idle timeout instead of hanging forever. Both deadlines are
+	// refreshed on activity -- see refreshDeadlines.
+	refreshDeadlines(conn, idleTimeout)
 
 	remoteAddr := conn.RemoteAddr()
 
@@ -654,6 +666,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 			interp := shell.NewInterpreter(guard.username())
 			beforeCwd := interp.Cwd
 			response, code, baitHits, deceptionAction, usedLLM := applyDeception(deceptionRuntime, interp, guard.sessionID(), payload.Command)
+			refreshDeadlines(conn, idleTimeout)
 			if response != "" {
 				fmt.Fprintf(channel, "%s\r\n", response)
 			}
@@ -720,10 +733,11 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 					return
 				}
 
+				refreshDeadlines(conn, idleTimeout)
 				fmt.Fprintf(channel, "%s", interp.Prompt())
 
 				for {
-					conn.SetReadDeadline(time.Now().Add(idleTimeout))
+					refreshDeadlines(conn, idleTimeout)
 					singleByte := make([]byte, 1)
 					_, err := channel.Read(singleByte)
 					if err != nil {
@@ -785,6 +799,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 
 				beforeCwd := interp.Cwd
 				response, code, baitHits, deceptionAction, usedLLM := applyDeception(deceptionRuntime, interp, guard.sessionID(), cli)
+				refreshDeadlines(conn, idleTimeout)
 
 				status := code
 				if status == shell.ExitRequested {
