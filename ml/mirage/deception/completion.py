@@ -85,10 +85,40 @@ _OUTPUT_SCHEMA: dict[str, Any] = {
 _TOOL_NAME = "emit_terminal_output"
 
 
-def _build_user_prompt(command: str, hostname: str) -> str:
+@dataclass(frozen=True)
+class ShellContext:
+    """The session's own view of the box, as internal/shell has already shown
+    it to this attacker.
+
+    Sent per request rather than baked into a provider at construction:
+    internal/shell randomizes a hostname per session, so a provider prompting
+    from one process-wide value contradicts the prompt the attacker is looking
+    at. Every field is optional -- an empty one falls back to the provider's
+    configured default, which is what a caller that predates this sends.
+    """
+
+    hostname: str = ""
+    cwd: str = ""
+    username: str = ""
+
+    @classmethod
+    def from_payload(cls, payload: dict) -> "ShellContext":
+        return cls(
+            hostname=str(payload.get("hostname", "") or ""),
+            cwd=str(payload.get("cwd", "") or ""),
+            username=str(payload.get("username", "") or ""),
+        )
+
+
+def _build_user_prompt(command: str, hostname: str, shell: ShellContext | None = None) -> str:
+    shell = shell or ShellContext()
+    host = shell.hostname or hostname
+    user = shell.username or "ubuntu"
+    cwd = shell.cwd or f"/home/{user}"
     return (
-        f"Host: {hostname} (Ubuntu 22.04 LTS, small cloud VPS, single non-root "
-        f"user 'ubuntu')\n"
+        f"Host: {host} (Ubuntu 22.04 LTS, small cloud VPS)\n"
+        f"User: {user}\n"
+        f"Working directory: {cwd}\n"
         f"Command: {command}\n\n"
         f"Emit the terminal output for this command."
     )
@@ -100,7 +130,9 @@ def _build_user_prompt(command: str, hostname: str) -> str:
 class Provider(Protocol):
     """One configured way to generate terminal output."""
 
-    def complete(self, command: str, session_id: str) -> str:  # pragma: no cover
+    def complete(
+        self, command: str, session_id: str, shell: "ShellContext | None" = None
+    ) -> str:  # pragma: no cover
         ...
 
 
@@ -199,13 +231,13 @@ class AnthropicProvider:
             self._client = anthropic.Anthropic(**kwargs)
         return self._client
 
-    def complete(self, command: str, session_id: str) -> str:
+    def complete(self, command: str, session_id: str, shell: ShellContext | None = None) -> str:
         client = self._ensure_client()
         response = client.messages.create(
             model=self.model,
             max_tokens=self.max_tokens,
             system=_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": _build_user_prompt(command, self.hostname)}],
+            messages=[{"role": "user", "content": _build_user_prompt(command, self.hostname, shell)}],
             tools=[
                 {
                     "name": _TOOL_NAME,
@@ -259,14 +291,14 @@ class OpenAICompatibleProvider:
             self._client = OpenAI(**kwargs)
         return self._client
 
-    def complete(self, command: str, session_id: str) -> str:
+    def complete(self, command: str, session_id: str, shell: ShellContext | None = None) -> str:
         client = self._ensure_client()
         response = client.chat.completions.create(
             model=self.model,
             max_tokens=self.max_tokens,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": _build_user_prompt(command, self.hostname)},
+                {"role": "user", "content": _build_user_prompt(command, self.hostname, shell)},
             ],
             response_format={
                 "type": "json_schema",
@@ -411,7 +443,9 @@ class CompletionEngine:
         for sid in [s for s, st in self._sessions.items() if st.last_seen < cutoff]:
             del self._sessions[sid]
 
-    def complete(self, session_id: str, command: str) -> dict[str, Any]:
+    def complete(
+        self, session_id: str, command: str, shell: ShellContext | None = None
+    ) -> dict[str, Any]:
         """Answer one command, or report that no completion is available."""
         with self._lock:
             now = self._clock()
@@ -451,7 +485,7 @@ class CompletionEngine:
         # trip measured in seconds, and holding the lock across it would
         # serialize every concurrent session behind one slow request.
         try:
-            raw = provider.complete(command, session_id)
+            raw = provider.complete(command, session_id, shell)
         except Exception as exc:  # noqa: BLE001 -- fail safe on anything
             logger.warning("completion provider %s failed for %r: %s", active_name, command, exc)
             with self._lock:
