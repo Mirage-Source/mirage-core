@@ -5,12 +5,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strconv"
-	"strings"
-	"time"
 	"github.com/lib/pq"
 	"github.com/mirage-source/mirage-core/internal/api"
 	"github.com/mirage-source/mirage-core/internal/session"
+	"strconv"
+	"strings"
+	"time"
 )
 
 func GetStats(db *sql.DB) (*api.HoneypotStats, error) {

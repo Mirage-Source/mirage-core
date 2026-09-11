@@ -41,6 +41,10 @@ const maxCommandsPerSession = 500
 // and no per-request check of its own).
 const maxSessionInputBytes = 256 * 1024
 
+// maxChannelsPerConnection bounds goroutines and read buffers per connection.
+// SSH allows unlimited channels; 8 is well above what any real client opens.
+const maxChannelsPerConnection = 8
+
 const defaultIdleTimeout = 120 * time.Second
 const defaultHandshakeTimeout = 20 * time.Second
 const defaultMaxConcurrentConnections = 500
@@ -548,10 +552,17 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGua
 // channel has stopped mutating it.
 func handleChannels(conn net.Conn, idleTimeout time.Duration, chans <-chan ssh.NewChannel, guard *sessionGuard, db *sql.DB, deceptionRuntime *deception.Runtime, fleetClient *fleet.Client) {
 	var wg sync.WaitGroup
+	var opened int
 	for newChannel := range chans {
 		log.Printf("New channel type: %s", newChannel.ChannelType())
 		switch newChannel.ChannelType() {
 		case "session":
+			if opened >= maxChannelsPerConnection {
+				log.Printf("Channel limit reached for %v; rejecting", conn.RemoteAddr())
+				newChannel.Reject(ssh.ResourceShortage, "too many channels")
+				continue
+			}
+			opened++
 			channel, requests, err := newChannel.Accept()
 			if err != nil {
 				log.Printf("Could not accept channel: %v", err)

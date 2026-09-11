@@ -4,10 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"os"
 	_ "github.com/lib/pq"
-	"github.com/mirage-source/mirage-core/internal/session"
 	"github.com/mirage-source/mirage-core/internal/api"
+	"github.com/mirage-source/mirage-core/internal/session"
+	"os"
+	"strconv"
 	"time"
 )
 
@@ -18,7 +19,6 @@ func Connect() (*sql.DB, error) {
 	password := os.Getenv("DB_PASSWORD")
 	dbname := os.Getenv("DB_NAME")
 
-
 	connStr := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		host, port, user, password, dbname,
@@ -27,10 +27,29 @@ func Connect() (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
+
+	// Unbounded by default, while MAX_CONCURRENT_CONNECTIONS allows 500
+	// sessions each opening a transaction at finalize. Past Postgres's own
+	// max_connections (100 by default) the surplus fails with "too many
+	// clients", and SaveSession only logs, so those sessions are lost from
+	// the store that is authoritative for this node. Better to queue behind
+	// a bounded pool than to drop.
+	db.SetMaxOpenConns(envInt("DB_MAX_OPEN_CONNS", 20))
+	db.SetMaxIdleConns(envInt("DB_MAX_IDLE_CONNS", 10))
+	db.SetConnMaxLifetime(time.Duration(envInt("DB_CONN_MAX_LIFETIME_MINUTES", 30)) * time.Minute)
+
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("pinging database: %w", err)
 	}
 	return db, nil
+}
+
+func envInt(key string, fallback int) int {
+	n, err := strconv.Atoi(os.Getenv(key))
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
 }
 
 func SaveSession(db *sql.DB, sess *session.Session) error {
@@ -71,20 +90,20 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 			$22
 		)
 	`, sess.SessionID, sess.SchemaVersion, sess.NodeID, sess.Protocol,
-	   sess.Network.ClientIP, sess.Network.ClientPort, sess.Network.ServerPort, sess.Network.SSHClientBanner,
-	   sess.Network.IngressSource, sess.Network.ProxyNodeID,
-	   sess.Timing.StartMS, sess.Timing.EndMS, sess.Timing.DurationMS, sess.Outcome,
-	   len(sess.Commands), len(sess.BaitEvents),
-	   sess.Intelligence.AttackerClass, sess.Intelligence.ClassifierConfidence, sess.Intelligence.ClusterID,
-	   mitreBytes, sess.Intelligence.SessionSummary,
-	   docBytes,
-   )
-   if err != nil {
-	   return fmt.Errorf("inserting session: %w", err)
-   }
+		sess.Network.ClientIP, sess.Network.ClientPort, sess.Network.ServerPort, sess.Network.SSHClientBanner,
+		sess.Network.IngressSource, sess.Network.ProxyNodeID,
+		sess.Timing.StartMS, sess.Timing.EndMS, sess.Timing.DurationMS, sess.Outcome,
+		len(sess.Commands), len(sess.BaitEvents),
+		sess.Intelligence.AttackerClass, sess.Intelligence.ClassifierConfidence, sess.Intelligence.ClusterID,
+		mitreBytes, sess.Intelligence.SessionSummary,
+		docBytes,
+	)
+	if err != nil {
+		return fmt.Errorf("inserting session: %w", err)
+	}
 
-   for _, a := range sess.AuthAttempts {
-	   _, err = tx.Exec(`
+	for _, a := range sess.AuthAttempts {
+		_, err = tx.Exec(`
 	   		INSERT INTO auth_attempts (
 				session_id, timestamp_ms, method, username, credential, success
 			) VALUES (
