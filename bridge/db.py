@@ -106,7 +106,7 @@ def fetch_pending(
     Returns:
         A list of ``(session_id, session_document)`` tuples, oldest first.
     """
-    where = "attacker_class IS NULL"
+    where = "attacker_class IS NULL AND protocol = 'ssh'"
     if require_finished:
         where += " AND outcome <> 'active'"
     sql = (

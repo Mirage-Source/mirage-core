@@ -65,4 +65,13 @@ jobs:
           DB_USER: mirage
           DB_PASSWORD: e2e-test-password
           DB_NAME: mirage
-        run: go test ./internal/server/... -run 'TestEndToEndSSHSessionPersistsToDatabase|TestExecFloodCannotExceedSharedSessionCap' -v -timeout 120s
+        run: go test ./internal/server/... -run 'TestEndToEndSSHSessionPersistsToDatabase|TestExecFloodCannotExceedSharedSessionCap|TestEndToEndTelnetSessionPersistsToDatabase' -v -timeout 120s
+      - name: Run protocol isolation tests
+        env:
+          MIRAGE_E2E_TEST: "1"
+          DB_HOST: localhost
+          DB_PORT: "5432"
+          DB_USER: mirage
+          DB_PASSWORD: e2e-test-password
+          DB_NAME: mirage
+        run: go test ./internal/store/... -v -timeout 120s

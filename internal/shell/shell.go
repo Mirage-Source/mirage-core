@@ -152,6 +152,8 @@ type Interpreter struct {
 	SessionStart time.Time
 	pids         map[string]int
 
+	Busybox bool
+
 	overlay         map[string]*Node
 	overlayChildren map[string][]string
 }
@@ -544,6 +546,11 @@ func matchingParen(s string, pos int) int {
 // invocation is piped-into or `<`-redirected; most builtins ignore it, only
 // cat/grep/head/tail/wc read it.
 func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, action string, stdin *string) (string, int) {
+	if s.Busybox {
+		if out, code, ok := s.busyboxBuiltin(cmd, args, bait, action, stdin); ok {
+			return out, code
+		}
+	}
 	switch cmd {
 	case "":
 		return "", 0

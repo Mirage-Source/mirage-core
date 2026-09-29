@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	"github.com/mirage-source/mirage-core/internal/api"
 	"github.com/mirage-source/mirage-core/internal/session"
 	"math"
@@ -208,6 +208,23 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 		return fmt.Errorf("inserting bait interactions: %w", err)
 	}
 
+	if t := sess.Telnet; t != nil {
+		opts := make([]int64, len(t.ClientOptions))
+		for i, o := range t.ClientOptions {
+			opts[i] = int64(o)
+		}
+		if _, err := tx.Exec(`
+			INSERT INTO telnet_session_meta (
+				session_id, negotiated, client_options,
+				terminal_type, window_width, window_height
+			) VALUES ($1, $2, $3, $4, $5, $6)
+		`, sess.SessionID, t.Negotiated, pq.Array(opts),
+			t.TerminalType, t.WindowWidth, t.WindowHeight,
+		); err != nil {
+			return fmt.Errorf("inserting telnet meta: %w", err)
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("committing transaction: %w", err)
 	}
@@ -274,7 +291,8 @@ func GetExportPage(db *sql.DB, after string, limit int) (*api.ExportResponse, er
 			FROM auth_attempts aa
 			WHERE aa.session_id = s.session_id
 		) a ON true
-		WHERE s.start_ms < $1 OR (s.start_ms = $1 AND s.session_id < $2)
+		WHERE s.protocol = 'ssh'
+			AND (s.start_ms < $1 OR (s.start_ms = $1 AND s.session_id < $2))
 		ORDER BY s.start_ms DESC, s.session_id DESC
 		LIMIT $3
 	`, afterStart, afterID, limit)

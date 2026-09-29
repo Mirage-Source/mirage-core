@@ -27,7 +27,8 @@ func ComputeAggregateStats(db *sql.DB, excludeIPs []string) (all, excluding Aggr
 		SELECT
 			COUNT(*),
 			COUNT(*) FILTER (WHERE command_count = 0)
-		FROM sessions`)
+		FROM sessions
+		WHERE protocol = 'ssh'`)
 	if err := row.Scan(&all.TotalSessions, &all.ZeroCommandSessions); err != nil {
 		return AggregateStats{}, AggregateStats{}, fmt.Errorf("validity: computing aggregate stats: %w", err)
 	}
@@ -39,7 +40,8 @@ func ComputeAggregateStats(db *sql.DB, excludeIPs []string) (all, excluding Aggr
 		SELECT
 			COUNT(*) FILTER (WHERE NOT (client_ip = ANY($1))),
 			COUNT(*) FILTER (WHERE command_count = 0 AND NOT (client_ip = ANY($1)))
-		FROM sessions`,
+		FROM sessions
+		WHERE protocol = 'ssh'`,
 		pq.Array(excludeIPs))
 	if err := row.Scan(&excluding.TotalSessions, &excluding.ZeroCommandSessions); err != nil {
 		return AggregateStats{}, AggregateStats{}, fmt.Errorf("validity: computing aggregate stats excluding campaign: %w", err)

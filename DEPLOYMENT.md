@@ -136,7 +136,7 @@ there):
 ```bash
 for f in 003_deception 004_command_response 005_ml_intelligence_catchup \
          007_ingress_source 008_sensor_heartbeats 009_drop_grafana_role \
-         010_runtime_flags; do
+         010_runtime_flags 011_telnet; do
   docker compose exec -T postgres psql -U mirage -d mirage \
       < internal/store/migrations/${f}.sql
 done
@@ -148,6 +148,25 @@ they'll find there now. Skip `006_grafana_readonly_role.sql` — it creates the
 Grafana read-only role that `009` immediately retires (Prometheus/Grafana are
 retired; see README). Running `009` alone against a DB that never had `006`
 applied is an explicit documented no-op, which is exactly what you want here.
+
+---
+
+## 3a. Telnet sensor (`mirage-telnet`, port 23)
+
+Order matters on an existing deployment:
+
+1. Apply `internal/store/migrations/011_telnet.sql` (loop above). Without
+   `telnet_session_meta`, every telnet session fails to save.
+2. Rebuild `mirage-api` and `ml-worker`, which now filter `protocol = 'ssh'`.
+   An old `ml-worker` would try to enrich telnet sessions.
+3. Open 23/tcp in the host firewall, then `docker compose up -d --build mirage-telnet`.
+
+Telnet sessions are stored with `protocol = 'telnet'` and `ssh_client_banner = ''`.
+The dashboard, exports, validity checks, ML bridge and re-ID stay SSH-only.
+Fleet push is off for telnet (`mirage-fleet` has no protocol column), and
+the deception policy never runs on it. Accepted logins come from
+`config/telnet_weak_credentials.txt` (Mirai's default table, override with
+`TELNET_WEAK_CREDENTIALS_FILE`), separate from the SSH list.
 
 ---
 

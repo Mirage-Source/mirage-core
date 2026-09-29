@@ -6,6 +6,7 @@ type Protocol string
 
 const (
 	ProtocolSSH Protocol = "ssh"
+	ProtocolTelnet Protocol = "telnet"
 	OutcomeCommandLimitReached Outcome = "command_limit_reached"
 )
 
@@ -65,6 +66,16 @@ type Session struct {
 	Commands      []Command       `json:"commands"`
 	BaitEvents    []BaitEvent     `json:"bait_interactions"`
 	Intelligence  Intelligence    `json:"intelligence"`
+
+	Telnet *TelnetMeta `json:"telnet,omitempty"`
+}
+
+type TelnetMeta struct {
+	Negotiated    bool   `json:"negotiated"`
+	ClientOptions []int  `json:"client_options"`
+	TerminalType  string `json:"terminal_type"`
+	WindowWidth   int    `json:"window_width"`
+	WindowHeight  int    `json:"window_height"`
 }
 
 type Network struct {

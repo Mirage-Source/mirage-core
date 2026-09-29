@@ -70,12 +70,16 @@ func FetchFieldCounts(db *sql.DB, spec FieldSpec, windowStart, windowEnd time.Ti
 		return nil, fmt.Errorf("validity: field %s.%s is not in the watched-fields allowlist", spec.Table, spec.Column)
 	}
 
+	sshOnly := "protocol = 'ssh'"
+	if spec.Table != "sessions" {
+		sshOnly = "session_id IN (SELECT session_id FROM sessions WHERE protocol = 'ssh')"
+	}
 	query := fmt.Sprintf(
 		`SELECT COALESCE(%[1]s::text, '(null)') AS value, COUNT(*)
 		 FROM %[2]s
-		 WHERE %[3]s >= $1 AND %[3]s < $2
+		 WHERE %[3]s >= $1 AND %[3]s < $2 AND %[4]s
 		 GROUP BY value`,
-		spec.Column, spec.Table, spec.timestampColumn(),
+		spec.Column, spec.Table, spec.timestampColumn(), sshOnly,
 	)
 	rows, err := db.Query(query, windowStart.UnixMilli(), windowEnd.UnixMilli())
 	if err != nil {
@@ -108,7 +112,8 @@ func FetchDailyAuthSuccessRate(db *sql.DB, days int) ([]DailyRate, error) {
 			COUNT(*) AS n,
 			COUNT(*) FILTER (WHERE success) AS n_success
 		FROM auth_attempts
-		WHERE timestamp_ms >= $1
+		JOIN sessions USING (session_id)
+		WHERE sessions.protocol = 'ssh' AND timestamp_ms >= $1
 		GROUP BY day
 		ORDER BY day ASC`,
 		time.Now().AddDate(0, 0, -days).UnixMilli(),
@@ -141,7 +146,7 @@ func FetchDailyAuthSuccessRate(db *sql.DB, days int) ([]DailyRate, error) {
 // connections that never completed a handshake, not a real source address).
 func FetchCampaignInputs(db *sql.DB) (sessionCounts map[string]int, credentialPairSets map[string]map[CredentialPair]struct{}, err error) {
 	sessionCounts = map[string]int{}
-	rows, err := db.Query(`SELECT client_ip, COUNT(*) FROM sessions WHERE client_ip <> '' GROUP BY client_ip`)
+	rows, err := db.Query(`SELECT client_ip, COUNT(*) FROM sessions WHERE client_ip <> '' AND protocol = 'ssh' GROUP BY client_ip`)
 	if err != nil {
 		return nil, nil, fmt.Errorf("validity: querying session counts: %w", err)
 	}
@@ -165,7 +170,7 @@ func FetchCampaignInputs(db *sql.DB) (sessionCounts map[string]int, credentialPa
 		SELECT s.client_ip, a.username, a.credential
 		FROM auth_attempts a
 		JOIN sessions s ON s.session_id = a.session_id
-		WHERE s.client_ip <> ''`)
+		WHERE s.client_ip <> '' AND s.protocol = 'ssh'`)
 	if err != nil {
 		return nil, nil, fmt.Errorf("validity: querying credential pairs: %w", err)
 	}

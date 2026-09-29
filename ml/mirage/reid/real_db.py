@@ -92,7 +92,8 @@ def fetch_session_counts(conn) -> dict[str, int]:
     """
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT client_ip, count(*) FROM sessions WHERE client_ip <> '' GROUP BY client_ip"
+            "SELECT client_ip, count(*) FROM sessions "
+            "WHERE client_ip <> '' AND protocol = 'ssh' GROUP BY client_ip"
         )
         return {ip: int(n) for ip, n in cur.fetchall()}
 
@@ -111,7 +112,7 @@ def fetch_credential_pair_sets(
             SELECT s.client_ip, a.username, a.credential
             FROM auth_attempts a
             JOIN sessions s ON s.session_id = a.session_id
-            WHERE s.client_ip = ANY(%s)
+            WHERE s.client_ip = ANY(%s) AND s.protocol = 'ssh'
             """,
             (ip_list,),
         )
@@ -142,7 +143,7 @@ def fetch_real_sessions(conn, ips: Iterable[str] | None = None) -> list[Session]
     set, and it keeps sessions with neither commands nor auth attempts trivial
     to construct.
     """
-    where = "client_ip <> ''"
+    where = "client_ip <> '' AND protocol = 'ssh'"
     params: tuple = ()
     if ips is not None:
         ip_list = list(ips)

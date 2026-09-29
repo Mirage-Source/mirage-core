@@ -190,6 +190,28 @@ services:
         limits:
           memory: 768M
 
+  mirage-telnet:
+    build:
+      context: .
+      dockerfile: Dockerfile.telnet
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-mirage}
+      DB_NAME: ${DB_NAME:-mirage}
+      SENSOR_ID: "${TELNET_SENSOR_ID:-telnet}"
+    ports:
+      - "23:2323"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
 volumes:
   postgres_data:
   fleet_queue:

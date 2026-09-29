@@ -23,6 +23,7 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 	if err := db.QueryRow(`
 		SELECT COUNT(*)
 		FROM sessions
+		WHERE protocol = 'ssh'
 	`).Scan(&stats.TotalSessions); err != nil {
 		return nil, err
 	}
@@ -31,6 +32,7 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 	if err := db.QueryRow(`
 		SELECT COUNT(DISTINCT client_ip)
 		FROM sessions
+		WHERE protocol = 'ssh'
 	`).Scan(&stats.UniqueIPs); err != nil {
 		return nil, err
 	}
@@ -39,7 +41,7 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 	if err := db.QueryRow(`
 		SELECT COUNT(*)
 		FROM sessions
-		WHERE start_ms >= (
+		WHERE protocol = 'ssh' AND start_ms >= (
 			EXTRACT(EPOCH FROM NOW() - INTERVAL '24 hours') * 1000
 		)
 	`).Scan(&stats.SessionsLast24h); err != nil {
@@ -50,7 +52,7 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 	if err := db.QueryRow(`
 		SELECT COUNT(*)
 		FROM sessions
-		WHERE start_ms >= (
+		WHERE protocol = 'ssh' AND start_ms >= (
 			EXTRACT(EPOCH FROM NOW() - INTERVAL '7 days') * 1000
 		)
 	`).Scan(&stats.SessionsLast7d); err != nil {
@@ -63,6 +65,7 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 			client_ip,
 			COUNT(*) AS count
 		FROM sessions
+		WHERE protocol = 'ssh'
 		GROUP BY client_ip
 		ORDER BY count DESC
 		LIMIT 10
@@ -94,6 +97,8 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 			username,
 			COUNT(*) AS count
 		FROM auth_attempts
+		JOIN sessions USING (session_id)
+		WHERE sessions.protocol = 'ssh'
 		GROUP BY username
 		ORDER BY count DESC
 		LIMIT 10
@@ -125,6 +130,8 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 			credential,
 			COUNT(*) AS count
 		FROM auth_attempts
+		JOIN sessions USING (session_id)
+		WHERE sessions.protocol = 'ssh'
 		GROUP BY credential
 		ORDER BY count DESC
 		LIMIT 10
@@ -157,6 +164,8 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 			credential,
 			COUNT(*) AS count
 		FROM auth_attempts
+		JOIN sessions USING (session_id)
+		WHERE sessions.protocol = 'ssh'
 		GROUP BY username, credential
 		ORDER BY count DESC
 		LIMIT 10
@@ -192,6 +201,7 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 			ssh_client_banner,
 			COUNT(*) AS count
 		FROM sessions
+		WHERE protocol = 'ssh'
 		GROUP BY ssh_client_banner
 		ORDER BY count DESC
 		LIMIT 10
@@ -232,6 +242,7 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 				(floor(s.start_ms / 1000.0 / 300) * 300000)::bigint AS window_start_ms
 			FROM sessions s
 			JOIN auth_attempts a ON a.session_id = s.session_id
+			WHERE s.protocol = 'ssh'
 		)
 		SELECT
 			COUNT(DISTINCT client_ip) AS ip_count,
@@ -280,6 +291,7 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 			EXTRACT(HOUR FROM to_timestamp(start_ms / 1000.0))::INT AS hour,
 			COUNT(*) AS count
 		FROM sessions
+		WHERE protocol = 'ssh'
 		GROUP BY hour
 		ORDER BY hour
 	`)
@@ -324,6 +336,7 @@ func GetSessions(
 	if err := db.QueryRow(`
 		SELECT COUNT(*)
 		FROM sessions
+		WHERE protocol = 'ssh'
 	`).Scan(&resp.Total); err != nil {
 		return nil, err
 	}
@@ -338,6 +351,7 @@ func GetSessions(
 			duration_ms,
 			ssh_client_banner
 		FROM sessions
+		WHERE protocol = 'ssh'
 		ORDER BY start_ms DESC
 		LIMIT $1
 		OFFSET $2
@@ -598,7 +612,8 @@ func GetCommandExport(db *sql.DB, after string, limit int) (*api.ExportCommandsR
 		FROM commands c
 		JOIN sessions s ON s.session_id = c.session_id
 		LEFT JOIN bait_interactions b ON b.triggered_by_command_event_id = c.event_id
-		WHERE c.timestamp_ms > $1 OR (c.timestamp_ms = $1 AND c.event_id > $2)
+		WHERE s.protocol = 'ssh'
+			AND (c.timestamp_ms > $1 OR (c.timestamp_ms = $1 AND c.event_id > $2))
 		ORDER BY c.timestamp_ms ASC, c.event_id ASC
 		LIMIT $3
 	`, afterTS, afterID, limit)

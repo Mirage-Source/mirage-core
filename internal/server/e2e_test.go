@@ -38,6 +38,7 @@ func TestEndToEndSSHSessionPersistsToDatabase(t *testing.T) {
 	}
 
 	db := connectTestDB(t)
+	testStart := time.Now().UnixMilli()
 	addr, testUser, testPass := startTestSensor(t, "127.0.0.1:32222")
 
 	config := &ssh.ClientConfig{
@@ -95,7 +96,8 @@ func TestEndToEndSSHSessionPersistsToDatabase(t *testing.T) {
 		row := db.QueryRow(
 			`SELECT client_ip, command_count FROM sessions
 			 WHERE client_ip = '127.0.0.1' AND command_count > 0
-			 ORDER BY start_ms DESC LIMIT 1`,
+			   AND protocol = 'ssh' AND start_ms >= $1
+			 ORDER BY start_ms DESC LIMIT 1`, testStart,
 		)
 		err := row.Scan(&clientIP, &commandCount)
 		if err == nil {
@@ -120,9 +122,10 @@ func TestEndToEndSSHSessionPersistsToDatabase(t *testing.T) {
 		 WHERE session_id = (
 		     SELECT session_id FROM sessions
 		     WHERE client_ip = '127.0.0.1' AND command_count > 0
+		       AND protocol = 'ssh' AND start_ms >= $1
 		     ORDER BY start_ms DESC LIMIT 1
 		 ) AND parsed_command = 'echo'
-		 LIMIT 1`,
+		 LIMIT 1`, testStart,
 	).Scan(&rawInputB64, &parsedCommand)
 	if err != nil {
 		t.Fatalf("expected an 'echo' command row: %v", err)

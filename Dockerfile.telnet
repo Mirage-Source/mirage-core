@@ -1,0 +1,24 @@
+FROM golang:1.25-alpine AS builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w" \
+    -o mirage-telnet \
+    ./cmd/telnet
+
+FROM debian:bookworm-slim AS runner
+RUN groupadd --system mirage && \
+    useradd --system \
+    --gid mirage \
+    --no-create-home \
+    --shell /usr/sbin/nologin \
+    mirage
+WORKDIR /app
+COPY --from=builder /app/mirage-telnet /usr/local/bin/mirage-telnet
+COPY --from=builder /app/config/telnet_weak_credentials.txt /app/config/telnet_weak_credentials.txt
+RUN chown mirage /usr/local/bin/mirage-telnet
+USER mirage
+EXPOSE 2323
+ENTRYPOINT ["/usr/local/bin/mirage-telnet"]
