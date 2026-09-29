@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -17,6 +18,20 @@ func TestParseProtocol(t *testing.T) {
 	for _, raw := range []string{"SSH", "rdp", "ssh' --", " telnet"} {
 		if _, err := ParseProtocol(raw); !errors.Is(err, ErrInvalidProtocol) {
 			t.Errorf("ParseProtocol(%q) err = %v, want ErrInvalidProtocol", raw, err)
+		}
+	}
+}
+
+func TestEmptyStatsSerialiseListsAsArrays(t *testing.T) {
+	b, err := json.Marshal(newStats())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]json.RawMessage
+	json.Unmarshal(b, &m)
+	for _, k := range []string{"top_ips", "top_usernames", "top_passwords", "top_credentials", "ssh_banners", "coordinated_ips", "hourly_distribution"} {
+		if string(m[k]) != "[]" {
+			t.Errorf("%s = %s, want []", k, m[k])
 		}
 	}
 }

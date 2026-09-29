@@ -41,13 +41,23 @@ func childProtocolFilter(p session.Protocol) string {
 	return "session_id IN (SELECT session_id FROM sessions WHERE protocol = $1)"
 }
 
+func newStats() *api.HoneypotStats {
+	return &api.HoneypotStats{
+		TopIPs:             []api.IPCounts{},
+		TopUsernames:       []api.UsernameCounts{},
+		TopPasswords:       []api.PasswordCounts{},
+		TopCredentials:     []api.CredentialCounts{},
+		SSHBanners:         []api.BannerCounts{},
+		CoordinatedIPs:     []api.CoordinatedIPGroup{},
+		HourlyDistribution: []api.HourlyDistribution{},
+	}
+}
+
 func GetStats(db *sql.DB, protocol session.Protocol) (*api.HoneypotStats, error) {
 	if err := checkProtocol(protocol); err != nil {
 		return nil, err
 	}
-	stats := &api.HoneypotStats{
-		CoordinatedIPs: []api.CoordinatedIPGroup{},
-	}
+	stats := newStats()
 
 	// Total sessions
 	if err := db.QueryRow(`
@@ -359,8 +369,9 @@ func GetSessions(
 		return nil, err
 	}
 	resp := &api.SessionsResponse{
-		Limit:  limit,
-		Offset: offset,
+		Limit:    limit,
+		Offset:   offset,
+		Sessions: []api.SessionSummary{},
 	}
 
 	// Total session count

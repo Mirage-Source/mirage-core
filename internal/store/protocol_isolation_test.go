@@ -369,3 +369,15 @@ func TestStoreRejectsUnknownProtocol(t *testing.T) {
 		t.Errorf("GetSessions with bogus protocol: err = %v", err)
 	}
 }
+
+func TestEmptySessionPageIsAnArray(t *testing.T) {
+	db := connect(t)
+	page, err := store.GetSessions(db, session.ProtocolTelnet, 10, 1_000_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(page)
+	if !strings.Contains(string(b), `"sessions":[]`) {
+		t.Errorf("empty page = %s, want \"sessions\":[]", b)
+	}
+}
