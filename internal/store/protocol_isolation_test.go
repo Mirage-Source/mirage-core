@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"database/sql"
+	"errors"
 	"encoding/json"
 	"os"
 	"strings"
@@ -129,7 +130,7 @@ func TestDashboardStatsAreSSHOnly(t *testing.T) {
 	db := connect(t)
 	seed(t, db)
 
-	stats, err := store.GetStats(db)
+	stats, err := store.GetStats(db, session.ProtocolSSH)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +168,7 @@ func TestSessionListAndExportsAreSSHOnly(t *testing.T) {
 	db := connect(t)
 	sshSess, telnetSess := seed(t, db)
 
-	list, err := store.GetSessions(db, 10000, 0)
+	list, err := store.GetSessions(db, session.ProtocolSSH, 10000, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +186,7 @@ func TestSessionListAndExportsAreSSHOnly(t *testing.T) {
 		t.Errorf("SSH session missing from GetSessions")
 	}
 
-	export, err := store.GetExportPage(db, "", 10000)
+	export, err := store.GetExportPage(db, session.ProtocolSSH, "", 10000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +196,7 @@ func TestSessionListAndExportsAreSSHOnly(t *testing.T) {
 		}
 	}
 
-	cmds, err := store.GetCommandExport(db, "", 10000)
+	cmds, err := store.GetCommandExport(db, session.ProtocolSSH, "", 10000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,5 +283,89 @@ func TestPythonReadersFilterProtocol(t *testing.T) {
 		if !strings.Contains(string(src), "protocol = 'ssh'") {
 			t.Errorf("%s: no protocol = 'ssh' filter on its sessions queries", path)
 		}
+	}
+}
+
+func TestTelnetViewReturnsOnlyTelnet(t *testing.T) {
+	db := connect(t)
+	sshSess, telnetSess := seed(t, db)
+
+	var telnetCount int
+	db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE protocol = 'telnet'`).Scan(&telnetCount)
+
+	stats, err := store.GetStats(db, session.ProtocolTelnet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int(stats.TotalSessions) != telnetCount {
+		t.Errorf("telnet TotalSessions = %d, want %d", stats.TotalSessions, telnetCount)
+	}
+	foundUser := false
+	for _, u := range stats.TopUsernames {
+		if u.Username == "ssh-user" {
+			t.Error("SSH username in telnet TopUsernames")
+		}
+		foundUser = foundUser || u.Username == telnetUser
+	}
+	if !foundUser {
+		t.Error("telnet username missing from telnet TopUsernames")
+	}
+
+	list, err := store.GetSessions(db, session.ProtocolTelnet, 10000, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int(list.Total) != telnetCount {
+		t.Errorf("telnet GetSessions Total = %d, want %d", list.Total, telnetCount)
+	}
+	found := false
+	for _, s := range list.Sessions {
+		if s.SessionID == sshSess.SessionID {
+			t.Error("SSH session in telnet GetSessions")
+		}
+		found = found || s.SessionID == telnetSess.SessionID
+	}
+	if !found {
+		t.Error("telnet session missing from telnet GetSessions")
+	}
+
+	export, err := store.GetExportPage(db, session.ProtocolTelnet, "", 10000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found = false
+	for _, s := range export.Sessions {
+		if s.SessionID == sshSess.SessionID {
+			t.Error("SSH session in telnet export")
+		}
+		found = found || s.SessionID == telnetSess.SessionID
+	}
+	if !found {
+		t.Error("telnet session missing from telnet export")
+	}
+
+	cmds, err := store.GetCommandExport(db, session.ProtocolTelnet, "", 10000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found = false
+	for _, c := range cmds.Commands {
+		if c.SessionID == sshSess.SessionID {
+			t.Error("SSH command in telnet command export")
+		}
+		found = found || c.SessionID == telnetSess.SessionID
+	}
+	if !found {
+		t.Error("telnet command missing from telnet command export")
+	}
+}
+
+func TestStoreRejectsUnknownProtocol(t *testing.T) {
+	db := connect(t)
+	if _, err := store.GetStats(db, session.Protocol("ssh' OR '1'='1")); !errors.Is(err, store.ErrInvalidProtocol) {
+		t.Errorf("GetStats with bogus protocol: err = %v, want ErrInvalidProtocol", err)
+	}
+	if _, err := store.GetSessions(db, "rdp", 10, 0); !errors.Is(err, store.ErrInvalidProtocol) {
+		t.Errorf("GetSessions with bogus protocol: err = %v", err)
 	}
 }

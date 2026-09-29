@@ -14,7 +14,37 @@ import (
 	"time"
 )
 
-func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
+var ErrInvalidProtocol = errors.New("invalid protocol")
+
+func ParseProtocol(raw string) (session.Protocol, error) {
+	switch raw {
+	case "", string(session.ProtocolSSH):
+		return session.ProtocolSSH, nil
+	case string(session.ProtocolTelnet):
+		return session.ProtocolTelnet, nil
+	}
+	return "", fmt.Errorf("%w: %q", ErrInvalidProtocol, raw)
+}
+
+func checkProtocol(p session.Protocol) error {
+	_, err := ParseProtocol(string(p))
+	if err != nil || p == "" {
+		return fmt.Errorf("%w: %q", ErrInvalidProtocol, p)
+	}
+	return nil
+}
+
+func childProtocolFilter(p session.Protocol) string {
+	if p == session.ProtocolSSH {
+		return "session_id NOT IN (SELECT session_id FROM sessions WHERE protocol <> $1)"
+	}
+	return "session_id IN (SELECT session_id FROM sessions WHERE protocol = $1)"
+}
+
+func GetStats(db *sql.DB, protocol session.Protocol) (*api.HoneypotStats, error) {
+	if err := checkProtocol(protocol); err != nil {
+		return nil, err
+	}
 	stats := &api.HoneypotStats{
 		CoordinatedIPs: []api.CoordinatedIPGroup{},
 	}
@@ -23,8 +53,8 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 	if err := db.QueryRow(`
 		SELECT COUNT(*)
 		FROM sessions
-		WHERE protocol = 'ssh'
-	`).Scan(&stats.TotalSessions); err != nil {
+		WHERE protocol = $1
+	`, protocol).Scan(&stats.TotalSessions); err != nil {
 		return nil, err
 	}
 
@@ -32,8 +62,8 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 	if err := db.QueryRow(`
 		SELECT COUNT(DISTINCT client_ip)
 		FROM sessions
-		WHERE protocol = 'ssh'
-	`).Scan(&stats.UniqueIPs); err != nil {
+		WHERE protocol = $1
+	`, protocol).Scan(&stats.UniqueIPs); err != nil {
 		return nil, err
 	}
 
@@ -41,10 +71,10 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 	if err := db.QueryRow(`
 		SELECT COUNT(*)
 		FROM sessions
-		WHERE protocol = 'ssh' AND start_ms >= (
+		WHERE protocol = $1 AND start_ms >= (
 			EXTRACT(EPOCH FROM NOW() - INTERVAL '24 hours') * 1000
 		)
-	`).Scan(&stats.SessionsLast24h); err != nil {
+	`, protocol).Scan(&stats.SessionsLast24h); err != nil {
 		return nil, err
 	}
 
@@ -52,10 +82,10 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 	if err := db.QueryRow(`
 		SELECT COUNT(*)
 		FROM sessions
-		WHERE protocol = 'ssh' AND start_ms >= (
+		WHERE protocol = $1 AND start_ms >= (
 			EXTRACT(EPOCH FROM NOW() - INTERVAL '7 days') * 1000
 		)
-	`).Scan(&stats.SessionsLast7d); err != nil {
+	`, protocol).Scan(&stats.SessionsLast7d); err != nil {
 		return nil, err
 	}
 
@@ -65,11 +95,11 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 			client_ip,
 			COUNT(*) AS count
 		FROM sessions
-		WHERE protocol = 'ssh'
+		WHERE protocol = $1
 		GROUP BY client_ip
 		ORDER BY count DESC
 		LIMIT 10
-	`)
+	`, protocol)
 	if err != nil {
 		return nil, err
 	}
@@ -97,12 +127,11 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 			username,
 			COUNT(*) AS count
 		FROM auth_attempts
-		JOIN sessions USING (session_id)
-		WHERE sessions.protocol = 'ssh'
+		WHERE `+childProtocolFilter(protocol)+`
 		GROUP BY username
 		ORDER BY count DESC
 		LIMIT 10
-	`)
+	`, protocol)
 	if err != nil {
 		return nil, err
 	}
@@ -130,12 +159,11 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 			credential,
 			COUNT(*) AS count
 		FROM auth_attempts
-		JOIN sessions USING (session_id)
-		WHERE sessions.protocol = 'ssh'
+		WHERE `+childProtocolFilter(protocol)+`
 		GROUP BY credential
 		ORDER BY count DESC
 		LIMIT 10
-	`)
+	`, protocol)
 	if err != nil {
 		return nil, err
 	}
@@ -164,12 +192,11 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 			credential,
 			COUNT(*) AS count
 		FROM auth_attempts
-		JOIN sessions USING (session_id)
-		WHERE sessions.protocol = 'ssh'
+		WHERE `+childProtocolFilter(protocol)+`
 		GROUP BY username, credential
 		ORDER BY count DESC
 		LIMIT 10
-	`)
+	`, protocol)
 	if err != nil {
 		return nil, err
 	}
@@ -201,11 +228,11 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 			ssh_client_banner,
 			COUNT(*) AS count
 		FROM sessions
-		WHERE protocol = 'ssh'
+		WHERE protocol = $1
 		GROUP BY ssh_client_banner
 		ORDER BY count DESC
 		LIMIT 10
-	`)
+	`, protocol)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +269,7 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 				(floor(s.start_ms / 1000.0 / 300) * 300000)::bigint AS window_start_ms
 			FROM sessions s
 			JOIN auth_attempts a ON a.session_id = s.session_id
-			WHERE s.protocol = 'ssh'
+			WHERE s.protocol = $1
 		)
 		SELECT
 			COUNT(DISTINCT client_ip) AS ip_count,
@@ -256,7 +283,7 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 		HAVING COUNT(DISTINCT client_ip) > 2
 		ORDER BY ip_count DESC, window_start_ms DESC
 		LIMIT 10
-	`)
+	`, protocol)
 	if err != nil {
 		return nil, err
 	}
@@ -291,10 +318,10 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 			EXTRACT(HOUR FROM to_timestamp(start_ms / 1000.0))::INT AS hour,
 			COUNT(*) AS count
 		FROM sessions
-		WHERE protocol = 'ssh'
+		WHERE protocol = $1
 		GROUP BY hour
 		ORDER BY hour
-	`)
+	`, protocol)
 	if err != nil {
 		return nil, err
 	}
@@ -324,9 +351,13 @@ func GetStats(db *sql.DB) (*api.HoneypotStats, error) {
 
 func GetSessions(
 	db *sql.DB,
+	protocol session.Protocol,
 	limit int,
 	offset int,
 ) (*api.SessionsResponse, error) {
+	if err := checkProtocol(protocol); err != nil {
+		return nil, err
+	}
 	resp := &api.SessionsResponse{
 		Limit:  limit,
 		Offset: offset,
@@ -336,8 +367,8 @@ func GetSessions(
 	if err := db.QueryRow(`
 		SELECT COUNT(*)
 		FROM sessions
-		WHERE protocol = 'ssh'
-	`).Scan(&resp.Total); err != nil {
+		WHERE protocol = $1
+	`, protocol).Scan(&resp.Total); err != nil {
 		return nil, err
 	}
 
@@ -351,11 +382,11 @@ func GetSessions(
 			duration_ms,
 			ssh_client_banner
 		FROM sessions
-		WHERE protocol = 'ssh'
+		WHERE protocol = $3
 		ORDER BY start_ms DESC
 		LIMIT $1
 		OFFSET $2
-	`, limit, offset)
+	`, limit, offset, protocol)
 	if err != nil {
 		return nil, err
 	}
@@ -585,7 +616,10 @@ func decodeKeysetCursor(cursor string) (timestampMS int64, eventID string, ok bo
 // dump isn't a safe default; keyset pagination (rather than OFFSET) keeps
 // each page's query cost independent of how deep into the export the caller
 // already is.
-func GetCommandExport(db *sql.DB, after string, limit int) (*api.ExportCommandsResponse, error) {
+func GetCommandExport(db *sql.DB, protocol session.Protocol, after string, limit int) (*api.ExportCommandsResponse, error) {
+	if err := checkProtocol(protocol); err != nil {
+		return nil, err
+	}
 	if limit <= 0 || limit > maxCommandExportLimit {
 		limit = defaultCommandExportLimit
 	}
@@ -612,11 +646,11 @@ func GetCommandExport(db *sql.DB, after string, limit int) (*api.ExportCommandsR
 		FROM commands c
 		JOIN sessions s ON s.session_id = c.session_id
 		LEFT JOIN bait_interactions b ON b.triggered_by_command_event_id = c.event_id
-		WHERE s.protocol = 'ssh'
+		WHERE s.protocol = $4
 			AND (c.timestamp_ms > $1 OR (c.timestamp_ms = $1 AND c.event_id > $2))
 		ORDER BY c.timestamp_ms ASC, c.event_id ASC
 		LIMIT $3
-	`, afterTS, afterID, limit)
+	`, afterTS, afterID, limit, protocol)
 	if err != nil {
 		return nil, fmt.Errorf("querying commands export: %w", err)
 	}

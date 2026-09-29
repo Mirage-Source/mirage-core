@@ -17,6 +17,7 @@ import (
 
 	"github.com/mirage-source/mirage-core/internal/api"
 	"github.com/mirage-source/mirage-core/internal/deception"
+	"github.com/mirage-source/mirage-core/internal/session"
 	"github.com/mirage-source/mirage-core/internal/store"
 	"github.com/mirage-source/mirage-core/internal/validity"
 )
@@ -346,7 +347,11 @@ func routes(
 	})
 
 	r.Get("/api/stats", func(w http.ResponseWriter, r *http.Request) {
-		stats, err := store.GetStats(db)
+		protocol, ok := protocolParam(w, r)
+		if !ok {
+			return
+		}
+		stats, err := store.GetStats(db, protocol)
 		if err != nil {
 			http.Error(
 				w,
@@ -364,6 +369,10 @@ func routes(
 	})
 
 	r.Get("/api/sessions", func(w http.ResponseWriter, r *http.Request) {
+		protocol, ok := protocolParam(w, r)
+		if !ok {
+			return
+		}
 		limit := 50
 		offset := 0
 
@@ -393,6 +402,7 @@ func routes(
 
 		sessions, err := store.GetSessions(
 			db,
+			protocol,
 			limit,
 			offset,
 		)
@@ -458,8 +468,12 @@ func routes(
 	// existing consumers (mirage-web's corpus cache, the dataset publisher)
 	// keep working unchanged while they move onto cursors.
 	r.Get("/api/export", func(w http.ResponseWriter, r *http.Request) {
+		protocol, ok := protocolParam(w, r)
+		if !ok {
+			return
+		}
 		fetch := func(after string, limit int) (*api.ExportResponse, error) {
-			return store.GetExportPage(db, after, limit)
+			return store.GetExportPage(db, protocol, after, limit)
 		}
 
 		if raw := r.URL.Query().Get("limit"); raw != "" {
@@ -500,6 +514,10 @@ func routes(
 	})
 
 	r.Get("/api/export/commands", func(w http.ResponseWriter, r *http.Request) {
+		protocol, ok := protocolParam(w, r)
+		if !ok {
+			return
+		}
 		after := r.URL.Query().Get("after")
 		limit := 0
 		if raw := r.URL.Query().Get("limit"); raw != "" {
@@ -511,7 +529,7 @@ func routes(
 			limit = parsed
 		}
 
-		export, err := store.GetCommandExport(db, after, limit)
+		export, err := store.GetCommandExport(db, protocol, after, limit)
 		if err != nil {
 			if errors.Is(err, store.ErrInvalidCursor) {
 				http.Error(w, "invalid cursor", http.StatusBadRequest)
@@ -532,4 +550,13 @@ func routes(
 		}
 	})
 
+}
+
+func protocolParam(w http.ResponseWriter, r *http.Request) (session.Protocol, bool) {
+	p, err := store.ParseProtocol(r.URL.Query().Get("protocol"))
+	if err != nil {
+		http.Error(w, "invalid protocol", http.StatusBadRequest)
+		return "", false
+	}
+	return p, true
 }

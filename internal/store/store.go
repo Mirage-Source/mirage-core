@@ -241,7 +241,10 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 // 54k sessions, at which point the LATERAL-per-row scan plus a whole-response
 // encode began racing cmd/api's 15s WriteTimeout -- which truncates the body
 // mid-JSON rather than failing cleanly.
-func GetExportPage(db *sql.DB, after string, limit int) (*api.ExportResponse, error) {
+func GetExportPage(db *sql.DB, protocol session.Protocol, after string, limit int) (*api.ExportResponse, error) {
+	if err := checkProtocol(protocol); err != nil {
+		return nil, err
+	}
 	if limit <= 0 || limit > maxSessionExportLimit {
 		limit = defaultSessionExportLimit
 	}
@@ -291,11 +294,11 @@ func GetExportPage(db *sql.DB, after string, limit int) (*api.ExportResponse, er
 			FROM auth_attempts aa
 			WHERE aa.session_id = s.session_id
 		) a ON true
-		WHERE s.protocol = 'ssh'
+		WHERE s.protocol = $4
 			AND (s.start_ms < $1 OR (s.start_ms = $1 AND s.session_id < $2))
 		ORDER BY s.start_ms DESC, s.session_id DESC
 		LIMIT $3
-	`, afterStart, afterID, limit)
+	`, afterStart, afterID, limit, protocol)
 	if err != nil {
 		return nil, err
 	}
