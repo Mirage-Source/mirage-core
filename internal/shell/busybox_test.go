@@ -70,7 +70,7 @@ func TestBusyboxModeShIsANoop(t *testing.T) {
 func TestBusyboxOffLeavesSSHOutputUnchanged(t *testing.T) {
 	s := NewInterpreter("root")
 	for line, want := range map[string]string{
-		"/bin/busybox ECCHI": "bash: /bin/busybox: command not found",
+		"/bin/busybox ECCHI": "bash: /bin/busybox: No such file or directory",
 		"busybox":            "bash: busybox: command not found",
 		"sh":                 "bash: sh: command not found",
 	} {

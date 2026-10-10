@@ -64,6 +64,10 @@ func ShouldAttemptCompletion(line string) (name string, ok bool) {
 	}
 	name = fields[0]
 
+	if strings.Contains(name, "/") && !shell.InBinDir(name) {
+		return "", false
+	}
+
 	// The denylist/allowlist below are exact-match maps of bare command
 	// names. Checking them against the raw field would let case variation
 	// (WGET) or a path-qualified invocation (/usr/bin/wget, ./wget) slip

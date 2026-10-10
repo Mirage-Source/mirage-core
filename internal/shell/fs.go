@@ -342,7 +342,7 @@ func (s *Interpreter) lookup(target string) (string, *Node) {
 
 // writeFile creates or overwrites a file at target in this session's
 // overlay -- never the shared base fs map. The parent directory must
-// already exist; this shell has no mkdir.
+// already exist.
 func (s *Interpreter) writeFile(target, content string, appendMode bool) (string, int) {
 	clean := s.resolvePath(target)
 	parentPath := path.Dir(clean)
@@ -370,27 +370,7 @@ func (s *Interpreter) writeFile(target, content string, appendMode bool) (string
 		MTime: time.Now().UTC().Format("Jan _2 15:04"), Content: newContent,
 	}
 
-	alreadyListed := false
-	for _, c := range parent.Children {
-		if c == base {
-			alreadyListed = true
-			break
-		}
-	}
-	if !alreadyListed {
-		if s.overlayChildren == nil {
-			s.overlayChildren = map[string][]string{}
-		}
-		for _, c := range s.overlayChildren[parentPath] {
-			if c == base {
-				alreadyListed = true
-				break
-			}
-		}
-		if !alreadyListed {
-			s.overlayChildren[parentPath] = append(s.overlayChildren[parentPath], base)
-		}
-	}
+	s.addChild(parentPath, base)
 
 	return "", 0
 }

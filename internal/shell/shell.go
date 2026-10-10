@@ -156,6 +156,7 @@ type Interpreter struct {
 
 	overlay         map[string]*Node
 	overlayChildren map[string][]string
+	nesting         int
 }
 
 // NewInterpreter derives the emulated identity from the username the
@@ -270,6 +271,7 @@ func (s *Interpreter) evalLine(line string, depth int, bait *[]BaitHit, action s
 			}
 
 			cmdWords, red := extractRedirects(resolved)
+			cmdWords = stripAssignments(cmdWords)
 			if len(cmdWords) == 0 {
 				continue
 			}
@@ -311,6 +313,7 @@ func (s *Interpreter) evalLine(line string, depth int, bait *[]BaitHit, action s
 				resolved = append(resolved, s.substitute(w, depth, bait, action))
 			}
 			cmdWords, red := extractRedirects(resolved)
+			cmdWords = stripAssignments(cmdWords)
 			if len(cmdWords) == 0 {
 				stageOut, stageCode, pipedIn = "", 0, nil
 				continue
@@ -626,7 +629,28 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 	case "exit":
 		return "", ExitRequested
 
+	case "chmod":
+		return s.chmodBuiltin(args)
+
+	case "chown", "chgrp":
+		return s.chownBuiltin(cmd, args)
+
+	case "rm":
+		return s.rmBuiltin(args)
+
+	case "mkdir":
+		return s.mkdirBuiltin(args)
+
+	case "touch":
+		return s.touchBuiltin(args)
+
+	case "cp", "mv":
+		return s.cpBuiltin(cmd, args)
+
 	default:
+		if strings.Contains(cmd, "/") {
+			return s.execPath(cmd, args, bait, action, stdin)
+		}
 		log.Printf("Unknown command: %s", cmd)
 		return "bash: " + cmd + ": command not found", 127
 	}

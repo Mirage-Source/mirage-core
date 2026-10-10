@@ -124,3 +124,16 @@ func TestShouldAttemptCompletionRejectsInterpretersAndFetchers(t *testing.T) {
 		}
 	}
 }
+
+func TestShouldAttemptCompletionLeavesFilePathsToTheInterpreter(t *testing.T) {
+	for _, line := range []string{"./bot.x86", "/tmp/.x/run", "../a", "dir/tool"} {
+		if _, ok := ShouldAttemptCompletion(line); ok {
+			t.Errorf("ShouldAttemptCompletion(%q) = true, want false", line)
+		}
+	}
+	for _, line := range []string{"/usr/bin/uptime", "/sbin/lspci"} {
+		if _, ok := ShouldAttemptCompletion(line); !ok {
+			t.Errorf("ShouldAttemptCompletion(%q) = false, want true", line)
+		}
+	}
+}
