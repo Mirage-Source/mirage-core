@@ -115,7 +115,7 @@ func execBatch(tx *sql.Tx, table, columns string, cols int, args []any) error {
 const (
 	authAttemptColumns = "session_id, timestamp_ms, method, username, credential, success"
 	commandColumns     = "event_id, session_id, sequence_number, timestamp_ms, " +
-		"inter_command_delay_ms, raw_input_b64, parsed_command, parsed_args, " +
+		"inter_command_delay_ms, raw_input_b64, parsed_command, parsed_args, command_chain, " +
 		"working_directory, response_text, exit_code, response_source, deception_action"
 	baitColumns = "event_id, session_id, timestamp_ms, bait_id, bait_type, " +
 		"access_type, triggered_by_command_event_id"
@@ -180,20 +180,24 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 		return fmt.Errorf("inserting auth attempts: %w", err)
 	}
 
-	commandArgs := make([]any, 0, len(sess.Commands)*13)
+	commandArgs := make([]any, 0, len(sess.Commands)*14)
 	for _, c := range sess.Commands {
 		argsBytes, err := json.Marshal(c.ParsedArgs)
 		if err != nil {
 			return fmt.Errorf("marshaling parsed args: %w", err)
 		}
+		chainBytes, err := json.Marshal(c.CommandChain)
+		if err != nil {
+			return fmt.Errorf("marshaling command chain: %w", err)
+		}
 		commandArgs = append(commandArgs,
 			c.EventID, sess.SessionID, c.SequenceNumber,
 			c.TimestampMS, c.InterCommandDelayMS,
-			c.RawInputB64, c.ParsedCommand, argsBytes,
+			c.RawInputB64, c.ParsedCommand, argsBytes, chainBytes,
 			c.WorkingDirectory, c.Response, c.ExitCode,
 			c.ResponseSource, c.DeceptionAction)
 	}
-	if err := execBatch(tx, "commands", commandColumns, 13, commandArgs); err != nil {
+	if err := execBatch(tx, "commands", commandColumns, 14, commandArgs); err != nil {
 		return fmt.Errorf("inserting commands: %w", err)
 	}
 

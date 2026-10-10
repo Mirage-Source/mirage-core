@@ -689,13 +689,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 
 			now := time.Now().UnixMilli()
 			raw := base64.StdEncoding.EncodeToString([]byte(payload.Command))
-			words := strings.Fields(payload.Command)
-			var parsedCommand string
-			var parsedArgs []string
-			if len(words) > 0 {
-				parsedCommand = words[0]
-				parsedArgs = words[1:]
-			}
+			parsedCommand, parsedArgs, chain := parseCommandLine(payload.Command)
 
 			status := code
 			if status == shell.ExitRequested {
@@ -708,6 +702,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 				RawInputB64:      raw,
 				ParsedCommand:    parsedCommand,
 				ParsedArgs:       parsedArgs,
+				CommandChain:     chain,
 				WorkingDirectory: beforeCwd,
 				Response:         &response,
 				ExitCode:         &status,
@@ -805,13 +800,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 				raw := base64.StdEncoding.EncodeToString(inputBuffer)
 				inputBuffer = inputBuffer[:0]
 
-				words := strings.Fields(cli)
-				var parsedCommand string
-				var parsedArgs []string
-				if len(words) > 0 {
-					parsedCommand = words[0]
-					parsedArgs = words[1:]
-				}
+				parsedCommand, parsedArgs, chain := parseCommandLine(cli)
 
 				beforeCwd := interp.Cwd
 				response, code, baitHits, deceptionAction, usedLLM := applyDeception(deceptionRuntime, interp, guard.sessionID(), cli)
@@ -828,6 +817,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 					RawInputB64:      raw,
 					ParsedCommand:    parsedCommand,
 					ParsedArgs:       parsedArgs,
+					CommandChain:     chain,
 					WorkingDirectory: beforeCwd,
 					Response:         &response,
 					ExitCode:         &status,
@@ -877,4 +867,16 @@ func responseSourceFor(bait []shell.BaitHit, usedLLM bool) session.ResponseSourc
 		return session.ResponseSourceLLM
 	}
 	return session.ResponseSourceHardcoded
+}
+
+func parseCommandLine(line string) (string, []string, []string) {
+	invs := shell.ParseCommands(line)
+	if len(invs) == 0 {
+		return "", []string{}, []string{}
+	}
+	chain := make([]string, len(invs))
+	for i, inv := range invs {
+		chain[i] = inv.Name
+	}
+	return invs[0].Name, invs[0].Args, chain
 }

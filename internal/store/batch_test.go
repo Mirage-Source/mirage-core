@@ -55,7 +55,7 @@ func TestBatchColumnCountsMatchTheirColumnLists(t *testing.T) {
 		cols    int
 	}{
 		{"auth_attempts", authAttemptColumns, 6},
-		{"commands", commandColumns, 13},
+		{"commands", commandColumns, 14},
 		{"bait_interactions", baitColumns, 7},
 	}
 	for _, tc := range cases {

@@ -124,6 +124,7 @@ type Command struct {
 	RawInputB64          string   `json:"raw_input_b64"`
 	ParsedCommand        string   `json:"parsed_command"`
 	ParsedArgs           []string `json:"parsed_args"`
+	CommandChain         []string `json:"command_chain"`
 	WorkingDirectory     string   `json:"working_directory"`
 	Response             *string  `json:"response"`
 	ExitCode             *int     `json:"exit_code"`

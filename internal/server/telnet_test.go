@@ -125,7 +125,7 @@ func TestTelnetRawSocketBotLogsInAndRunsBusyboxProbe(t *testing.T) {
 	if len(s.AuthAttempts) != 1 || !s.AuthAttempts[0].Success || s.AuthAttempts[0].Username != "root" || s.AuthAttempts[0].Credential != "xc3511" {
 		t.Errorf("auth attempts = %+v", s.AuthAttempts)
 	}
-	if got := parsedCommands(s); len(got) != 2 || got[0] != "/bin/busybox" || got[1] != "exit" {
+	if got := parsedCommands(s); len(got) != 2 || got[0] != "busybox" || got[1] != "exit" {
 		t.Errorf("commands = %v", got)
 	}
 	if s.Network.ClientIP != "127.0.0.1" || s.Network.ServerPort == 0 {
@@ -142,7 +142,7 @@ func TestTelnetPipelinedBotKeepsEveryLineInOrder(t *testing.T) {
 	h.readUntil("logout")
 	s := h.wait()
 
-	want := []string{"enable", "system", "shell", "sh", "/bin/busybox", "exit"}
+	want := []string{"enable", "system", "shell", "sh", "busybox", "exit"}
 	if got := parsedCommands(s); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("commands = %v, want %v", got, want)
 	}

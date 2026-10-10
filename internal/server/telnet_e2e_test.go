@@ -66,7 +66,7 @@ func TestEndToEndTelnetSessionPersistsToDatabase(t *testing.T) {
 	var response string
 	if err := db.QueryRow(`
 		SELECT response_text FROM commands
-		WHERE session_id = $1 AND parsed_command = '/bin/busybox'`, sessionID).Scan(&response); err != nil {
+		WHERE session_id = $1 AND parsed_command = 'busybox'`, sessionID).Scan(&response); err != nil {
 		t.Fatalf("busybox command row: %v", err)
 	}
 	if response != "E2EPROBE: applet not found" {

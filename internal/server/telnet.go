@@ -236,12 +236,7 @@ func telnetLogin(ts *telnetStream, cfg telnetConfig, guard *sessionGuard, hostna
 }
 
 func telnetCommand(line, cwd, response string, code int, bait []shell.BaitHit, nowMS int64) session.Command {
-	words := strings.Fields(line)
-	var parsed string
-	var args []string
-	if len(words) > 0 {
-		parsed, args = words[0], words[1:]
-	}
+	parsed, args, chain := parseCommandLine(line)
 	if code == shell.ExitRequested {
 		code = 0
 	}
@@ -251,6 +246,7 @@ func telnetCommand(line, cwd, response string, code int, bait []shell.BaitHit, n
 		RawInputB64:      base64.StdEncoding.EncodeToString([]byte(line)),
 		ParsedCommand:    parsed,
 		ParsedArgs:       args,
+		CommandChain:     chain,
 		WorkingDirectory: cwd,
 		Response:         &response,
 		ExitCode:         &code,

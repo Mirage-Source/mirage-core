@@ -40,6 +40,7 @@ type ExportCommand struct {
 	RawCommand          string   `json:"raw_command"`
 	ParsedCommand       string   `json:"parsed_command"`
 	ParsedArgs          []string `json:"parsed_args"`
+	CommandChain        []string `json:"command_chain"`
 	WorkingDirectory    string   `json:"working_directory"`
 	Response            *string  `json:"response"`
 	ExitCode            *int     `json:"exit_code"`

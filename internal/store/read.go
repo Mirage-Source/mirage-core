@@ -649,7 +649,7 @@ func GetCommandExport(db *sql.DB, protocol session.Protocol, after string, limit
 		SELECT
 			c.event_id, c.session_id, c.sequence_number,
 			c.timestamp_ms, c.inter_command_delay_ms,
-			c.raw_input_b64, c.parsed_command, c.parsed_args,
+			c.raw_input_b64, c.parsed_command, c.parsed_args, c.command_chain,
 			c.working_directory, c.response_text, c.exit_code,
 			c.response_source, c.deception_action,
 			b.bait_id, b.bait_type,
@@ -677,13 +677,13 @@ func GetCommandExport(db *sql.DB, protocol session.Protocol, after string, limit
 	for rows.Next() {
 		var item api.ExportCommand
 		var rawB64 string
-		var argsRaw, mitreRaw []byte
+		var argsRaw, chainRaw, mitreRaw []byte
 		var baitID, baitType sql.NullString
 
 		if err := rows.Scan(
 			&item.EventID, &item.SessionID, &item.SequenceNumber,
 			&item.TimestampMS, &item.InterCommandDelayMS,
-			&rawB64, &item.ParsedCommand, &argsRaw,
+			&rawB64, &item.ParsedCommand, &argsRaw, &chainRaw,
 			&item.WorkingDirectory, &item.Response, &item.ExitCode,
 			&item.ResponseSource, &item.DeceptionAction,
 			&baitID, &baitType,
@@ -701,6 +701,11 @@ func GetCommandExport(db *sql.DB, protocol session.Protocol, after string, limit
 		if len(argsRaw) > 0 {
 			if err := json.Unmarshal(argsRaw, &item.ParsedArgs); err != nil {
 				return nil, fmt.Errorf("unmarshalling parsed args: %w", err)
+			}
+		}
+		if len(chainRaw) > 0 {
+			if err := json.Unmarshal(chainRaw, &item.CommandChain); err != nil {
+				return nil, fmt.Errorf("unmarshalling command chain: %w", err)
 			}
 		}
 		if len(mitreRaw) > 0 {
