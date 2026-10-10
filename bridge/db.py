@@ -21,7 +21,7 @@ __all__ = [
 ]
 
 
-#: Idempotent DDL for the ML tables. Mirrors db/init/002_ml_intelligence.sql so
+#: Idempotent DDL for the ML tables. Mirrors internal/store/migrations/005_ml_intelligence_catchup.sql so
 #: the worker is self-sufficient even if the migration was never applied.
 ML_SCHEMA_DDL = """
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS stix_bundle JSONB;

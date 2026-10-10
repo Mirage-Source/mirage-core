@@ -65,7 +65,7 @@ PostgreSQL  ←  enriched with attacker_class, mitre_techniques, stix_bundle
 | `internal/deception/` | Go | Deception-policy client, and the gate deciding which unknown commands may get an LLM-generated response |
 | `bridge/` | Python | Polling worker, schema adapter, ML pipeline orchestration |
 | `ml/` | Python / PyTorch | Classifier, timing heuristics, tool signature detection |
-| `db/init/` | SQL | PostgreSQL schema migrations |
+| `internal/store/migrations/` | SQL | PostgreSQL schema migrations, applied automatically at startup |
 | `scripts/` | Python | Dataset export, geo enrichment, report generation |
 | `data/geo/` | CSV | Pinned DB-IP ASN/country snapshots for geo attribution |
 

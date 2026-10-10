@@ -9,7 +9,6 @@ services:
       POSTGRES_USER: ${DB_USER:-mirage}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-mirage} -d ${DB_NAME:-mirage}"]
       interval: 10s

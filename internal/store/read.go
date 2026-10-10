@@ -528,7 +528,7 @@ func GetSessionReport(
 
 	// Severity: prefer the ML pipeline's own computation (considers bait
 	// escalation, not just attacker_class). Only sessions enriched before
-	// this was persisted (see db/init/002_ml_intelligence.sql) lack it, so
+	// this was persisted (see migrations/005_ml_intelligence_catchup.sql) lack it, so
 	// fall back to a cruder class-only derivation for those.
 	severity := "low"
 	if sess.Intelligence.Severity != nil {

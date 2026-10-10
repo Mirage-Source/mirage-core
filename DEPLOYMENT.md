@@ -112,42 +112,17 @@ specifically looking for it.
 
 ---
 
-## 3. Schema catch-up: only needed for the pre-existing production sensor
+## 3. Schema migrations
 
-`db/init/*.sql` only runs once, automatically, against an *empty* Postgres
-data directory — that's a Postgres-image behavior, not a mirage-core choice.
-`internal/store/migrations/` holds the incremental patches applied by hand to
-the already-running production sensor over time.
+Every Go binary (`mirage-core`, `mirage-telnet`, `mirage-api`) applies
+`internal/store/migrations/*.sql` at startup, through `store.Connect`. Each
+file runs once in its own transaction and is recorded in `schema_migrations`;
+a Postgres advisory lock keeps services that start together from racing. A
+fresh volume and an existing deployment both just need `docker compose up`.
+The "apply by hand" notes inside older migration files predate this.
 
-**As of `internal/server/e2e_test.go`'s real end-to-end test (a real SSH
-client against a real listener against a truly fresh Postgres, applying only
-`db/init/*.sql`), `db/init/` is caught up** — it previously wasn't
-(`005_deception_and_ingress.sql` closes the gap the test caught:
-`commands.deception_action`/`response_text`/`exit_code` and
-`sessions.ingress_source`/`proxy_node_id` were missing from a fresh clone
-entirely). A brand-new deploy from a fresh clone no longer needs any manual
-catch-up.
-
-The catch-up below is only relevant if you're bringing the **pre-existing**
-production sensor's already-populated database up to the latest schema (it
-predates several `db/init/` files being added at all, so those never ran
-there):
-
-```bash
-for f in 003_deception 004_command_response 005_ml_intelligence_catchup \
-         007_ingress_source 008_sensor_heartbeats 009_drop_grafana_role \
-         010_runtime_flags 011_telnet; do
-  docker compose exec -T postgres psql -U mirage -d mirage \
-      < internal/store/migrations/${f}.sql
-done
-```
-
-All of these are idempotent — safe to re-run, and safe even on a fresh
-database that already has everything from `db/init/`, which is exactly what
-they'll find there now. Skip `006_grafana_readonly_role.sql` — it creates the
-Grafana read-only role that `009` immediately retires (Prometheus/Grafana are
-retired; see README). Running `009` alone against a DB that never had `006`
-applied is an explicit documented no-op, which is exactly what you want here.
+On a database that predates `schema_migrations`, the first start re-runs every
+file. They are all idempotent, so this only fills in what is missing.
 
 ---
 
@@ -155,8 +130,7 @@ applied is an explicit documented no-op, which is exactly what you want here.
 
 Order matters on an existing deployment:
 
-1. Apply `internal/store/migrations/011_telnet.sql` (loop above). Without
-   `telnet_session_meta`, every telnet session fails to save.
+1. Start any updated Go service first so migrations create `telnet_session_meta`.
 2. Rebuild `mirage-api` and `ml-worker`, which now filter `protocol = 'ssh'`.
    An old `ml-worker` would try to enrich telnet sessions.
 3. Open 23/tcp in the host firewall, then `docker compose up -d --build mirage-telnet`.

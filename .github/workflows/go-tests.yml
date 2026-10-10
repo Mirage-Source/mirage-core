@@ -49,14 +49,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      # Mirrors db/init/, applied by hand since GitHub's postgres service
-      # doesn't run docker-entrypoint-initdb.d scripts the way the compose
-      # volume mount does locally.
-      - name: Apply schema
-        run: |
-          for f in db/init/*.sql; do
-            psql "postgresql://mirage:e2e-test-password@localhost:5432/mirage" -f "$f"
-          done
       - name: Run end-to-end test
         env:
           MIRAGE_E2E_TEST: "1"
