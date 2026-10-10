@@ -4,6 +4,7 @@ import (
 	"go/build"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -52,13 +53,10 @@ func TestShellPackageHasNoEgressCapableImports(t *testing.T) {
 }
 
 // TestNetworkFlavoredCommandsNeverAttemptRealEgress runs every command an
-// attacker might use to test for real egress (wget/curl/nc/ssh/etc.) and
-// asserts each resolves immediately to the shell's ordinary "command not
-// found" path. None of these are in the interpreter's command whitelist
-// (shell.go's switch statement), so they fall through to the default case --
-// this test locks that in, and the timeout catches the failure mode a
-// behavioral change could introduce even if the import-list stays clean (e.g.
-// shelling out via a dependency that itself performs the dial).
+// attacker might use to test for real egress and asserts each returns
+// immediately and never succeeds: wget/curl with their own connection
+// failure, everything else as "command not found". The timeout catches a
+// real dial even if the import list stays clean.
 func TestNetworkFlavoredCommandsNeverAttemptRealEgress(t *testing.T) {
 	commands := []string{
 		"wget http://example.com/a",
@@ -93,8 +91,9 @@ func TestNetworkFlavoredCommandsNeverAttemptRealEgress(t *testing.T) {
 					cmd,
 				)
 			}
-			if code != 127 {
-				t.Fatalf("expected command-not-found (127) for %q, got code=%d out=%q", cmd, code, out)
+			emulated := strings.HasPrefix(cmd, "wget ") || strings.HasPrefix(cmd, "curl ")
+			if code == 0 || (!emulated && code != 127) {
+				t.Fatalf("%q must fail (127 unless emulated), got code=%d out=%q", cmd, code, out)
 			}
 		})
 	}

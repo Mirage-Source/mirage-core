@@ -11,7 +11,7 @@ import (
 
 func TestUnknownCommandStderrRedirectsToFile(t *testing.T) {
 	s := NewInterpreter("ubuntu")
-	out, code, _ := s.Run("wget http://example.com/a 2>/tmp/err")
+	out, code, _ := s.Run("nmap -sS 10.0.0.1 2>/tmp/err")
 	if out != "" {
 		t.Fatalf("stderr should have been redirected away from the terminal, got %q", out)
 	}
@@ -23,16 +23,16 @@ func TestUnknownCommandStderrRedirectsToFile(t *testing.T) {
 	if catCode != 0 {
 		t.Fatalf("cat /tmp/err failed: %s", catOut)
 	}
-	if strings.TrimSpace(catOut) != "bash: wget: command not found" {
+	if strings.TrimSpace(catOut) != "bash: nmap: command not found" {
 		t.Fatalf("/tmp/err = %q, want the command-not-found message", catOut)
 	}
 }
 
 func TestUnknownCommandStderrToDevNullIsSilentAndCreatesNoFile(t *testing.T) {
 	s := NewInterpreter("ubuntu")
-	out, code, _ := s.Run("wget http://example.com/a 2>/dev/null")
+	out, code, _ := s.Run("nmap -sS 10.0.0.1 2>/dev/null")
 	if out != "" || code != 127 {
-		t.Fatalf("wget ... 2>/dev/null = %q (code %d), want empty output, code 127", out, code)
+		t.Fatalf("nmap ... 2>/dev/null = %q (code %d), want empty output, code 127", out, code)
 	}
 	// /dev/null must not become a real (empty) file node in the sim fs.
 	_, lsCode, _ := s.Run("cat /dev/null")
@@ -45,33 +45,33 @@ func TestUnknownCommandStdoutRedirectDoesNotSwallowStderr(t *testing.T) {
 	// `> file` only touches stdout -- an unknown command's error text is
 	// stderr and must still reach the terminal, matching real bash.
 	s := NewInterpreter("ubuntu")
-	out, code, _ := s.Run("wget http://example.com/a > out.txt")
+	out, code, _ := s.Run("nmap -sS 10.0.0.1 > out.txt")
 	if code != 127 {
 		t.Fatalf("expected code 127, got %d", code)
 	}
-	if out != "bash: wget: command not found" {
+	if out != "bash: nmap: command not found" {
 		t.Fatalf("stdout-only redirect should not have hidden the error text, got %q", out)
 	}
 }
 
 func TestTwoGreaterAmpOneMergesStderrIntoStdout(t *testing.T) {
 	s := NewInterpreter("ubuntu")
-	out, code, _ := s.Run("wget http://example.com/a 2>&1")
+	out, code, _ := s.Run("nmap -sS 10.0.0.1 2>&1")
 	if code != 127 {
 		t.Fatalf("expected code 127, got %d", code)
 	}
-	if out != "bash: wget: command not found" {
+	if out != "bash: nmap: command not found" {
 		t.Fatalf("2>&1 should still show the message on the terminal (nothing to merge away from), got %q", out)
 	}
 }
 
 func TestStderrMergedIntoPipeIsVisibleToNextStage(t *testing.T) {
 	s := NewInterpreter("ubuntu")
-	out, code, _ := s.Run("wget http://example.com/a 2>&1 | grep -i found")
+	out, code, _ := s.Run("nmap -sS 10.0.0.1 2>&1 | grep -i found")
 	if code != 0 {
 		t.Fatalf("grep should have matched the merged stderr text, got code=%d out=%q", code, out)
 	}
-	if out != "bash: wget: command not found" {
+	if out != "bash: nmap: command not found" {
 		t.Fatalf("expected grep to forward the merged error line, got %q", out)
 	}
 }
@@ -92,12 +92,12 @@ func TestErrorTextIsNotPipedByDefault(t *testing.T) {
 
 func TestAmpGreaterCombinesBothStreamsIntoOneFile(t *testing.T) {
 	s := NewInterpreter("ubuntu")
-	out, code, _ := s.Run("wget http://example.com/a &>/tmp/both")
+	out, code, _ := s.Run("nmap -sS 10.0.0.1 &>/tmp/both")
 	if out != "" || code != 127 {
 		t.Fatalf("&>/tmp/both = %q (code %d), want empty terminal output, code 127", out, code)
 	}
 	catOut, catCode, _ := s.Run("cat /tmp/both")
-	if catCode != 0 || strings.TrimSpace(catOut) != "bash: wget: command not found" {
+	if catCode != 0 || strings.TrimSpace(catOut) != "bash: nmap: command not found" {
 		t.Fatalf("/tmp/both = %q (code %d), want the command-not-found message", catOut, catCode)
 	}
 }

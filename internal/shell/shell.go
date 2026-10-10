@@ -647,6 +647,12 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 	case "cp", "mv":
 		return s.cpBuiltin(cmd, args)
 
+	case "wget":
+		return wgetBuiltin(args)
+
+	case "curl":
+		return curlBuiltin(args)
+
 	default:
 		if strings.Contains(cmd, "/") {
 			return s.execPath(cmd, args, bait, action, stdin)

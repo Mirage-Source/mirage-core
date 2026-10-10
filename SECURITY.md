@@ -21,14 +21,15 @@ knob, regardless of which deception action is active:
 - **No outbound connection from the simulated shell ever completes.** This
   holds structurally, not just by policy: `internal/shell` imports no
   networking package (no `net`, `net/http`) and no process-execution package
-  (no `os/exec`). Every command is dispatched from a fixed whitelist (`echo`,
-  `whoami`, `pwd`, `hostname`, `id`, `uname`, `export`, `test`, `cat`, `ls`,
-  `cd`, `grep`, `head`, `tail`, `wc`, `which`, `find`, `ps`, `netstat`,
-  `crontab`, `exit`); anything else -- `wget`, `curl`, `nc`, `ssh`, `scp`,
-  `telnet`, `ping`, a Python one-liner opening a socket -- falls through to
-  the same `"command not found"` response every other unrecognized command
-  gets. There is no code path in the shell that can dial out, regardless of
-  what an attacker types.
+  (no `os/exec`). Every command is dispatched from a fixed whitelist
+  (`internal/shell/known_builtins.go`). File commands (`chmod`, `rm`, `cp`,
+  ...) only touch the session's in-memory overlay. `wget` and `curl` exist
+  but always fail the way they would on a host with no outbound access
+  (name resolution failure or connection timeout, non-zero exit); they never
+  report a download as successful and never create a file. Anything else --
+  `nc`, `ssh`, `scp`, `telnet`, `ping`, a Python one-liner opening a socket --
+  gets `"command not found"`. There is no code path in the shell that can
+  dial out, regardless of what an attacker types.
 - **The LLM completion fallback never answers an egress-flavored command.**
   When `MIRAGE_LLM_SHELL_ENABLED=true`, a command with no builtin may be
   answered with generated output instead of `"command not found"` (see
@@ -72,8 +73,7 @@ This is enforced as a regression, not just documented: `internal/shell`'s
 `TestShellPackageHasNoEgressCapableImports` fails the build if the package
 ever imports a networking/exec package, `TestNetworkFlavoredCommandsNeverAttemptRealEgress`
 runs a battery of network/exec-flavored commands through the interpreter and
-asserts each resolves immediately to the simulated `"command not found"`
-path, and `internal/deception`'s `TestFakeSuccessNeverMasksARealAttempt`
+asserts each fails immediately and never exits 0, and `internal/deception`'s `TestFakeSuccessNeverMasksARealAttempt`
 locks in that `FAKE_SUCCESS` applied on top still completes immediately with
 empty output.
 

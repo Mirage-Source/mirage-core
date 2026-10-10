@@ -43,6 +43,8 @@ var knownBuiltins = map[string]struct{}{
 	"touch":    {},
 	"cp":       {},
 	"mv":       {},
+	"wget":     {},
+	"curl":     {},
 }
 
 // IsKnownBuiltin reports whether execBuiltin has a case for name -- i.e.
