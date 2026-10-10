@@ -137,3 +137,11 @@ func TestShouldAttemptCompletionLeavesFilePathsToTheInterpreter(t *testing.T) {
 		}
 	}
 }
+
+func TestShouldAttemptCompletionLeavesShellSyntaxToTheInterpreter(t *testing.T) {
+	for _, line := range []string{"fi", "esac", "}", "{", "then", "else", "if true", "case x in"} {
+		if _, ok := ShouldAttemptCompletion(line); ok {
+			t.Errorf("ShouldAttemptCompletion(%q) = true, want false", line)
+		}
+	}
+}

@@ -229,133 +229,111 @@ func (s *Interpreter) RunWithDeception(line, action string) (output string, code
 }
 
 func (s *Interpreter) evalLine(line string, depth int, bait *[]BaitHit, action string) (string, int) {
-	stmts := splitStatements(line)
-
+	items, err := parseStatements(splitStatements(line))
+	if err != nil {
+		return err.Error(), 2
+	}
 	var outputs []string
-	lastExit := 0
+	code := s.runItems(items, depth, bait, action, &outputs)
+	return strings.Join(outputs, "\r\n"), code
+}
 
-	for i, st := range stmts {
-		if i > 0 {
-			switch st.Sep {
-			case "&&":
-				if lastExit != 0 {
-					continue
-				}
-			case "||":
-				if lastExit == 0 {
-					continue
-				}
+// execStatement runs one statement (possibly a pipeline). ran is false when
+// the statement had no words, which leaves the previous exit status alone.
+func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, action string) (out string, code int, ran bool) {
+	stages := splitPipeline(text)
+
+	// NAME=value assignment only applies to a lone, non-piped statement --
+	// real bash treats `FOO=bar | baz` as a pipeline, not an assignment.
+	if len(stages) == 1 {
+		words := tokenizeWords(stages[0])
+		resolved := make([]string, 0, len(words))
+		for _, w := range words {
+			resolved = append(resolved, s.substitute(w, depth, bait, action))
+		}
+		if len(resolved) == 0 {
+			return "", 0, false
+		}
+		if isAssignmentOnly(resolved) {
+			for _, w := range resolved {
+				k, v, _ := strings.Cut(w, "=")
+				s.Env[k] = v
 			}
+			return "", 0, true
 		}
 
-		stages := splitPipeline(st.Text)
-
-		// NAME=value assignment only applies to a lone, non-piped statement --
-		// real bash treats `FOO=bar | baz` as a pipeline, not an assignment.
-		if len(stages) == 1 {
-			words := tokenizeWords(stages[0])
-			resolved := make([]string, 0, len(words))
-			for _, w := range words {
-				resolved = append(resolved, s.substitute(w, depth, bait, action))
-			}
-			if len(resolved) == 0 {
-				continue
-			}
-			if isAssignmentOnly(resolved) {
-				for _, w := range resolved {
-					k, v, _ := strings.Cut(w, "=")
-					s.Env[k] = v
-				}
-				lastExit = 0
-				continue
-			}
-
-			cmdWords, red := extractRedirects(resolved)
-			cmdWords = stripAssignments(cmdWords)
-			if len(cmdWords) == 0 {
-				continue
-			}
-			var stdin *string
-			if red.stdinFile != "" {
-				in, ok := s.readStdinFile(red.stdinFile)
-				if !ok {
-					outputs = append(outputs, red.stdinFile+": No such file or directory")
-					lastExit = 1
-					continue
-				}
-				stdin = &in
-			}
-			out, code := s.execBuiltin(cmdWords[0], cmdWords[1:], bait, action, stdin)
-			errChan := isErrorChannel(cmdWords[0], code) && !red.mergeStderrToStdout
-			out, ok := s.routeStageOutput(out, errChan, red, true)
-			lastExit = code
+		cmdWords, red := extractRedirects(resolved)
+		cmdWords = stripAssignments(cmdWords)
+		if len(cmdWords) == 0 {
+			return "", 0, false
+		}
+		var stdin *string
+		if red.stdinFile != "" {
+			in, ok := s.readStdinFile(red.stdinFile)
 			if !ok {
-				outputs = append(outputs, out)
-				lastExit = 1
-				continue
+				return red.stdinFile + ": No such file or directory", 1, true
 			}
-			if out != "" {
-				outputs = append(outputs, out)
-			}
+			stdin = &in
+		}
+		out, code := s.execBuiltin(cmdWords[0], cmdWords[1:], bait, action, stdin)
+		errChan := isErrorChannel(cmdWords[0], code) && !red.mergeStderrToStdout
+		out, ok := s.routeStageOutput(out, errChan, red, true)
+		if !ok {
+			return out, 1, true
+		}
+		return out, code, true
+	}
+
+	// A real pipeline: each stage after the first gets the previous
+	// stage's stdout as its own stdin; only the last stage's output
+	// reaches the attacker's terminal.
+	var stageOut string
+	var stageCode int
+	var pipedIn *string
+	for i, stageText := range stages {
+		words := tokenizeWords(stageText)
+		resolved := make([]string, 0, len(words))
+		for _, w := range words {
+			resolved = append(resolved, s.substitute(w, depth, bait, action))
+		}
+		cmdWords, red := extractRedirects(resolved)
+		cmdWords = stripAssignments(cmdWords)
+		if len(cmdWords) == 0 {
+			stageOut, stageCode, pipedIn = "", 0, nil
 			continue
 		}
 
-		// A real pipeline: each stage after the first gets the previous
-		// stage's stdout as its own stdin; only the last stage's output
-		// reaches the attacker's terminal.
-		var stageOut string
-		var stageCode int
-		var pipedIn *string
-		for i, stageText := range stages {
-			words := tokenizeWords(stageText)
-			resolved := make([]string, 0, len(words))
-			for _, w := range words {
-				resolved = append(resolved, s.substitute(w, depth, bait, action))
-			}
-			cmdWords, red := extractRedirects(resolved)
-			cmdWords = stripAssignments(cmdWords)
-			if len(cmdWords) == 0 {
-				stageOut, stageCode, pipedIn = "", 0, nil
-				continue
-			}
-
-			stdin := pipedIn
-			if red.stdinFile != "" {
-				in, ok := s.readStdinFile(red.stdinFile)
-				if !ok {
-					stageOut, stageCode = red.stdinFile+": No such file or directory", 1
-					break
-				}
-				stdin = &in
-			}
-
-			stageOut, stageCode = s.execBuiltin(cmdWords[0], cmdWords[1:], bait, action, stdin)
-			// Error-channel content (e.g. "command not found") is this
-			// shell's stand-in for stderr, which a plain `|` never captures
-			// -- unless this stage explicitly merged it with 2>&1.
-			errChan := isErrorChannel(cmdWords[0], stageCode) && !red.mergeStderrToStdout
-			if errChan {
-				pipedIn = nil
-			} else {
-				// Builtins format output as \r\n for terminal display; a
-				// pipe needs raw \n content.
-				forwarded := strings.ReplaceAll(stageOut, "\r\n", "\n")
-				pipedIn = &forwarded
-			}
-
-			var ok bool
-			stageOut, ok = s.routeStageOutput(stageOut, errChan, red, i == len(stages)-1)
+		stdin := pipedIn
+		if red.stdinFile != "" {
+			in, ok := s.readStdinFile(red.stdinFile)
 			if !ok {
-				stageCode = 1
+				stageOut, stageCode = red.stdinFile+": No such file or directory", 1
+				break
 			}
+			stdin = &in
 		}
-		lastExit = stageCode
-		if stageOut != "" {
-			outputs = append(outputs, stageOut)
+
+		stageOut, stageCode = s.execBuiltin(cmdWords[0], cmdWords[1:], bait, action, stdin)
+		// Error-channel content (e.g. "command not found") is this
+		// shell's stand-in for stderr, which a plain `|` never captures
+		// -- unless this stage explicitly merged it with 2>&1.
+		errChan := isErrorChannel(cmdWords[0], stageCode) && !red.mergeStderrToStdout
+		if errChan {
+			pipedIn = nil
+		} else {
+			// Builtins format output as \r\n for terminal display; a
+			// pipe needs raw \n content.
+			forwarded := strings.ReplaceAll(stageOut, "\r\n", "\n")
+			pipedIn = &forwarded
+		}
+
+		var ok bool
+		stageOut, ok = s.routeStageOutput(stageOut, errChan, red, i == len(stages)-1)
+		if !ok {
+			stageCode = 1
 		}
 	}
-
-	return strings.Join(outputs, "\r\n"), lastExit
+	return stageOut, stageCode, true
 }
 
 // isErrorChannel reports whether cmd's output at this exit code is this
@@ -652,6 +630,12 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 
 	case "curl":
 		return curlBuiltin(args)
+
+	case "true", ":":
+		return "", 0
+
+	case "false":
+		return "", 1
 
 	case "sh", "bash":
 		return s.shBuiltin(cmd, args, bait, action, stdin)

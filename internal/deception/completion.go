@@ -64,6 +64,9 @@ func ShouldAttemptCompletion(line string) (name string, ok bool) {
 	}
 	name = fields[0]
 
+	if shell.IsReservedWord(name) {
+		return "", false
+	}
 	if strings.Contains(name, "/") && !shell.InBinDir(name) {
 		return "", false
 	}

@@ -60,6 +60,10 @@ func splitStatements(line string) []statement {
 		case parenDepth == 0 && c == ';':
 			flush()
 			sep = ";"
+			if i+1 < len(runes) && runes[i+1] == ';' {
+				sep = ";;"
+				i++
+			}
 		case parenDepth == 0 && (c == '\n' || c == '\r'):
 			// A newline right after an operator (`a &&\nb`) or another newline
 			// continues the chain rather than starting a `;` statement.
