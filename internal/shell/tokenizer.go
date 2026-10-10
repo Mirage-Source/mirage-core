@@ -288,12 +288,22 @@ type Invocation struct {
 	Args []string
 }
 
-// ParseCommands lists every simple command in line, across statements and
-// pipeline stages, without evaluating anything.
+// ParseCommands lists every simple command in line, across statements,
+// pipeline stages and if/case/{ } bodies, without evaluating anything. A line
+// that fails to parse is read as a flat list of statements.
 func ParseCommands(line string) []Invocation {
+	stmts := splitStatements(line)
+	var texts []string
+	if items, err := parseStatements(append([]statement{}, stmts...)); err == nil {
+		texts = statementTexts(items, nil)
+	} else {
+		for _, st := range stmts {
+			texts = append(texts, st.Text)
+		}
+	}
 	var out []Invocation
-	for _, st := range splitStatements(line) {
-		for _, stage := range splitPipeline(st.Text) {
+	for _, text := range texts {
+		for _, stage := range splitPipeline(text) {
 			words, _ := extractRedirects(tokenizeWords(stage))
 			for len(words) > 0 && isAssignmentOnly(words[:1]) {
 				words = words[1:]
@@ -305,6 +315,28 @@ func ParseCommands(line string) []Invocation {
 				Name: path.Base(path.Clean(words[0])),
 				Args: append([]string{}, words[1:]...),
 			})
+		}
+	}
+	return out
+}
+
+func statementTexts(items []item, out []string) []string {
+	for _, it := range items {
+		switch it.kind {
+		case kindSimple:
+			out = append(out, it.text)
+		case kindGroup:
+			out = statementTexts(it.body, out)
+		case kindIf:
+			for i := range it.conds {
+				out = statementTexts(it.conds[i], out)
+				out = statementTexts(it.bodies[i], out)
+			}
+			out = statementTexts(it.elseBody, out)
+		case kindCase:
+			for _, arm := range it.arms {
+				out = statementTexts(arm.body, out)
+			}
 		}
 	}
 	return out

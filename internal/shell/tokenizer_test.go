@@ -49,6 +49,10 @@ func TestParseCommands(t *testing.T) {
 		{"LC_ALL=C HISTFILE=/dev/null ls -la", []string{"ls"}, []string{"-la"}},
 		{"cd /tmp\n./bot.x86 > /dev/null 2>&1", []string{"cd", "bot.x86"}, []string{"/tmp"}},
 		{"'/usr/bin/id'", []string{"id"}, []string{}},
+		{"if [ -f /x ]; then wget a; else curl b; fi", []string{"[", "wget", "curl"}, []string{"-f", "/x", "]"}},
+		{"case $(uname -m) in x86_64) wget a;; *) curl b;; esac", []string{"wget", "curl"}, []string{"a"}},
+		{"{ cd /tmp; sh x; }", []string{"cd", "sh"}, []string{"/tmp"}},
+		{"echo a; fi", []string{"echo", "fi"}, []string{"a"}},
 		{"FOO=bar", nil, nil},
 		{"   ", nil, nil},
 	}
