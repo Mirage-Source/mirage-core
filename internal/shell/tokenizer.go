@@ -5,8 +5,8 @@ import (
 	"strings"
 )
 
-// statement is one command in a `;`/newline/`&&`/`||`-separated chain; a
-// newline is recorded as ";". Sep is the
+// statement is one command in a `;`/newline/`&`/`&&`/`||`-separated chain;
+// a newline or background `&` is recorded as ";". Sep is the
 // operator that preceded it ("" for the first statement in a line).
 type statement struct {
 	Sep  string // "", ";", "&&", "||"
@@ -75,6 +75,9 @@ func splitStatements(line string) []statement {
 			flush()
 			sep = "||"
 			i++
+		case parenDepth == 0 && c == '&' && !(i+1 < len(runes) && runes[i+1] == '>') && !(i > 0 && runes[i-1] == '>'):
+			flush()
+			sep = ";"
 		default:
 			cur.WriteByte(c)
 		}

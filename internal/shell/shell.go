@@ -653,6 +653,30 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 	case "curl":
 		return curlBuiltin(args)
 
+	case "sh", "bash":
+		return s.shBuiltin(cmd, args, bait, action, stdin)
+
+	case "nohup":
+		if len(args) == 0 {
+			return "nohup: missing operand\r\nTry 'nohup --help' for more information.", 125
+		}
+		return s.execBuiltin(args[0], args[1:], bait, action, stdin)
+
+	case "sleep":
+		if len(args) == 0 {
+			return "sleep: missing operand\r\nTry 'sleep --help' for more information.", 1
+		}
+		return "", 0
+
+	case "kill":
+		return s.killBuiltin(args)
+
+	case "pkill":
+		return "", 1
+
+	case "killall":
+		return killallBuiltin(args)
+
 	default:
 		if strings.Contains(cmd, "/") {
 			return s.execPath(cmd, args, bait, action, stdin)

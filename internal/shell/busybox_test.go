@@ -72,7 +72,6 @@ func TestBusyboxOffLeavesSSHOutputUnchanged(t *testing.T) {
 	for line, want := range map[string]string{
 		"/bin/busybox ECCHI": "bash: /bin/busybox: No such file or directory",
 		"busybox":            "bash: busybox: command not found",
-		"sh":                 "bash: sh: command not found",
 	} {
 		out, code, _ := s.Run(line)
 		if out != want || code != 127 {
