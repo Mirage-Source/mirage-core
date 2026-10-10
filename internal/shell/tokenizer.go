@@ -2,7 +2,8 @@ package shell
 
 import "strings"
 
-// statement is one command in a `;`/`&&`/`||`-separated chain. Sep is the
+// statement is one command in a `;`/newline/`&&`/`||`-separated chain; a
+// newline is recorded as ";". Sep is the
 // operator that preceded it ("" for the first statement in a line).
 type statement struct {
 	Sep  string // "", ";", "&&", "||"
@@ -56,6 +57,13 @@ func splitStatements(line string) []statement {
 		case parenDepth == 0 && c == ';':
 			flush()
 			sep = ";"
+		case parenDepth == 0 && (c == '\n' || c == '\r'):
+			// A newline right after an operator (`a &&\nb`) or another newline
+			// continues the chain rather than starting a `;` statement.
+			if strings.TrimSpace(cur.String()) != "" {
+				flush()
+				sep = ";"
+			}
 		case parenDepth == 0 && c == '&' && i+1 < len(runes) && runes[i+1] == '&':
 			flush()
 			sep = "&&"
