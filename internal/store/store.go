@@ -15,17 +15,7 @@ import (
 )
 
 func Connect() (*sql.DB, error) {
-	host := os.Getenv("DB_HOST")
-	port := os.Getenv("DB_PORT")
-	user := os.Getenv("DB_USER")
-	password := os.Getenv("DB_PASSWORD")
-	dbname := os.Getenv("DB_NAME")
-
-	connStr := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname,
-	)
-	db, err := sql.Open("postgres", connStr)
+	db, err := sql.Open("postgres", connString(os.Getenv("DB_NAME")))
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
@@ -43,7 +33,18 @@ func Connect() (*sql.DB, error) {
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("pinging database: %w", err)
 	}
+	if err := Migrate(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrating database: %w", err)
+	}
 	return db, nil
+}
+
+func connString(dbname string) string {
+	return fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		os.Getenv("DB_HOST"), os.Getenv("DB_PORT"), os.Getenv("DB_USER"), os.Getenv("DB_PASSWORD"), dbname,
+	)
 }
 
 func envInt(key string, fallback int) int {

@@ -25,6 +25,37 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS stix_bundle JSONB;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS severity TEXT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS recommended_actions JSONB;
 
+CREATE TABLE IF NOT EXISTS session_embeddings (
+    session_id TEXT PRIMARY KEY
+        REFERENCES sessions(session_id) ON DELETE CASCADE,
+
+    model_version TEXT,
+    embedding_dim INTEGER,
+
+    embedding JSONB,
+
+    tool_signature TEXT,
+    timing_label TEXT,
+    timing_cv DOUBLE PRECISION,
+    timing_median_ms DOUBLE PRECISION,
+
+    trajectory_path_length DOUBLE PRECISION,
+    trajectory_mean_speed DOUBLE PRECISION,
+    trajectory_total_curvature DOUBLE PRECISION,
+    trajectory_straightness DOUBLE PRECISION,
+    trajectory_convergence_step INTEGER,
+    intent_shift_count INTEGER,
+
+    shape_signature JSONB,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_embeddings_tool
+    ON session_embeddings(tool_signature);
+CREATE INDEX IF NOT EXISTS idx_session_embeddings_timing
+    ON session_embeddings(timing_label);
+
 DROP VIEW IF EXISTS enriched_sessions;
 
 CREATE VIEW enriched_sessions AS

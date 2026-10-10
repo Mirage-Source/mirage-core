@@ -1,4 +1,4 @@
-CREATE TABLE sessions (
+CREATE TABLE IF NOT EXISTS sessions (
     session_id TEXT PRIMARY KEY,
 
     schema_version TEXT NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE sessions (
     session_document JSONB
 );
 
-CREATE TABLE auth_attempts (
+CREATE TABLE IF NOT EXISTS auth_attempts (
     id BIGSERIAL PRIMARY KEY,
 
     session_id TEXT NOT NULL,
@@ -44,7 +44,7 @@ CREATE TABLE auth_attempts (
         ON DELETE CASCADE
 );
 
-CREATE TABLE commands (
+CREATE TABLE IF NOT EXISTS commands (
     event_id TEXT PRIMARY KEY,
 
     session_id TEXT NOT NULL,
@@ -66,7 +66,7 @@ CREATE TABLE commands (
         UNIQUE (session_id, sequence_number)
 );
 
-CREATE TABLE bait_interactions (
+CREATE TABLE IF NOT EXISTS bait_interactions (
     event_id TEXT PRIMARY KEY,
 
     session_id TEXT NOT NULL,
@@ -86,8 +86,8 @@ CREATE TABLE bait_interactions (
         REFERENCES commands(event_id)
 );
 
-CREATE INDEX idx_sessions_client_ip ON sessions(client_ip);
-CREATE INDEX idx_sessions_start_ms ON sessions(start_ms);
-CREATE INDEX idx_auth_attempts_session_id ON auth_attempts(session_id);
-CREATE INDEX idx_commands_session_id ON commands(session_id);
-CREATE INDEX idx_bait_interactions_session_id ON bait_interactions(session_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_client_ip ON sessions(client_ip);
+CREATE INDEX IF NOT EXISTS idx_sessions_start_ms ON sessions(start_ms);
+CREATE INDEX IF NOT EXISTS idx_auth_attempts_session_id ON auth_attempts(session_id);
+CREATE INDEX IF NOT EXISTS idx_commands_session_id ON commands(session_id);
+CREATE INDEX IF NOT EXISTS idx_bait_interactions_session_id ON bait_interactions(session_id);
