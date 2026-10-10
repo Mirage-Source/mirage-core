@@ -1,6 +1,9 @@
 package shell
 
-import "strings"
+import (
+	"path"
+	"strings"
+)
 
 // statement is one command in a `;`/newline/`&&`/`||`-separated chain; a
 // newline is recorded as ";". Sep is the
@@ -268,4 +271,34 @@ func tokenizeWords(text string) []string {
 	flush()
 
 	return words
+}
+
+// Invocation is one simple command from a line, as logged: Name is the
+// basename of the cleaned command path, with leading NAME=value words and
+// redirects dropped.
+type Invocation struct {
+	Name string
+	Args []string
+}
+
+// ParseCommands lists every simple command in line, across statements and
+// pipeline stages, without evaluating anything.
+func ParseCommands(line string) []Invocation {
+	var out []Invocation
+	for _, st := range splitStatements(line) {
+		for _, stage := range splitPipeline(st.Text) {
+			words, _ := extractRedirects(tokenizeWords(stage))
+			for len(words) > 0 && isAssignmentOnly(words[:1]) {
+				words = words[1:]
+			}
+			if len(words) == 0 {
+				continue
+			}
+			out = append(out, Invocation{
+				Name: path.Base(path.Clean(words[0])),
+				Args: append([]string{}, words[1:]...),
+			})
+		}
+	}
+	return out
 }
