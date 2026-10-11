@@ -325,7 +325,7 @@ func statementTexts(items []item, out []string) []string {
 		switch it.kind {
 		case kindSimple:
 			out = append(out, it.text)
-		case kindGroup:
+		case kindGroup, kindFor:
 			out = statementTexts(it.body, out)
 		case kindIf:
 			for i := range it.conds {

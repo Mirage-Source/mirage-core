@@ -554,6 +554,9 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 		return s.Hostname, 0
 
 	case "id":
+		if out, ok := s.idFlags(args); ok {
+			return out, 0
+		}
 		if s.Username == "root" {
 			return "uid=0(root) gid=0(root) groups=0(root)", 0
 		}
@@ -752,26 +755,73 @@ func (s *Interpreter) testBuiltin(cmd string, args []string) int {
 	if cmd == "[" && len(args) > 0 && args[len(args)-1] == "]" {
 		args = args[:len(args)-1]
 	}
-	if len(args) != 2 {
+	if len(args) > 0 && args[0] == "!" {
+		code := s.testBuiltin("test", args[1:])
+		if code == 2 {
+			return 2
+		}
+		return 1 - code
+	}
+	result := func(b bool) int {
+		if b {
+			return 0
+		}
+		return 1
+	}
+	switch len(args) {
+	case 0:
+		return 1
+	case 1:
+		return result(args[0] != "")
+	case 2:
+		flag, target := args[0], args[1]
+		_, n := s.lookup(target)
+		switch flag {
+		case "-f":
+			return result(n != nil && n.Type == NodeFile)
+		case "-d":
+			return result(n != nil && n.Type == NodeDir)
+		case "-e", "-r", "-w":
+			return result(n != nil)
+		case "-x":
+			return result(n != nil && strings.Contains(n.Mode, "x"))
+		case "-s":
+			return result(n != nil && sizeOf(n) > 0)
+		case "-z":
+			return result(target == "")
+		case "-n":
+			return result(target != "")
+		}
 		return 2
+	case 3:
+		a, op, b := args[0], args[1], args[2]
+		switch op {
+		case "=", "==":
+			return result(a == b)
+		case "!=":
+			return result(a != b)
+		}
+		x, errA := strconv.Atoi(a)
+		y, errB := strconv.Atoi(b)
+		if errA != nil || errB != nil {
+			return 2
+		}
+		switch op {
+		case "-eq":
+			return result(x == y)
+		case "-ne":
+			return result(x != y)
+		case "-lt":
+			return result(x < y)
+		case "-le":
+			return result(x <= y)
+		case "-gt":
+			return result(x > y)
+		case "-ge":
+			return result(x >= y)
+		}
 	}
-	flag, target := args[0], args[1]
-	_, n := s.lookup(target)
-	switch flag {
-	case "-f":
-		if n != nil && n.Type == NodeFile {
-			return 0
-		}
-	case "-d":
-		if n != nil && n.Type == NodeDir {
-			return 0
-		}
-	case "-e":
-		if n != nil {
-			return 0
-		}
-	}
-	return 1
+	return 2
 }
 
 func (s *Interpreter) catBuiltin(args []string, bait *[]BaitHit, action string, stdin *string) (string, int) {
@@ -1241,4 +1291,32 @@ func boolToExit(b bool) int {
 		return 0
 	}
 	return 1
+}
+
+func (s *Interpreter) idFlags(args []string) (string, bool) {
+	flags, _ := splitFlags(args)
+	if flags == "" {
+		return "", false
+	}
+	uid, name, groups := "1000", "ubuntu", "1000 27"
+	if s.Username == "root" {
+		uid, name, groups = "0", "root", "0"
+	}
+	named := strings.Contains(flags, "n")
+	switch {
+	case strings.Contains(flags, "u"), strings.Contains(flags, "g") && !strings.Contains(flags, "G"):
+		if named {
+			return name, true
+		}
+		return uid, true
+	case strings.Contains(flags, "G"):
+		if named {
+			if s.Username == "root" {
+				return "root", true
+			}
+			return "ubuntu sudo", true
+		}
+		return groups, true
+	}
+	return "", false
 }

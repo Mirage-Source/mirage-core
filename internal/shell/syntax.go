@@ -12,7 +12,10 @@ const (
 	kindIf
 	kindGroup
 	kindCase
+	kindFor
 )
+
+const maxLoopIterations = 1000
 
 type caseArm struct {
 	patterns []string
@@ -31,6 +34,7 @@ type item struct {
 	body     []item
 	word     string
 	arms     []caseArm
+	words    []string
 }
 
 type syntaxError string
@@ -42,12 +46,12 @@ func (e syntaxError) Error() string {
 	return "bash: syntax error near unexpected token `" + string(e) + "'"
 }
 
-var reservedWords = map[string]bool{"then": true, "elif": true, "else": true, "fi": true, "}": true, "esac": true}
+var reservedWords = map[string]bool{"then": true, "elif": true, "else": true, "fi": true, "}": true, "esac": true, "do": true, "done": true}
 
 // IsReservedWord reports whether name is shell syntax the interpreter parses
 // itself (if/case/{ } and their closing words) rather than a command.
 func IsReservedWord(name string) bool {
-	return reservedWords[name] || name == "if" || name == "case" || name == "{"
+	return reservedWords[name] || name == "if" || name == "case" || name == "for" || name == "{"
 }
 
 func splitKeyword(text string) (string, string) {
@@ -194,6 +198,8 @@ func (p *parser) item() (item, error) {
 		return item{kind: kindGroup, sep: st.Sep, body: body}, nil
 	case "case":
 		return p.caseItem(st.Sep, rest)
+	case "for":
+		return p.forItem(st.Sep, rest)
 	}
 	p.pos++
 	return item{kind: kindSimple, sep: st.Sep, text: st.Text}, nil
@@ -271,6 +277,30 @@ func (p *parser) caseItem(sep, rest string) (item, error) {
 	}
 }
 
+func (p *parser) forItem(sep, rest string) (item, error) {
+	name, rest := firstRawWord(rest)
+	in, rest := splitKeyword(rest)
+	if name == "" || in != "in" {
+		return item{}, syntaxError(in)
+	}
+	it := item{kind: kindFor, sep: sep, word: name}
+	for rest != "" {
+		var w string
+		w, rest = firstRawWord(rest)
+		it.words = append(it.words, w)
+	}
+	p.pos++
+	if err := p.expect("do"); err != nil {
+		return item{}, err
+	}
+	body, err := p.nonEmpty(map[string]bool{"done": true}, false)
+	if err != nil {
+		return item{}, err
+	}
+	it.body = body
+	return it, p.expect("done")
+}
+
 func (s *Interpreter) expandWord(raw string, depth int, bait *[]BaitHit, action string) string {
 	words := tokenizeWords(raw)
 	for i, w := range words {
@@ -309,6 +339,24 @@ func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action 
 			}
 			if !taken && it.elseBody != nil {
 				last = s.runItems(it.elseBody, depth, bait, action, outputs)
+			}
+		case kindFor:
+			last = 0
+			var values []string
+			for _, raw := range it.words {
+				v := s.expandWord(raw, depth, bait, action)
+				if strings.Contains(raw, "$") && raw[0] != '"' && raw[0] != '\'' {
+					values = append(values, strings.Fields(v)...)
+				} else {
+					values = append(values, v)
+				}
+			}
+			for n, v := range values {
+				if n == maxLoopIterations {
+					break
+				}
+				s.Env[it.word] = v
+				last = s.runItems(it.body, depth, bait, action, outputs)
 			}
 		case kindCase:
 			last = 0
