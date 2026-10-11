@@ -157,6 +157,8 @@ type Interpreter struct {
 	overlay         map[string]*Node
 	overlayChildren map[string][]string
 	nesting         int
+
+	noTrailingNewline bool
 }
 
 // NewInterpreter derives the emulated identity from the username the
@@ -389,7 +391,7 @@ func (s *Interpreter) writeRedirectTarget(target, content string, appendMode boo
 		return
 	}
 	content = strings.ReplaceAll(content, "\r\n", "\n")
-	if content != "" && !strings.HasSuffix(content, "\n") {
+	if content != "" && !strings.HasSuffix(content, "\n") && !s.noTrailingNewline {
 		content += "\n"
 	}
 	s.writeFile(target, content, appendMode)
@@ -406,7 +408,7 @@ func (s *Interpreter) applyStdoutRedirect(out string, red redirects) (string, bo
 	// Builtins return output without a trailing newline (the terminal
 	// display path adds it); a file needs it explicit so a later append
 	// doesn't run two writes together on one line.
-	if content != "" && !strings.HasSuffix(content, "\n") {
+	if content != "" && !strings.HasSuffix(content, "\n") && !s.noTrailingNewline {
 		content += "\n"
 	}
 	if msg, code := s.writeFile(red.stdoutFile, content, red.appendMode); code != 0 {
@@ -527,6 +529,7 @@ func matchingParen(s string, pos int) int {
 // invocation is piped-into or `<`-redirected; most builtins ignore it, only
 // cat/grep/head/tail/wc read it.
 func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, action string, stdin *string) (string, int) {
+	s.noTrailingNewline = false
 	if s.Busybox {
 		if out, code, ok := s.busyboxBuiltin(cmd, args, bait, action, stdin); ok {
 			return out, code
@@ -537,7 +540,9 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 		return "", 0
 
 	case "echo":
-		return strings.Join(args, " "), 0
+		out, noNewline := echoBuiltin(args)
+		s.noTrailingNewline = noNewline
+		return out, 0
 
 	case "whoami":
 		return s.Username, 0
