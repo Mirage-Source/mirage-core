@@ -27,7 +27,8 @@ knob, regardless of which deception action is active:
   exist but always fail the way they would on a host with no outbound access
   (name resolution failure, connection timeout or 100% packet loss, non-zero
   exit); they never report a network operation as successful and never
-  create a file. Anything
+  create a file. `perl` never runs code: it answers `-v`, missing scripts and
+  a lone literal `print`, and otherwise exits 0 with no output. Anything
   else -- `nc`, `ssh`, `scp`, `telnet`, a Python one-liner opening a socket --
   gets `"command not found"`. There is no code path in the shell that can
   dial out, regardless of what an attacker types.

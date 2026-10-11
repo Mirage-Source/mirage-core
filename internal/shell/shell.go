@@ -642,6 +642,9 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 	case "ping":
 		return pingBuiltin(args)
 
+	case "perl":
+		return s.perlBuiltin(args)
+
 	case "true", ":":
 		return "", 0
 
