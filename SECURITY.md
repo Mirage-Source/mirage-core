@@ -23,11 +23,12 @@ knob, regardless of which deception action is active:
   networking package (no `net`, `net/http`) and no process-execution package
   (no `os/exec`). Every command is dispatched from a fixed whitelist
   (`internal/shell/known_builtins.go`). File commands (`chmod`, `rm`, `cp`,
-  ...) only touch the session's in-memory overlay. `wget` and `curl` exist
-  but always fail the way they would on a host with no outbound access
-  (name resolution failure or connection timeout, non-zero exit); they never
-  report a download as successful and never create a file. Anything else --
-  `nc`, `ssh`, `scp`, `telnet`, `ping`, a Python one-liner opening a socket --
+  ...) only touch the session's in-memory overlay. `wget`, `curl` and `ping`
+  exist but always fail the way they would on a host with no outbound access
+  (name resolution failure, connection timeout or 100% packet loss, non-zero
+  exit); they never report a network operation as successful and never
+  create a file. Anything
+  else -- `nc`, `ssh`, `scp`, `telnet`, a Python one-liner opening a socket --
   gets `"command not found"`. There is no code path in the shell that can
   dial out, regardless of what an attacker types.
 - **The LLM completion fallback never answers an egress-flavored command.**

@@ -1,12 +1,14 @@
 package shell
 
 import (
+	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
 
-// wget and curl exist, as on a stock Ubuntu image, but fail the way they
+// wget, curl and ping exist, as on a stock Ubuntu image, but fail the way they
 // would on a host with no outbound access. See SECURITY.md: a download is
 // never reported as successful.
 
@@ -144,4 +146,42 @@ func curlBuiltin(args []string) (string, int) {
 		return "", code
 	}
 	return msg, code
+}
+
+// pingBuiltin reports total packet loss. Without -c a real ping never
+// exits; this stops after four probes.
+func pingBuiltin(args []string) (string, int) {
+	count := 4
+	var dest string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "-c" && i+1 < len(args):
+			i++
+			if n, err := strconv.Atoi(args[i]); err == nil && n > 0 {
+				count = n
+			}
+		case strings.HasPrefix(a, "-c") && len(a) > 2:
+			if n, err := strconv.Atoi(a[2:]); err == nil && n > 0 {
+				count = n
+			}
+		case len(a) == 2 && strings.Contains("WwisItQlmMp", a[1:]) && a[0] == '-':
+			i++
+		case strings.HasPrefix(a, "-"):
+		default:
+			dest = a
+		}
+	}
+	if dest == "" {
+		return "ping: usage error: Destination address required", 2
+	}
+	if !isIPLiteral(dest) {
+		return "ping: " + dest + ": Temporary failure in name resolution", 2
+	}
+	return joinLines([]string{
+		"PING " + dest + " (" + dest + ") 56(84) bytes of data.",
+		"",
+		"--- " + dest + " ping statistics ---",
+		fmt.Sprintf("%d packets transmitted, 0 received, 100%% packet loss, time %dms", count, (count-1)*1023),
+	}), 1
 }

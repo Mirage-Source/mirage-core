@@ -55,6 +55,7 @@ var knownBuiltins = map[string]struct{}{
 	"true":     {},
 	":":        {},
 	"false":    {},
+	"ping":     {},
 }
 
 // IsKnownBuiltin reports whether execBuiltin has a case for name -- i.e.

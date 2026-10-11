@@ -54,7 +54,7 @@ func TestShellPackageHasNoEgressCapableImports(t *testing.T) {
 
 // TestNetworkFlavoredCommandsNeverAttemptRealEgress runs every command an
 // attacker might use to test for real egress and asserts each returns
-// immediately and never succeeds: wget/curl with their own connection
+// immediately and never succeeds: wget/curl/ping with their own connection
 // failure, everything else as "command not found". The timeout catches a
 // real dial even if the import list stays clean.
 func TestNetworkFlavoredCommandsNeverAttemptRealEgress(t *testing.T) {
@@ -91,7 +91,7 @@ func TestNetworkFlavoredCommandsNeverAttemptRealEgress(t *testing.T) {
 					cmd,
 				)
 			}
-			emulated := strings.HasPrefix(cmd, "wget ") || strings.HasPrefix(cmd, "curl ")
+			emulated := strings.HasPrefix(cmd, "wget ") || strings.HasPrefix(cmd, "curl ") || strings.HasPrefix(cmd, "ping ")
 			if code == 0 || (!emulated && code != 127) {
 				t.Fatalf("%q must fail (127 unless emulated), got code=%d out=%q", cmd, code, out)
 			}

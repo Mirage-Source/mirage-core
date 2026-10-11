@@ -348,7 +348,7 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 // weren't found) while its printed output is still real matches on stdout,
 // never error text -- see whichBuiltin.
 func isErrorChannel(cmd string, code int) bool {
-	if cmd == "which" {
+	if cmd == "which" || (cmd == "ping" && code == 1) {
 		return false
 	}
 	return code != 0
@@ -638,6 +638,9 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 
 	case "curl":
 		return curlBuiltin(args)
+
+	case "ping":
+		return pingBuiltin(args)
 
 	case "true", ":":
 		return "", 0
