@@ -72,3 +72,21 @@ func TestParseCommands(t *testing.T) {
 		})
 	}
 }
+
+func TestNeedsContinuation(t *testing.T) {
+	for line, want := range map[string]bool{
+		"echo hi":                   false,
+		"echo '-----BEGIN KEY-----": true,
+		`echo "a`:                   true,
+		`echo "it's"`:               false,
+		`echo 'a' "b\"c"`:           false,
+		`echo "a\"`:                 true,
+		"echo a \\":                 true,
+		"echo 'x\ny'":               false,
+		"echo 'x\ny":                true,
+	} {
+		if got := NeedsContinuation(line); got != want {
+			t.Errorf("NeedsContinuation(%q) = %v, want %v", line, got, want)
+		}
+	}
+}

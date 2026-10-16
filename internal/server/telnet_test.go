@@ -388,3 +388,22 @@ func TestTelnetPresentsTheDVR(t *testing.T) {
 		t.Errorf("after login = %q, want armv7l and ash errors", rest)
 	}
 }
+
+// An unclosed quote continues on the next line behind ash's "> " prompt,
+// so a multi-line echo (an SSH key, from 16 IPs) is one command.
+func TestTelnetQuotedInputContinuesAcrossLines(t *testing.T) {
+	h := startTelnetHarness(t, testTelnetConfig())
+	h.send([]byte("root\r\nxc3511\r\n"))
+	h.readUntil("# ")
+	h.send([]byte("echo '-----BEGIN KEY-----\r\n"))
+	h.readUntil("> ")
+	h.send([]byte("abc\r\n-----END KEY-----' > /tmp/k\r\ncat /tmp/k\r\nexit\r\n"))
+	out := h.readUntil("logout")
+	s := h.wait()
+	if got := parsedCommands(s); strings.Join(got, ",") != "echo,cat,exit" {
+		t.Errorf("commands = %v, want [echo cat exit]", got)
+	}
+	if !bytes.Contains(out, []byte("-----BEGIN KEY-----\r\nabc\r\n-----END KEY-----")) {
+		t.Errorf("cat output = %q", out)
+	}
+}

@@ -344,3 +344,31 @@ func statementTexts(items []item, out []string) []string {
 	}
 	return out
 }
+
+// NeedsContinuation reports whether line is incomplete the way an
+// interactive shell sees it -- an unclosed quote or a trailing backslash --
+// so the caller should read another line before running it.
+func NeedsContinuation(line string) bool {
+	var quote byte
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case quote == '\'':
+			if c == '\'' {
+				quote = 0
+			}
+		case c == '\\':
+			if i == len(line)-1 {
+				return true
+			}
+			i++
+		case quote == '"':
+			if c == '"' {
+				quote = 0
+			}
+		case c == '\'' || c == '"':
+			quote = c
+		}
+	}
+	return quote != 0
+}

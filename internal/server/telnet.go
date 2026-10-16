@@ -34,6 +34,9 @@ const (
 	telnetMaxConcurrentConnections = 100
 )
 
+// maxContinuationLines bounds one multi-line command (64 * MaxInput bytes).
+const maxContinuationLines = 64
+
 func newTelnetGuard() *sessionGuard {
 	return &sessionGuard{sess: newTelnetSession(), maxCommands: telnetMaxCommands, maxInputBytes: telnetMaxInputBytes}
 }
@@ -205,6 +208,18 @@ func handleTelnet(conn net.Conn, cfg telnetConfig, guard *sessionGuard) {
 		}
 		ts.write(interp.Prompt())
 		line, err := ts.readLine(MaxInput, true)
+		// An unclosed quote or trailing backslash continues behind ash's
+		// PS2, so a multi-line echo arrives as the one command it is.
+		for n := 0; err == nil && n < maxContinuationLines && shell.NeedsContinuation(line); n++ {
+			ts.write("> ")
+			var next string
+			next, err = ts.readLine(MaxInput, true)
+			if strings.HasSuffix(line, "\\") {
+				line = line[:len(line)-1] + next
+			} else {
+				line += "\n" + next
+			}
+		}
 		if err != nil {
 			guard.recordOutcome(telnetOutcome(err))
 			return
