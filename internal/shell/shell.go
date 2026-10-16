@@ -153,6 +153,7 @@ type Interpreter struct {
 	pids         map[string]int
 
 	Busybox bool
+	profile *Profile
 
 	overlay         map[string]*Node
 	overlayChildren map[string][]string
@@ -170,21 +171,29 @@ type Interpreter struct {
 // still land on the one ordinary "ubuntu" identity, same as before this
 // distinction existed.
 func NewInterpreter(username string) *Interpreter {
+	return NewInterpreterFor(username, Ubuntu)
+}
+
+// NewInterpreterFor is NewInterpreter for a machine other than the default
+// Ubuntu server.
+func NewInterpreterFor(username string, p *Profile) *Interpreter {
 	homeDir := ubuntuHomeDir
 	identity := "ubuntu"
-	if username == "root" {
+	if username == "root" || p.allRoot {
 		homeDir = rootHomeDir
 		identity = "root"
 	}
 	s := &Interpreter{
 		Cwd:          homeDir,
 		Env:          map[string]string{},
-		Hostname:     randomHostname(),
+		Hostname:     p.hostname(),
 		Username:     identity,
 		HomeDir:      homeDir,
 		BootTime:     randomBootTime(),
 		SessionStart: time.Now(),
 		pids:         randomPIDs(),
+		Busybox:      p.busybox,
+		profile:      p,
 	}
 	s.overlay = map[string]*Node{
 		"/proc/uptime": procUptimeNode(s.BootTime),
@@ -205,11 +214,7 @@ func (s *Interpreter) expandHostname(content string) string {
 // The trailing character follows the real convention of tracking UID, not
 // login method: root gets #, everyone else gets $.
 func (s *Interpreter) Prompt() string {
-	promptChar := "$"
-	if s.Username == "root" {
-		promptChar = "#"
-	}
-	return fmt.Sprintf("%s@%s:%s%s ", s.Username, s.Hostname, displayPath(s.Cwd, s.HomeDir), promptChar)
+	return s.profile.prompt(s)
 }
 
 // Run executes one line of input (which may contain `;`/`&&`/`||`-chained
@@ -234,6 +239,9 @@ func (s *Interpreter) RunWithDeception(line, action string) (output string, code
 func (s *Interpreter) evalLine(line string, depth int, bait *[]BaitHit, action string) (string, int) {
 	items, err := parseStatements(splitStatements(line))
 	if err != nil {
+		if se, ok := err.(syntaxError); ok {
+			return s.syntaxMsg(se), 2
+		}
 		return err.Error(), 2
 	}
 	var outputs []string
@@ -564,7 +572,7 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 		return "uid=1000(ubuntu) gid=1000(ubuntu) groups=1000(ubuntu),27(sudo)", 0
 
 	case "uname":
-		return unameOutput(args, s.Hostname), 0
+		return s.unameOutput(args), 0
 
 	case "export":
 		for _, a := range args {
@@ -690,7 +698,7 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 			return s.execPath(cmd, args, bait, action, stdin)
 		}
 		log.Printf("Unknown command: %s", cmd)
-		return "bash: " + cmd + ": command not found", 127
+		return s.shellMsg(s.profile.msgs.notFound, cmd), 127
 	}
 }
 
@@ -711,14 +719,10 @@ func (s *Interpreter) builtinInput(fileArg string, stdin *string) (text string, 
 	return "", true
 }
 
-func unameOutput(args []string, hostname string) string {
-	const (
-		sysname = "Linux"
-		release = "5.15.0-1031-aws"
-		version = "#35-Ubuntu SMP Fri Feb 10 02:07:19 UTC 2023"
-		machine = "x86_64"
-	)
-	nodename := hostname
+func (s *Interpreter) unameOutput(args []string) string {
+	p := s.profile
+	sysname, release, version, machine := p.sysname, p.release, p.version, p.machine
+	nodename := s.Hostname
 
 	all := len(args) == 0
 	want := map[string]bool{}
@@ -742,6 +746,9 @@ func unameOutput(args []string, hostname string) string {
 	var fields []string
 	if all {
 		fields = []string{sysname, nodename, release, version, machine, machine, machine, "GNU/Linux"}
+		if p.busyboxUname {
+			fields = []string{sysname, nodename, release, version, machine, "GNU/Linux"}
+		}
 	} else {
 		if want["s"] {
 			fields = append(fields, sysname)

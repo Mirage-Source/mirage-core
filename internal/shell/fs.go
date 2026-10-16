@@ -351,7 +351,7 @@ func (s *Interpreter) lookup(target string) (string, *Node) {
 	if s.Busybox && clean == busyboxPath {
 		return clean, busyboxBinary
 	}
-	n, ok := fs[clean]
+	n, ok := s.profile.fs[clean]
 	if !ok {
 		return clean, nil
 	}
@@ -386,13 +386,13 @@ func (s *Interpreter) writeFile(target, content string, appendMode bool) (string
 	parentPath := path.Dir(clean)
 	_, parent := s.lookup(parentPath)
 	if parent == nil || parent.Type != NodeDir {
-		return "bash: " + target + ": No such file or directory", 1
+		return s.shellMsg(s.profile.msgs.createNoDir, target), 1
 	}
 
 	base := path.Base(clean)
 	_, existing := s.lookup(clean)
 	if existing != nil && existing.Type == NodeDir {
-		return "bash: " + target + ": Is a directory", 1
+		return s.shellMsg(s.profile.msgs.createIsDir, target), 1
 	}
 
 	newContent := content

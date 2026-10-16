@@ -68,8 +68,8 @@ func (s *Interpreter) ddBuiltin(args []string, stdin *string) (string, int) {
 		fmt.Sprintf("%d bytes copied, 5.1e-05 s, %s", len(data), speed)
 
 	if outFile != "" {
-		if msg, code := s.writeFile(outFile, data, false); code != 0 {
-			return strings.Replace(msg, "bash: ", "dd: failed to open '", 1), 1
+		if _, code := s.writeFile(outFile, data, false); code != 0 {
+			return "dd: failed to open '" + outFile + "': No such file or directory", 1
 		}
 		return summary, 0
 	}

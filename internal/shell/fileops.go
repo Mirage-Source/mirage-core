@@ -54,11 +54,11 @@ func (s *Interpreter) execPath(cmd string, args []string, bait *[]BaitHit, actio
 	}
 	switch {
 	case n == nil:
-		return "bash: " + cmd + ": No such file or directory", 127
+		return s.shellMsg(s.profile.msgs.execMissing, cmd), 127
 	case n.Type == NodeDir:
-		return "bash: " + cmd + ": Is a directory", 126
+		return s.shellMsg(s.profile.msgs.execIsDir, cmd), 126
 	case !strings.Contains(n.Mode, "x"):
-		return "bash: " + cmd + ": Permission denied", 126
+		return s.shellMsg(s.profile.msgs.execPerm, cmd), 126
 	}
 	return s.runNested(s.expandHostname(n.Content), bait, action)
 }
@@ -102,7 +102,7 @@ func (s *Interpreter) remove(clean string) {
 			s.overlay[p] = nil
 		}
 	}
-	for p := range fs {
+	for p := range s.profile.fs {
 		if strings.HasPrefix(p, prefix) {
 			s.overlay[p] = nil
 		}

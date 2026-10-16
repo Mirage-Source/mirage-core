@@ -354,7 +354,7 @@ func (s *Interpreter) runWhile(it item, depth int, bait *[]BaitHit, action strin
 		file := s.expandWord(it.input, depth, bait, action)
 		text, ok := s.builtinInput(file, nil)
 		if !ok || file == "" {
-			*outputs = append(*outputs, "bash: "+file+": No such file or directory")
+			*outputs = append(*outputs, s.shellMsg(s.profile.msgs.openMissing, file))
 			return 1
 		}
 		lines := splitLines(text)
