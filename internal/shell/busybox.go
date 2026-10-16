@@ -17,6 +17,7 @@ var emulatedApplets = map[string]bool{
 	"netstat": true, "uname": true, "hostname": true, "id": true,
 	"whoami": true, "pwd": true, "test": true, "[": true,
 	"dd": true, "more": true, "ping": true, "su": true,
+	"wget": true, "tftp": true, "ftpget": true,
 }
 
 func (s *Interpreter) busyboxBannerLine() string {
@@ -37,7 +38,7 @@ func hasOperand(args []string) bool {
 }
 
 var realApplets = map[string]bool{
-	"wget": true, "tftp": true, "ftpget": true, "chmod": true, "rm": true,
+	"chmod": true, "rm": true,
 	"cp": true, "mv": true, "mkdir": true, "sh": true, "kill": true,
 	"nc": true, "sleep": true, "touch": true, "chown": true,
 	"ln": true, "mount": true, "sed": true, "awk": true, "tar": true,
@@ -49,6 +50,9 @@ func (s *Interpreter) busyboxBuiltin(cmd string, args []string, bait *[]BaitHit,
 		return "", 0, true
 	case cmd == "ping" && !hasOperand(args):
 		return s.busyboxBannerLine() + dvrPingUsage, 1, true
+	case cmd == "wget", cmd == "tftp", cmd == "ftpget":
+		out, code := s.busyboxDownload(cmd, args)
+		return out, code, true
 	case cmd == "hostname" && hasOperand(args):
 		s.Hostname = args[len(args)-1]
 		return "", 0, true

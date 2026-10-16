@@ -56,8 +56,9 @@ const elf32ARMHeader = "\x7fELF\x01\x01\x01\x00" + "\x00\x00\x00\x00\x00\x00\x00
 // dvrApplets are the /bin entries, all links to busybox on a real image.
 var dvrApplets = []string{
 	"ash", "busybox", "cat", "chmod", "cp", "date", "dd", "df", "dmesg", "echo",
-	"grep", "hostname", "kill", "ln", "ls", "mkdir", "mount", "mv", "ping",
-	"ps", "pwd", "rm", "sed", "sh", "sleep", "touch", "umount", "uname", "vi",
+	"ftpget", "grep", "hostname", "kill", "ln", "ls", "mkdir", "mount", "mv",
+	"ping", "ps", "pwd", "rm", "sed", "sh", "sleep", "tftp", "touch", "umount",
+	"uname", "vi", "wget",
 }
 
 func armBinary(size int64) *Node {
@@ -193,3 +194,43 @@ Send ICMP ECHO_REQUEST packets to network hosts
 			(can exceed -c CNT, -W SEC)
 	-q		Quiet, only displays output at start
 			and when finished`
+
+// busyboxDownload fails wget, tftp and ftpget the way BusyBox does on a box
+// with no route out: literal IPs time out, hostnames do not resolve.
+func (s *Interpreter) busyboxDownload(cmd string, args []string) (string, int) {
+	var ops []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case len(a) == 2 && a[0] == '-' && strings.ContainsRune("OPTUYrlpP", rune(a[1])):
+			i++ // flag with a value
+		case strings.HasPrefix(a, "-"):
+		default:
+			ops = append(ops, a)
+		}
+	}
+	if len(ops) == 0 {
+		return s.busyboxBannerLine() + "\n\nUsage: " + cmd + " [OPTIONS] HOST", 1
+	}
+	raw := ops[0]
+	if cmd == "wget" {
+		raw = ops[len(ops)-1]
+	}
+	t, ok := parseTarget(raw)
+	if !ok || !t.isIP {
+		host := t.host
+		if !ok {
+			host = raw
+		}
+		return cmd + ": bad address '" + host + "'", 1
+	}
+	refused := cmd + ": can't connect to remote host (" + t.host + "): Connection timed out"
+	switch cmd {
+	case "tftp":
+		return "tftp: timeout", 1
+	case "wget":
+		hostport, _, _ := strings.Cut(t.raw[strings.Index(t.raw, "://")+3:], "/")
+		return "Connecting to " + hostport + " (" + t.host + ":" + t.port + ")\r\n" + refused, 1
+	}
+	return refused, 1
+}
