@@ -235,3 +235,29 @@ func TestDVRDownloadersFailWithoutEgress(t *testing.T) {
 		t.Errorf("ls /bin = %q, want the downloaders listed", out)
 	}
 }
+
+// Through /bin/busybox, file applets must do what the plain commands do;
+// they used to succeed without touching anything.
+func TestDVRBusyboxFileAppletsAreReal(t *testing.T) {
+	s := newDVR()
+	s.Run("cd /tmp")
+	for line, want := range map[string]string{
+		"/bin/busybox cp /bin/busybox /usr/x":                       "cp: can't create '/usr/x': Read-only file system",
+		"/bin/busybox cp /bin/busybox dvrHelper; ls dvrHelper":      "dvrHelper",
+		"/bin/busybox touch .d; /bin/busybox chmod +x .d; ls -l .d": "-rwx",
+		"/bin/busybox mkdir q; /bin/busybox rm -r q; ls q":          "ls: cannot access 'q': No such file or directory",
+	} {
+		if out, _, _ := s.Run(line); !strings.HasPrefix(out, want) {
+			t.Errorf("%q -> %q, want prefix %q", line, out, want)
+		}
+	}
+}
+
+// A dropped Mirai binary daemonises: the shell sees it exit 0 at once.
+func TestDVRRunningAnELFExitsQuietly(t *testing.T) {
+	s := newDVR()
+	out, code, _ := s.Run("cd /tmp; cp /bin/busybox dvrHelper; chmod 777 dvrHelper; ./dvrHelper selfrep")
+	if out != "" || code != 0 {
+		t.Errorf("running an ELF -> (%q, %d), want (\"\", 0)", out, code)
+	}
+}

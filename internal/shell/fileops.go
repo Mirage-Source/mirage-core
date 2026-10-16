@@ -59,6 +59,9 @@ func (s *Interpreter) execPath(cmd string, args []string, bait *[]BaitHit, actio
 		return s.shellMsg(s.profile.msgs.execIsDir, cmd), 126
 	case !strings.Contains(n.Mode, "x"):
 		return s.shellMsg(s.profile.msgs.execPerm, cmd), 126
+	case strings.HasPrefix(n.Content, "\x7fELF"):
+		// A dropped bot binary daemonises; the shell sees it exit at once.
+		return "", 0
 	}
 	return s.runNested(s.expandHostname(n.Content), bait, action)
 }

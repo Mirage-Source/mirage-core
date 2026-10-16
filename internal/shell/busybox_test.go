@@ -34,7 +34,7 @@ func TestBusyboxDelegatesToEmulatedApplets(t *testing.T) {
 
 func TestBusyboxRealButUnemulatedAppletSucceedsSilently(t *testing.T) {
 	s := newBusyboxInterpreter()
-	for _, line := range []string{"/bin/busybox chmod 777 .x", "/bin/busybox sleep 1"} {
+	for _, line := range []string{"/bin/busybox ln -s /tmp x", "/bin/busybox sed -i s/a/b/ f"} {
 		out, code, _ := s.Run(line)
 		if out != "" || code != 0 {
 			t.Errorf("%q -> (%q, %d), want (\"\", 0)", line, out, code)
@@ -60,9 +60,10 @@ func TestBusyboxInCompoundLine(t *testing.T) {
 
 func TestBusyboxModeShIsANoop(t *testing.T) {
 	s := newBusyboxInterpreter()
-	out, code, _ := s.Run("sh")
-	if out != "" || code != 0 {
-		t.Errorf("sh -> (%q, %d), want (\"\", 0)", out, code)
+	for _, line := range []string{"sh", "/bin/busybox sh"} {
+		if out, code, _ := s.Run(line); out != "" || code != 0 {
+			t.Errorf("%s -> (%q, %d), want (\"\", 0)", line, out, code)
+		}
 	}
 }
 

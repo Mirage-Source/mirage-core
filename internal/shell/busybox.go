@@ -18,6 +18,8 @@ var emulatedApplets = map[string]bool{
 	"whoami": true, "pwd": true, "test": true, "[": true,
 	"dd": true, "more": true, "ping": true, "su": true,
 	"wget": true, "tftp": true, "ftpget": true,
+	"chmod": true, "chown": true, "cp": true, "mv": true, "rm": true,
+	"mkdir": true, "touch": true, "kill": true, "sleep": true, "sh": true,
 }
 
 func (s *Interpreter) busyboxBannerLine() string {
@@ -37,11 +39,11 @@ func hasOperand(args []string) bool {
 	return false
 }
 
+// realApplets exist in BusyBox but have no emulation here; they succeed
+// silently. File applets are emulated instead: a silent no-op chmod or cp
+// left loaders running files that were never there.
 var realApplets = map[string]bool{
-	"chmod": true, "rm": true,
-	"cp": true, "mv": true, "mkdir": true, "sh": true, "kill": true,
-	"nc": true, "sleep": true, "touch": true, "chown": true,
-	"ln": true, "mount": true, "sed": true, "awk": true, "tar": true,
+	"nc": true, "ln": true, "mount": true, "sed": true, "awk": true, "tar": true,
 }
 
 func (s *Interpreter) busyboxBuiltin(cmd string, args []string, bait *[]BaitHit, action string, stdin *string) (out string, code int, ok bool) {
