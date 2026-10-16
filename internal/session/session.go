@@ -18,6 +18,9 @@ const (
 	OutcomeConnectionReset Outcome = "connection_reset"
 	OutcomeActive          Outcome = "active"
 	OutcomeAuthFailed      Outcome = "auth_failed"
+
+	// A telnet client that spoke another protocol (HTTP, SIP, TLS, ...).
+	OutcomeProtocolMismatch Outcome = "protocol_mismatch"
 )
 
 type AuthMethod string
@@ -76,6 +79,9 @@ type TelnetMeta struct {
 	TerminalType  string `json:"terminal_type"`
 	WindowWidth   int    `json:"window_width"`
 	WindowHeight  int    `json:"window_height"`
+
+	// Set when the client spoke another protocol; see OutcomeProtocolMismatch.
+	ForeignProtocolLine string `json:"foreign_protocol_line,omitempty"`
 }
 
 type Network struct {

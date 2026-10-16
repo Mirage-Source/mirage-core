@@ -415,3 +415,19 @@ func TestSessionWithBinaryBytesIsSaved(t *testing.T) {
 		t.Errorf("credential = %q", cred)
 	}
 }
+
+func TestTelnetForeignProtocolLinePersists(t *testing.T) {
+	db := connect(t)
+	sess := newSession(session.ProtocolTelnet, telnetIP, "u", "p", "echo")
+	sess.AuthAttempts = nil
+	sess.Outcome = session.OutcomeProtocolMismatch
+	sess.Telnet = &session.TelnetMeta{ClientOptions: []int{}, ForeignProtocolLine: "GET / HTTP/1.0"}
+	if err := store.SaveSession(db, sess); err != nil {
+		t.Fatalf("SaveSession: %v", err)
+	}
+	var line string
+	if err := db.QueryRow(`SELECT foreign_protocol_line FROM telnet_session_meta WHERE session_id = $1`,
+		sess.SessionID).Scan(&line); err != nil || line != "GET / HTTP/1.0" {
+		t.Errorf("foreign_protocol_line = %q, err %v", line, err)
+	}
+}

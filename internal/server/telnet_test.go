@@ -304,3 +304,67 @@ func TestTelnetEmptyPasswordLogin(t *testing.T) {
 		t.Errorf("auth attempts = %+v", s.AuthAttempts)
 	}
 }
+
+func TestForeignProtocolLineDetection(t *testing.T) {
+	for line, want := range map[string]bool{
+		"GET / HTTP/1.0":             true,
+		"GET / HTTP/1.1":             true,
+		"OPTIONS sip:nm SIP/2.0":     true,
+		"DESCRIBE rtsp://x RTSP/1.0": true,
+		"SSH-2.0-Go":                 true,
+		"\x16\x03\x01\x02\x00\x01":   true,
+		"\xff\xfe":                   true,
+		"root":                       false,
+		"admin":                      false,
+		"Administrator":              false,
+		"support":                    false,
+		"user name":                  false,
+		"GET":                        false,
+	} {
+		if got := isForeignProtocolLine(line); got != want {
+			t.Errorf("isForeignProtocolLine(%q) = %v, want %v", line, got, want)
+		}
+	}
+}
+
+// An HTTP scanner on port 23 gets the same login dialogue a real telnetd
+// gives it, but its request and header lines are not credential attempts.
+func TestTelnetHTTPScannerIsNotRecordedAsCredentials(t *testing.T) {
+	h := startTelnetHarness(t, testTelnetConfig())
+	h.readUntil("login: ")
+	h.send([]byte("GET / HTTP/1.0\r\n"))
+	h.readUntil("Password: ")
+	h.send([]byte("Host: 198.51.100.9\r\n"))
+	h.readUntil("Login incorrect")
+	h.readUntil("login: ")
+	h.client.Close()
+	s := h.wait()
+
+	if len(s.AuthAttempts) != 0 {
+		t.Errorf("auth attempts = %+v, want none", s.AuthAttempts)
+	}
+	if s.Outcome != session.OutcomeProtocolMismatch {
+		t.Errorf("outcome = %q, want %q", s.Outcome, session.OutcomeProtocolMismatch)
+	}
+	if s.Telnet == nil || s.Telnet.ForeignProtocolLine != "GET / HTTP/1.0" {
+		t.Errorf("telnet meta = %+v, want the request line kept", s.Telnet)
+	}
+	if !shouldPersistTelnet(h.guard) {
+		t.Error("protocol-mismatch session would not be persisted")
+	}
+}
+
+// A scanner that sends one request line and hangs up never reaches a
+// password; the scan must still be kept.
+func TestTelnetSingleLineScannerIsStillPersisted(t *testing.T) {
+	h := startTelnetHarness(t, testTelnetConfig())
+	h.readUntil("login: ")
+	h.send([]byte("GET / HTTP/1.1\r\n"))
+	h.readUntil("Password: ")
+	h.client.Close()
+	s := h.wait()
+	if !shouldPersistTelnet(h.guard) || s.Outcome != session.OutcomeProtocolMismatch || len(s.AuthAttempts) != 0 {
+		t.Errorf("persist=%v outcome=%q attempts=%d, want true, protocol_mismatch, 0",
+			shouldPersistTelnet(h.guard), s.Outcome, len(s.AuthAttempts))
+	}
+}

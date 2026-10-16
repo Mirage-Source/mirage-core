@@ -9,8 +9,10 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/mirage-source/mirage-core/internal/fleet"
@@ -132,7 +134,25 @@ func newTelnetSession() *session.Session {
 }
 
 func shouldPersistTelnet(g *sessionGuard) bool {
-	return len(g.sess.AuthAttempts) > 0
+	return len(g.sess.AuthAttempts) > 0 ||
+		(g.sess.Telnet != nil && g.sess.Telnet.ForeignProtocolLine != "")
+}
+
+var foreignRequestLine = regexp.MustCompile(`^[A-Z]+ \S+ (HTTP|RTSP|SIP)/[0-9]`)
+
+// isForeignProtocolLine reports whether a login line came from a client
+// speaking another protocol to port 23: an HTTP/RTSP/SIP request line, an
+// SSH banner, or control bytes and invalid UTF-8 from a TLS or binary probe.
+func isForeignProtocolLine(line string) bool {
+	if foreignRequestLine.MatchString(line) || strings.HasPrefix(line, "SSH-") || !utf8.ValidString(line) {
+		return true
+	}
+	for _, r := range line {
+		if (r < 0x20 && r != '\t') || r == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 func handleTelnet(conn net.Conn, cfg telnetConfig, guard *sessionGuard) {
@@ -153,11 +173,15 @@ func handleTelnet(conn net.Conn, cfg telnetConfig, guard *sessionGuard) {
 			opts[i] = int(o)
 		}
 		sess.Telnet = &session.TelnetMeta{
-			Negotiated:    m.Negotiated,
-			ClientOptions: opts,
-			TerminalType:  m.TerminalType,
-			WindowWidth:   m.WindowWidth,
-			WindowHeight:  m.WindowHeight,
+			Negotiated:          m.Negotiated,
+			ClientOptions:       opts,
+			TerminalType:        m.TerminalType,
+			WindowWidth:         m.WindowWidth,
+			WindowHeight:        m.WindowHeight,
+			ForeignProtocolLine: ts.foreignLine,
+		}
+		if ts.foreignLine != "" && !loggedIn(sess) {
+			sess.Outcome = session.OutcomeProtocolMismatch
 		}
 	}()
 
@@ -222,6 +246,12 @@ func telnetLogin(ts *telnetStream, cfg telnetConfig, guard *sessionGuard, hostna
 		if username == "" {
 			continue
 		}
+		// The dialogue stays what a real telnetd gives any client; only the
+		// recording changes once the client has shown it isn't telnet.
+		if ts.foreignLine == "" && isForeignProtocolLine(username) {
+			ts.foreignLine = username
+			log.Printf("Telnet non-telnet client, first line %q", username)
+		}
 		ts.write("Password: ")
 		password, err := ts.readLine(MaxInput, false)
 		if err != nil {
@@ -232,14 +262,16 @@ func telnetLogin(ts *telnetStream, cfg telnetConfig, guard *sessionGuard, hostna
 		attempts++
 
 		_, accepted := cfg.weakCreds[username+":"+password]
-		guard.sess.AuthAttempts = append(guard.sess.AuthAttempts, session.AuthAttempt{
-			TimestampMS: time.Now().UnixMilli(),
-			Method:      session.AuthMethodPassword,
-			Username:    username,
-			Credential:  password,
-			Success:     accepted,
-		})
-		log.Printf("Telnet auth attempt user=%s password=%s accepted=%v", username, password, accepted)
+		if ts.foreignLine == "" || accepted {
+			guard.sess.AuthAttempts = append(guard.sess.AuthAttempts, session.AuthAttempt{
+				TimestampMS: time.Now().UnixMilli(),
+				Method:      session.AuthMethodPassword,
+				Username:    username,
+				Credential:  password,
+				Success:     accepted,
+			})
+			log.Printf("Telnet auth attempt user=%s password=%s accepted=%v", username, password, accepted)
+		}
 		if accepted {
 			return username, true
 		}
@@ -281,11 +313,21 @@ func telnetOutcome(err error) session.Outcome {
 }
 
 type telnetStream struct {
-	conn    net.Conn
-	neg     *telnet.Negotiator
-	idle    time.Duration
-	pending []byte
-	skipLF  bool
+	conn        net.Conn
+	neg         *telnet.Negotiator
+	idle        time.Duration
+	pending     []byte
+	skipLF      bool
+	foreignLine string // first line of a non-telnet client, if any
+}
+
+func loggedIn(s *session.Session) bool {
+	for _, a := range s.AuthAttempts {
+		if a.Success {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *telnetStream) writeRaw(b []byte) {

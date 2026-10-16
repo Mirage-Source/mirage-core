@@ -221,10 +221,12 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 		if _, err := tx.Exec(`
 			INSERT INTO telnet_session_meta (
 				session_id, negotiated, client_options,
-				terminal_type, window_width, window_height
-			) VALUES ($1, $2, $3, $4, $5, $6)
+				terminal_type, window_width, window_height,
+				foreign_protocol_line
+			) VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''))
 		`, pgArgs([]any{sess.SessionID, t.Negotiated, pq.Array(opts),
 			t.TerminalType, t.WindowWidth, t.WindowHeight,
+			t.ForeignProtocolLine,
 		})...); err != nil {
 			return fmt.Errorf("inserting telnet meta: %w", err)
 		}

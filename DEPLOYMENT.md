@@ -144,6 +144,10 @@ the deception policy never runs on it. Accepted logins come from
 A telnet session may run 4,000 commands (SSH: 500) so echo-loaders can
 finish writing a payload; `TELNET_MAX_CONCURRENT_CONNECTIONS` (default 100)
 keeps that inside the container's 512M limit.
+Clients that speak another protocol to port 23 (HTTP, SIP, RTSP, TLS, SSH)
+get the normal login dialogue, but their lines are not stored as auth
+attempts: the session is saved with `outcome = 'protocol_mismatch'` and the
+first line in `telnet_session_meta.foreign_protocol_line`.
 
 ---
 
