@@ -16,12 +16,13 @@ var emulatedApplets = map[string]bool{
 	"tail": true, "wc": true, "which": true, "find": true, "ps": true,
 	"netstat": true, "uname": true, "hostname": true, "id": true,
 	"whoami": true, "pwd": true, "test": true, "[": true,
+	"dd": true, "more": true,
 }
 
 var realApplets = map[string]bool{
 	"wget": true, "tftp": true, "ftpget": true, "chmod": true, "rm": true,
 	"cp": true, "mv": true, "mkdir": true, "sh": true, "kill": true,
-	"dd": true, "nc": true, "sleep": true, "touch": true, "chown": true,
+	"nc": true, "sleep": true, "touch": true, "chown": true,
 	"ln": true, "mount": true, "sed": true, "awk": true, "tar": true,
 }
 

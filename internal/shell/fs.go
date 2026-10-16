@@ -71,16 +71,26 @@ var fs = map[string]*Node{
 		Type: NodeDir, Mode: "drwxr-xr-x", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Total: 68,
 		Children: []string{"bin", "boot", "dev", "etc", "home", "lib", "lib64", "opt", "proc", "root", "run", "sbin", "srv", "tmp", "usr", "var"},
 	},
-	"/bin":   emptySystemDir(),
-	"/boot":  emptySystemDir(),
-	"/dev":   emptySystemDir(),
-	"/lib":   emptySystemDir(),
-	"/lib64": emptySystemDir(),
-	"/opt":   emptySystemDir(),
+	"/bin": {
+		Type: NodeDir, Mode: "drwxr-xr-x", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Total: 172,
+		Children: []string{"echo", "ls"},
+	},
+	"/bin/echo": binaryNode("Feb  7  2022", 35120),
+	"/bin/ls":   binaryNode("Feb  7  2022", 138216),
+	"/boot":     emptySystemDir(),
+	"/dev":      emptySystemDir(),
+	"/lib":      emptySystemDir(),
+	"/lib64":    emptySystemDir(),
+	"/opt":      emptySystemDir(),
 	"/proc": {
 		Type: NodeDir, Mode: "dr-xr-xr-x", Owner: "root", Group: "root", MTime: "Jul 11 09:11", Total: 0,
-		Children: []string{"version", "cpuinfo", "uptime"},
+		Children: []string{"version", "cpuinfo", "uptime", "self"},
 	},
+	"/proc/self": {
+		Type: NodeDir, Mode: "dr-xr-xr-x", Owner: "root", Group: "root", MTime: "Jul 11 09:11", Total: 0,
+		Children: []string{"exe"},
+	},
+	"/proc/self/exe": binaryNode("Jul 11 09:11", 138216),
 	"/proc/version": {
 		Type: NodeFile, Mode: "-r--r--r--", Owner: "root", Group: "root", MTime: "Jul 11 09:11",
 		Content: "Linux version 5.15.0-1031-aws (buildd@lcy02-amd64-059) (gcc (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #35-Ubuntu SMP Fri Feb 10 02:07:19 UTC 2023",
@@ -313,6 +323,11 @@ var fs = map[string]*Node{
 	},
 	"/var/tmp": {Type: NodeDir, Mode: "drwxrwxrwt", Owner: "root", Group: "root", MTime: "May 29 14:01", Total: 0},
 	"/var/www": emptySystemDir(),
+}
+
+// binaryNode is an executable whose content is just an ELF header; see elfHeader.
+func binaryNode(mtime string, size int64) *Node {
+	return &Node{Type: NodeFile, Mode: "-rwxr-xr-x", Owner: "root", Group: "root", MTime: mtime, Size: size, Content: elfHeader}
 }
 
 func emptySystemDir() *Node {

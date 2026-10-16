@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"net"
 	"os"
 	"path/filepath"
@@ -85,5 +86,69 @@ func TestEndToEndTelnetSessionPersistsToDatabase(t *testing.T) {
 	db.QueryRow(`SELECT COUNT(*) FROM sensor_heartbeats WHERE sensor_id = 'telnet'`).Scan(&heartbeats)
 	if heartbeats == 0 {
 		t.Error("no heartbeat row for sensor_id 'telnet'")
+	}
+}
+
+// The most common Mirai architecture probe returns an ELF header full of NUL
+// bytes. The attacker must receive it on the wire and the session must still
+// reach Postgres; before the fix it was dropped with pq 22P05.
+func TestEndToEndTelnetELFProbeSessionPersists(t *testing.T) {
+	if os.Getenv("MIRAGE_E2E_TEST") == "" {
+		t.Skip("set MIRAGE_E2E_TEST=1 against a reachable, migrated Postgres to run this test")
+	}
+	db := connectTestDB(t)
+
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config", "telnet_weak_credentials.txt"), []byte("root:elf-probe-pass\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	testStart := time.Now().UnixMilli()
+	const addr = "127.0.0.1:32324"
+	go StartTelnet(addr)
+	waitForListener(t, addr)
+
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Write([]byte("root\r\nelf-probe-pass\r\n/bin/busybox cat /proc/self/exe || cat /proc/self/exe\r\nexit\r\n"))
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	var wire []byte
+	buf := make([]byte, 4096)
+	for {
+		n, err := conn.Read(buf)
+		wire = append(wire, buf[:n]...)
+		if err != nil {
+			break
+		}
+	}
+	conn.Close()
+	if !bytes.Contains(wire, []byte("\x7fELF\x02\x01\x01\x00")) {
+		t.Errorf("attacker did not receive the ELF header; wire = %q", wire)
+	}
+
+	var commandCount int
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := db.QueryRow(`
+			SELECT command_count FROM sessions
+			WHERE protocol = 'telnet' AND client_ip = '127.0.0.1' AND start_ms >= $1
+			  AND session_document::text LIKE '%proc/self/exe%'
+			ORDER BY start_ms DESC LIMIT 1`, testStart).Scan(&commandCount)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("ELF-probe session never reached Postgres: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if commandCount != 2 {
+		t.Errorf("command_count = %d, want 2", commandCount)
 	}
 }
