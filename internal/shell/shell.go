@@ -157,6 +157,7 @@ type Interpreter struct {
 	overlay         map[string]*Node
 	overlayChildren map[string][]string
 	nesting         int
+	loopInput       *[]string // lines left for `read` in a `done < file` loop
 
 	noTrailingNewline bool
 }
@@ -650,6 +651,9 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 
 	case "more":
 		return s.moreBuiltin(args, stdin)
+
+	case "read":
+		return s.readBuiltin(args)
 
 	case "true", ":":
 		return "", 0
@@ -1184,7 +1188,7 @@ func (s *Interpreter) findWalk(p string, n *Node, action, namePattern string, ty
 			names = append(names, cc.Name)
 		}
 	}
-	names = append(names, s.overlayChildren[n.Path]...)
+	names = append(names, s.addedChildren(n.Path)...)
 	for _, name := range names {
 		childPath, child := s.lookup(path.Join(p, name))
 		if child == nil {

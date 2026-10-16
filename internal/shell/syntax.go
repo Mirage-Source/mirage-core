@@ -13,6 +13,8 @@ const (
 	kindGroup
 	kindCase
 	kindFor
+	kindWhile
+	kindUntil
 )
 
 const maxLoopIterations = 1000
@@ -35,6 +37,7 @@ type item struct {
 	word     string
 	arms     []caseArm
 	words    []string
+	input    string // while/until: file from `done < file`, read by `read`
 }
 
 type syntaxError string
@@ -51,7 +54,7 @@ var reservedWords = map[string]bool{"then": true, "elif": true, "else": true, "f
 // IsReservedWord reports whether name is shell syntax the interpreter parses
 // itself (if/case/{ } and their closing words) rather than a command.
 func IsReservedWord(name string) bool {
-	return reservedWords[name] || name == "if" || name == "case" || name == "for" || name == "{"
+	return reservedWords[name] || name == "if" || name == "case" || name == "for" || name == "while" || name == "until" || name == "{"
 }
 
 func splitKeyword(text string) (string, string) {
@@ -200,6 +203,9 @@ func (p *parser) item() (item, error) {
 		return p.caseItem(st.Sep, rest)
 	case "for":
 		return p.forItem(st.Sep, rest)
+	case "while", "until":
+		p.advance(rest)
+		return p.whileItem(st.Sep, kw == "until")
 	}
 	p.pos++
 	return item{kind: kindSimple, sep: st.Sep, text: st.Text}, nil
@@ -301,6 +307,105 @@ func (p *parser) forItem(sep, rest string) (item, error) {
 	return it, p.expect("done")
 }
 
+func (p *parser) whileItem(sep string, until bool) (item, error) {
+	it := item{kind: kindWhile, sep: sep}
+	if until {
+		it.kind = kindUntil
+	}
+	cond, err := p.nonEmpty(map[string]bool{"do": true}, false)
+	if err != nil {
+		return item{}, err
+	}
+	if err := p.expect("do"); err != nil {
+		return item{}, err
+	}
+	body, err := p.nonEmpty(map[string]bool{"done": true}, false)
+	if err != nil {
+		return item{}, err
+	}
+	it.conds, it.body = [][]item{cond}, body
+
+	// `done < file` feeds the loop's `read`; it must be consumed here, or
+	// "< file" would be left behind as a statement of its own.
+	st, ok := p.cur()
+	if !ok {
+		return item{}, syntaxError("")
+	}
+	got, rest := splitKeyword(st.Text)
+	if strings.HasPrefix(got, "done<") {
+		got, rest = "done", strings.TrimSpace(st.Text[len("done"):])
+	}
+	if got != "done" {
+		return item{}, syntaxError(got)
+	}
+	if strings.HasPrefix(rest, "<") {
+		it.input, rest = firstRawWord(strings.TrimSpace(rest[1:]))
+	}
+	p.advance(rest)
+	return it, nil
+}
+
+// runWhile runs a while/until loop, capped like for at maxLoopIterations.
+// A `done < file` redirect becomes the lines `read` consumes.
+func (s *Interpreter) runWhile(it item, depth int, bait *[]BaitHit, action string, outputs *[]string) int {
+	saved := s.loopInput
+	defer func() { s.loopInput = saved }()
+	if it.input != "" {
+		file := s.expandWord(it.input, depth, bait, action)
+		text, ok := s.builtinInput(file, nil)
+		if !ok || file == "" {
+			*outputs = append(*outputs, "bash: "+file+": No such file or directory")
+			return 1
+		}
+		lines := splitLines(text)
+		s.loopInput = &lines
+	} else {
+		s.loopInput = nil
+	}
+
+	last := 0
+	for n := 0; n < maxLoopIterations; n++ {
+		ok := s.runItems(it.conds[0], depth, bait, action, outputs) == 0
+		if ok == (it.kind == kindUntil) {
+			break
+		}
+		last = s.runItems(it.body, depth, bait, action, outputs)
+	}
+	return last
+}
+
+// readBuiltin assigns the next line of the enclosing loop's redirected
+// input. With no such input it fails at once instead of blocking on a
+// terminal, which ends the loop.
+func (s *Interpreter) readBuiltin(args []string) (string, int) {
+	if s.loopInput == nil || len(*s.loopInput) == 0 {
+		return "", 1
+	}
+	line := (*s.loopInput)[0]
+	*s.loopInput = (*s.loopInput)[1:]
+	var names []string
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			names = append(names, a)
+		}
+	}
+	if len(names) == 0 {
+		names = []string{"REPLY"}
+	}
+	fields := strings.Fields(line)
+	for i, name := range names {
+		switch {
+		case i == len(names)-1 && i < len(fields):
+			s.Env[name] = strings.Join(fields[i:], " ")
+		case i < len(fields):
+			s.Env[name] = fields[i]
+		default:
+			s.Env[name] = ""
+		}
+	}
+	return "", 0
+}
+
 func (s *Interpreter) expandWord(raw string, depth int, bait *[]BaitHit, action string) string {
 	words := tokenizeWords(raw)
 	for i, w := range words {
@@ -358,6 +463,8 @@ func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action 
 				s.Env[it.word] = v
 				last = s.runItems(it.body, depth, bait, action, outputs)
 			}
+		case kindWhile, kindUntil:
+			last = s.runWhile(it, depth, bait, action, outputs)
 		case kindCase:
 			last = 0
 			word := s.expandWord(it.word, depth, bait, action)

@@ -7,15 +7,17 @@ import (
 
 // Mirai-family loaders read an ELF header to pick which binary to fetch; a
 // missing file ends the session before any download. These are the exact
-// probes seen on the telnet sensor, by distinct source IPs. /bin/busybox is
-// left out of the shared fs so SSH, which has no busybox, stays unchanged.
+// probes seen on the telnet sensor, by distinct source IPs.
 var elfProbes = []string{
 	"/bin/busybox cat /proc/self/exe || cat /proc/self/exe", // 242 IPs
-	"dd bs=52 count=1 if=/bin/ls || cat /bin/ls",            // 53
-	"/bin/busybox dd bs=52 count=1 if=/bin/ls || /bin/busybox cat /bin/ls",
+	// 53 IPs each; exact lines, including the while-read fallbacks.
+	"dd bs=52 count=1 if=/bin/ls || cat /bin/ls || while read i; do echo $i; done < /bin/ls || while read i; do echo $i; done < /bin/busybox",
+	"/bin/busybox dd bs=52 count=1 if=/bin/ls || /bin/busybox cat /bin/ls || while read i; do printf $i; done < /bin/ls || while read i; do printf $i; done < /bin/busybox",
 	"/bin/busybox cat /bin/ls|head -n 1",
 	"/bin/busybox cat /bin/ls|more",
 	"/bin/busybox cat /bin/echo", // 8
+	// 3 IPs, 449 sessions; /bin/busybox exists only in busybox mode.
+	"/bin/busybox cat /bin/busybox || while read i; do echo $i; done < /bin/busybox",
 }
 
 func TestELFProbesSeeAHeaderMatchingUname(t *testing.T) {
@@ -77,5 +79,19 @@ func TestBinariesAreListedWhereTheyExist(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("ls %s = %q, want it to list %s", dir, out, want)
 		}
+	}
+}
+
+func TestBusyboxBinaryExistsOnlyInBusyboxMode(t *testing.T) {
+	bb := newBusyboxInterpreter()
+	if out, _, _ := bb.Run("ls /bin"); !strings.Contains(out, "busybox") {
+		t.Errorf("busybox mode: ls /bin = %q, want busybox listed", out)
+	}
+	ssh := NewInterpreter("root")
+	if out, code, _ := ssh.Run("cat /bin/busybox"); code != 1 || !strings.Contains(out, "No such file") {
+		t.Errorf("SSH: cat /bin/busybox -> (%q, %d), want not found", out, code)
+	}
+	if out, _, _ := ssh.Run("ls /bin"); strings.Contains(out, "busybox") {
+		t.Errorf("SSH: ls /bin = %q lists busybox", out)
 	}
 }

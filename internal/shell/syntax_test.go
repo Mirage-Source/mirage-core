@@ -118,3 +118,49 @@ func TestIdFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestWhileReadIteratesRedirectedFileLines(t *testing.T) {
+	s := NewInterpreter("root")
+	s.Run("echo a > /tmp/f; echo b >> /tmp/f")
+	out, code, _ := s.Run(`while read l; do echo "x$l"; done < /tmp/f`)
+	if out != "xa\r\nxb" || code != 0 {
+		t.Errorf("-> (%q, %d), want (\"xa\\r\\nxb\", 0)", out, code)
+	}
+}
+
+func TestWhileRedirectFromMissingFileFails(t *testing.T) {
+	s := NewInterpreter("root")
+	out, code, _ := s.Run("while read l; do echo $l; done < /nope || echo fallback")
+	if out != "bash: /nope: No such file or directory\r\nfallback" || code != 0 {
+		t.Errorf("-> (%q, %d)", out, code)
+	}
+}
+
+func TestWhileAndUntilConditions(t *testing.T) {
+	s := NewInterpreter("root")
+	for line, want := range map[string]string{
+		"while false; do echo no; done; echo ok":       "ok",
+		"until true; do echo no; done; echo ok":        "ok",
+		"while read l; do echo $l; done; echo noinput": "noinput",
+	} {
+		if out, _, _ := s.Run(line); out != want {
+			t.Errorf("%q -> %q, want %q", line, out, want)
+		}
+	}
+}
+
+func TestWhileTrueIsCappedLikeFor(t *testing.T) {
+	s := NewInterpreter("root")
+	out, _, _ := s.Run("while true; do echo y; done")
+	if n := strings.Count(out, "y"); n != maxLoopIterations {
+		t.Errorf("iterations = %d, want %d", n, maxLoopIterations)
+	}
+}
+
+func TestWhileIsReserved(t *testing.T) {
+	for _, w := range []string{"while", "until"} {
+		if !IsReservedWord(w) {
+			t.Errorf("IsReservedWord(%q) = false", w)
+		}
+	}
+}
