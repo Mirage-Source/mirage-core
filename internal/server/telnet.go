@@ -34,7 +34,13 @@ const (
 	telnetMaxConcurrentConnections = 100
 )
 
-// maxContinuationLines bounds one multi-line command (64 * MaxInput bytes).
+// telnetMaxLine is BusyBox's default line-edit limit
+// (CONFIG_FEATURE_EDITING_MAX_LEN). Loader one-liners put their download
+// URLs last, and 32 IPs' were cut at MaxInput; the per-session byte cap
+// still bounds memory.
+const telnetMaxLine = 1024
+
+// maxContinuationLines bounds one multi-line command.
 const maxContinuationLines = 64
 
 func newTelnetGuard() *sessionGuard {
@@ -207,13 +213,13 @@ func handleTelnet(conn net.Conn, cfg telnetConfig, guard *sessionGuard) {
 			return
 		}
 		ts.write(interp.Prompt())
-		line, err := ts.readLine(MaxInput, true)
+		line, err := ts.readLine(telnetMaxLine, true)
 		// An unclosed quote or trailing backslash continues behind ash's
 		// PS2, so a multi-line echo arrives as the one command it is.
 		for n := 0; err == nil && n < maxContinuationLines && shell.NeedsContinuation(line); n++ {
 			ts.write("> ")
 			var next string
-			next, err = ts.readLine(MaxInput, true)
+			next, err = ts.readLine(telnetMaxLine, true)
 			if strings.HasSuffix(line, "\\") {
 				line = line[:len(line)-1] + next
 			} else {
@@ -377,6 +383,11 @@ func (s *telnetStream) readLine(max int, echo bool) (string, error) {
 				}
 				flush()
 				return string(line), nil
+			case b == 0x03: // Ctrl-C: a tty discards the line typed so far
+				line = line[:0]
+				if echo {
+					echoed = append(echoed, '^', 'C', '\r', '\n')
+				}
 			case b == 0x7F || b == 0x08:
 				if len(line) > 0 {
 					line = line[:len(line)-1]

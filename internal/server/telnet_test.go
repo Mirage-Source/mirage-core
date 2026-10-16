@@ -251,7 +251,9 @@ func TestTelnetLoginTimeout(t *testing.T) {
 	}
 }
 
-func TestTelnetOverlongLineIsTruncatedToMaxInput(t *testing.T) {
+// Command lines are kept up to BusyBox's own line-edit limit: long loader
+// one-liners carry their download URLs at the end (32 IPs were cut at 255).
+func TestTelnetOverlongLineIsTruncatedToTelnetMaxLine(t *testing.T) {
 	h := startTelnetHarness(t, testTelnetConfig())
 	h.send([]byte("root\r\nxc3511\r\n"))
 	h.readUntil("# ")
@@ -262,8 +264,8 @@ func TestTelnetOverlongLineIsTruncatedToMaxInput(t *testing.T) {
 	if len(s.Commands) == 0 {
 		t.Fatal("no commands")
 	}
-	if n := len(s.Commands[0].ParsedCommand) + len(strings.Join(s.Commands[0].ParsedArgs, " ")) + 1; n > MaxInput {
-		t.Errorf("recorded line is %d bytes, cap is %d", n, MaxInput)
+	if n := len(s.Commands[0].ParsedCommand) + len(strings.Join(s.Commands[0].ParsedArgs, " ")) + 1; n != telnetMaxLine {
+		t.Errorf("recorded line is %d bytes, want the %d-byte cap", n, telnetMaxLine)
 	}
 }
 
@@ -405,5 +407,22 @@ func TestTelnetQuotedInputContinuesAcrossLines(t *testing.T) {
 	}
 	if !bytes.Contains(out, []byte("-----BEGIN KEY-----\r\nabc\r\n-----END KEY-----")) {
 		t.Errorf("cat output = %q", out)
+	}
+}
+
+// Bots send Ctrl-C before a command to clear any half-typed input; a tty
+// discards the line, so "\x03dd ..." runs dd (55 IPs' ELF probe).
+func TestTelnetCtrlCDiscardsTheLineSoFar(t *testing.T) {
+	h := startTelnetHarness(t, testTelnetConfig())
+	h.send([]byte("root\r\nxc3511\r\n"))
+	h.readUntil("# ")
+	h.send([]byte("junk\x03dd bs=52 count=1 if=/bin/ls\r\nexit\r\n"))
+	out := h.readUntil("logout")
+	s := h.wait()
+	if got := parsedCommands(s); strings.Join(got, ",") != "dd,exit" {
+		t.Errorf("commands = %v, want [dd exit]", got)
+	}
+	if !bytes.Contains(out, []byte("\x7fELF")) {
+		t.Errorf("no ELF header on the wire: %q", out)
 	}
 }
