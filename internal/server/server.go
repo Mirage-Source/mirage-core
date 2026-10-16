@@ -61,6 +61,24 @@ type sessionGuard struct {
 	sess       *session.Session
 	once       sync.Once
 	inputBytes int
+
+	// Zero means maxCommandsPerSession / maxSessionInputBytes (SSH).
+	maxCommands   int
+	maxInputBytes int
+}
+
+func (g *sessionGuard) commandLimit() int {
+	if g.maxCommands > 0 {
+		return g.maxCommands
+	}
+	return maxCommandsPerSession
+}
+
+func (g *sessionGuard) inputLimit() int {
+	if g.maxInputBytes > 0 {
+		return g.maxInputBytes
+	}
+	return maxSessionInputBytes
 }
 
 // sessionID is safe to read without the mutex -- it is set once in Start()
@@ -107,8 +125,8 @@ func (g *sessionGuard) appendCommand(cmd session.Command, computeDelay bool) (se
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	if len(g.sess.Commands) >= maxCommandsPerSession ||
-		g.inputBytes+len(cmd.RawInputB64) > maxSessionInputBytes {
+	if len(g.sess.Commands) >= g.commandLimit() ||
+		g.inputBytes+len(cmd.RawInputB64) > g.inputLimit() {
 		return cmd, false
 	}
 

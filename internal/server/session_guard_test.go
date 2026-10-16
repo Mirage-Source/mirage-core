@@ -106,3 +106,38 @@ func TestSessionGuardRecordOutcomeFirstWins(t *testing.T) {
 		t.Fatal("recordOutcome overwrote an already-recorded terminal outcome")
 	}
 }
+
+func fillGuard(g *sessionGuard, n int) int {
+	accepted := 0
+	for i := 0; i < n; i++ {
+		if _, ok := g.appendCommand(session.Command{EventID: "evt", RawInputB64: "ZWNobw=="}, false); ok {
+			accepted++
+		}
+	}
+	return accepted
+}
+
+// Echo-loaders need thousands of commands to write a payload; the telnet
+// guard allows that while a zero-value (SSH) guard keeps the original cap.
+func TestTelnetGuardAllowsFullEchoLoaders(t *testing.T) {
+	ssh := &sessionGuard{sess: &session.Session{}}
+	if got := fillGuard(ssh, maxCommandsPerSession+10); got != maxCommandsPerSession {
+		t.Errorf("SSH guard accepted %d commands, want %d", got, maxCommandsPerSession)
+	}
+	telnet := newTelnetGuard()
+	if got := fillGuard(telnet, telnetMaxCommands+10); got != telnetMaxCommands {
+		t.Errorf("telnet guard accepted %d commands, want %d", got, telnetMaxCommands)
+	}
+	if telnet.commandLimit() != telnetMaxCommands || ssh.commandLimit() != maxCommandsPerSession {
+		t.Errorf("commandLimit() = %d / %d", telnet.commandLimit(), ssh.commandLimit())
+	}
+}
+
+// The byte cap must not bind before the count cap for max-length lines,
+// or the count cap is a lie.
+func TestTelnetInputCapFitsMaxLengthLines(t *testing.T) {
+	b64PerLine := (MaxInput + 2) / 3 * 4
+	if telnetMaxInputBytes < telnetMaxCommands*b64PerLine {
+		t.Errorf("telnetMaxInputBytes = %d < %d commands * %d bytes", telnetMaxInputBytes, telnetMaxCommands, b64PerLine)
+	}
+}

@@ -23,6 +23,21 @@ import (
 
 const telnetIssue = "Ubuntu 22.04.3 LTS\r\n"
 
+// Echo-loaders write a payload 32 bytes per command, so a full binary takes
+// 1,000-3,000 commands; the SSH cap of 500 cut every one off. Measured cost
+// at 4,000 commands is ~3 MiB heap per session, so the connection cap is
+// lowered to keep 100 maxed sessions inside the container's 512M limit
+// (observed peak: 29 concurrent telnet sessions).
+const (
+	telnetMaxCommands              = 4000
+	telnetMaxInputBytes            = 2 << 20
+	telnetMaxConcurrentConnections = 100
+)
+
+func newTelnetGuard() *sessionGuard {
+	return &sessionGuard{sess: newTelnetSession(), maxCommands: telnetMaxCommands, maxInputBytes: telnetMaxInputBytes}
+}
+
 type telnetConfig struct {
 	weakCreds        map[string]struct{}
 	loginTimeout     time.Duration
@@ -47,7 +62,7 @@ func StartTelnet(addr string) {
 	}
 	log.Printf("Telnet: loaded %d weak credential pair(s) from %s", len(cfg.weakCreds), credPath)
 
-	maxConnections := envInt("MAX_CONCURRENT_CONNECTIONS", defaultMaxConcurrentConnections)
+	maxConnections := envInt("TELNET_MAX_CONCURRENT_CONNECTIONS", telnetMaxConcurrentConnections)
 	connSlots := make(chan struct{}, maxConnections)
 
 	listener, err := net.Listen("tcp", addr)
@@ -85,7 +100,7 @@ func StartTelnet(addr string) {
 			continue
 		}
 
-		guard := &sessionGuard{sess: newTelnetSession()}
+		guard := newTelnetGuard()
 		go func() {
 			defer func() { <-connSlots }()
 			defer func() {
@@ -164,7 +179,7 @@ func handleTelnet(conn net.Conn, cfg telnetConfig, guard *sessionGuard) {
 	ts.write("Welcome to Ubuntu 22.04.3 LTS\r\n")
 
 	for {
-		if guard.commandCount() >= maxCommandsPerSession {
+		if guard.commandCount() >= guard.commandLimit() {
 			guard.recordOutcome(session.OutcomeCommandLimitReached)
 			return
 		}

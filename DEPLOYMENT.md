@@ -141,6 +141,9 @@ Fleet push is off for telnet (`mirage-fleet` has no protocol column), and
 the deception policy never runs on it. Accepted logins come from
 `config/telnet_weak_credentials.txt` (Mirai's default table, override with
 `TELNET_WEAK_CREDENTIALS_FILE`), separate from the SSH list.
+A telnet session may run 4,000 commands (SSH: 500) so echo-loaders can
+finish writing a payload; `TELNET_MAX_CONCURRENT_CONNECTIONS` (default 100)
+keeps that inside the container's 512M limit.
 
 ---
 
