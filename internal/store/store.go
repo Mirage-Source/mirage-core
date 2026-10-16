@@ -106,7 +106,7 @@ func execBatch(tx *sql.Tx, table, columns string, cols int, args []any) error {
 			"INSERT INTO %s (%s) VALUES %s",
 			table, columns, valuesClause(len(chunk)/cols, cols),
 		)
-		if _, err := tx.Exec(query, chunk...); err != nil {
+		if _, err := tx.Exec(query, pgArgs(chunk)...); err != nil {
 			return err
 		}
 	}
@@ -159,7 +159,7 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 			$20, $21,
 			$22
 		)
-	`, sess.SessionID, sess.SchemaVersion, sess.NodeID, sess.Protocol,
+	`, pgArgs([]any{sess.SessionID, sess.SchemaVersion, sess.NodeID, sess.Protocol,
 		sess.Network.ClientIP, sess.Network.ClientPort, sess.Network.ServerPort, sess.Network.SSHClientBanner,
 		sess.Network.IngressSource, sess.Network.ProxyNodeID,
 		sess.Timing.StartMS, sess.Timing.EndMS, sess.Timing.DurationMS, sess.Outcome,
@@ -167,7 +167,7 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 		sess.Intelligence.AttackerClass, sess.Intelligence.ClassifierConfidence, sess.Intelligence.ClusterID,
 		mitreBytes, sess.Intelligence.SessionSummary,
 		docBytes,
-	)
+	})...)
 	if err != nil {
 		return fmt.Errorf("inserting session: %w", err)
 	}
@@ -223,9 +223,9 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 				session_id, negotiated, client_options,
 				terminal_type, window_width, window_height
 			) VALUES ($1, $2, $3, $4, $5, $6)
-		`, sess.SessionID, t.Negotiated, pq.Array(opts),
+		`, pgArgs([]any{sess.SessionID, t.Negotiated, pq.Array(opts),
 			t.TerminalType, t.WindowWidth, t.WindowHeight,
-		); err != nil {
+		})...); err != nil {
 			return fmt.Errorf("inserting telnet meta: %w", err)
 		}
 	}

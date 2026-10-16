@@ -381,3 +381,37 @@ func TestEmptySessionPageIsAnArray(t *testing.T) {
 		t.Errorf("empty page = %s, want \"sessions\":[]", b)
 	}
 }
+
+// An echo-loader writing an ELF binary makes the shell echo back NUL and
+// non-UTF-8 bytes. Postgres rejects both in text and jsonb, which used to
+// drop the whole session (pq 22P05). The raw input stays exact in base64.
+func TestSessionWithBinaryBytesIsSaved(t *testing.T) {
+	db := connect(t)
+	sess := newSession(session.ProtocolTelnet, telnetIP, "root\x00", "pa\x00ss\xff", "echo")
+	elf := "\x7fELF\x01\x01\x01\x00\x00\xb7"
+	sess.Commands[0].Response = &elf
+	sess.Commands[0].ParsedArgs = []string{"-ne", "\x00\xb7"}
+	sess.Commands[0].WorkingDirectory = "/tmp/\x00"
+	raw := sess.Commands[0].RawInputB64
+
+	if err := store.SaveSession(db, sess); err != nil {
+		t.Fatalf("SaveSession with binary bytes: %v", err)
+	}
+
+	var gotRaw, resp string
+	if err := db.QueryRow(`SELECT raw_input_b64, response_text FROM commands WHERE session_id = $1`,
+		sess.SessionID).Scan(&gotRaw, &resp); err != nil {
+		t.Fatalf("reading command: %v", err)
+	}
+	if gotRaw != raw {
+		t.Errorf("raw_input_b64 = %q, want %q (input must stay byte-exact)", gotRaw, raw)
+	}
+	if !strings.HasPrefix(resp, "\x7fELF") {
+		t.Errorf("response_text = %q, want the printable prefix kept", resp)
+	}
+	var cred string
+	db.QueryRow(`SELECT credential FROM auth_attempts WHERE session_id = $1`, sess.SessionID).Scan(&cred)
+	if cred != "pa�ss�" {
+		t.Errorf("credential = %q", cred)
+	}
+}
