@@ -28,6 +28,9 @@ type Profile struct {
 	busyboxBanner string
 	prompt        func(s *Interpreter) string
 	ps            func(s *Interpreter) string // nil: the Ubuntu ps table
+	// writable lists the mount points that accept writes; nil means the
+	// whole tree is writable. Everything else is a read-only rootfs.
+	writable []string
 }
 
 // Ubuntu is the SSH sensor's identity: an Ubuntu 22.04 EC2 instance.
@@ -64,6 +67,20 @@ type shellMsgs struct {
 	notFound, execMissing, execIsDir, execPerm string
 	createNoDir, createIsDir, openMissing      string
 	syntaxEOF, syntaxToken                     string
+	createRO                                   string
+}
+
+// readOnly reports whether clean lies on the profile's read-only rootfs.
+func (s *Interpreter) readOnly(clean string) bool {
+	if s.profile.writable == nil {
+		return false
+	}
+	for _, w := range s.profile.writable {
+		if clean == w || strings.HasPrefix(clean, w+"/") {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Interpreter) shellMsg(format, arg string) string {

@@ -139,3 +139,76 @@ func firstLine(s string) string {
 	line, _, _ := strings.Cut(s, "\r\n")
 	return line
 }
+
+// The rootfs is read-only squashfs; only the tmpfs and jffs2 mounts listed
+// in /proc/mounts take writes. Bots sweep `>/DIR/.x && cd /DIR/` to find
+// one, so which directories accept a write decides where they land.
+func TestDVRWritableDirSweep(t *testing.T) {
+	writable := map[string]bool{
+		"/tmp": true, "/var": true, "/dev": true, "/var/run": true, "/var/tmp": true,
+		"/dev/shm": true, "/mnt/mtd": true,
+		"/mnt": false, "/": false, "/bin": false, "/etc": false, "/usr": false, "/root": false,
+	}
+	for dir, ok := range writable {
+		s := newDVR()
+		target := strings.TrimSuffix(dir, "/") + "/.ptmx"
+		out, code, _ := s.Run(">" + target + " && cd " + dir)
+		cwd, _, _ := s.Run("pwd")
+		if ok && (code != 0 || cwd != dir) {
+			t.Errorf("%s should be writable: (%q, %d), cwd %q", dir, out, code, cwd)
+		}
+		if !ok && (out != "-sh: can't create "+target+": Read-only file system" || code == 0 || cwd != "/") {
+			t.Errorf("%s should be read-only: (%q, %d), cwd %q", dir, out, code, cwd)
+		}
+	}
+}
+
+func TestDVRReadOnlyErrorsPerCommand(t *testing.T) {
+	s := newDVR()
+	for line, want := range map[string]string{
+		"touch /usr/x":           "touch: /usr/x: Read-only file system",
+		"mkdir /etc/x":           "mkdir: can't create directory '/etc/x': Read-only file system",
+		"rm /bin/ls":             "rm: can't remove '/bin/ls': Read-only file system",
+		"cp /bin/busybox /usr/x": "cp: can't create '/usr/x': Read-only file system",
+		"chmod 777 /bin/ls":      "chmod: /bin/ls: Read-only file system",
+		"cp /bin/busybox /tmp/y; chmod 777 /tmp/y; rm /tmp/y": "",
+	} {
+		if out, _, _ := s.Run(line); out != want {
+			t.Errorf("%q -> %q, want %q", line, out, want)
+		}
+	}
+	if _, code, _ := s.Run("ls /bin/ls"); code != 0 {
+		t.Error("rm on the read-only rootfs removed /bin/ls")
+	}
+}
+
+func TestUbuntuRootfsStaysWritable(t *testing.T) {
+	s := NewInterpreter("root")
+	if out, code, _ := s.Run("echo x > /usr/x && cat /usr/x"); !strings.HasPrefix(out, "x") || code != 0 {
+		t.Errorf("SSH write to /usr -> (%q, %d), want unchanged behaviour", out, code)
+	}
+}
+
+// `> FILE` with no command creates or truncates FILE; the writable-dir
+// sweep depends on it failing on a read-only mount and succeeding elsewhere.
+func TestBareRedirectCreatesFile(t *testing.T) {
+	for name, s := range map[string]*Interpreter{"ubuntu": NewInterpreter("root"), "dvr": newDVR()} {
+		if out, code, _ := s.Run(">/tmp/.x"); out != "" || code != 0 {
+			t.Errorf("%s: >/tmp/.x -> (%q, %d)", name, out, code)
+		}
+		if out, _, _ := s.Run("ls -a /tmp"); !strings.Contains(out, ".x") {
+			t.Errorf("%s: ls -a /tmp = %q, want .x created", name, out)
+		}
+	}
+}
+
+func TestLsOnAFileNamesIt(t *testing.T) {
+	for name, s := range map[string]*Interpreter{"ubuntu": NewInterpreter("root"), "dvr": newDVR()} {
+		if out, code, _ := s.Run("ls /bin/ls"); out != "/bin/ls" || code != 0 {
+			t.Errorf("%s: ls /bin/ls -> (%q, %d)", name, out, code)
+		}
+		if out, _, _ := s.Run("ls -l /bin/ls"); !strings.HasSuffix(out, " /bin/ls") || strings.HasPrefix(out, "total") {
+			t.Errorf("%s: ls -l /bin/ls = %q", name, out)
+		}
+	}
+}

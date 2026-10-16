@@ -280,7 +280,14 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 		cmdWords, red := extractRedirects(resolved)
 		cmdWords = stripAssignments(cmdWords)
 		if len(cmdWords) == 0 {
-			return "", 0, false
+			// `> FILE` alone creates or truncates FILE.
+			if red.stdoutFile == "" {
+				return "", 0, false
+			}
+			if msg, code := s.writeFile(red.stdoutFile, "", red.appendMode); code != 0 {
+				return msg, 1, true
+			}
+			return "", 0, true
 		}
 		var stdin *string
 		if red.stdinFile != "" {
@@ -899,8 +906,13 @@ func (s *Interpreter) lsBuiltin(args []string, action string) (string, int) {
 		}
 	}
 	_, n := s.lookup(target)
-	if n == nil || n.Type != NodeDir {
+	switch {
+	case n == nil:
 		return "ls: cannot access '" + target + "': No such file or directory", 2
+	case n.Type == NodeFile && longFormat:
+		return fmt.Sprintf("%s %2d %-6s %-6s %5d %s %s", n.Mode, 1, n.Owner, n.Group, sizeOf(n), n.MTime, target), 0
+	case n.Type == NodeFile:
+		return target, 0
 	}
 	return s.lsListing(n, action, longFormat, showAll), 0
 }

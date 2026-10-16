@@ -367,6 +367,9 @@ func (s *Interpreter) writeFile(target, content string, appendMode bool) (string
 	if parent == nil || parent.Type != NodeDir {
 		return s.shellMsg(s.profile.msgs.createNoDir, target), 1
 	}
+	if s.readOnly(clean) {
+		return s.shellMsg(s.profile.msgs.createRO, target), 1
+	}
 
 	base := path.Base(clean)
 	_, existing := s.lookup(clean)

@@ -146,6 +146,10 @@ func (s *Interpreter) chmodBuiltin(args []string) (string, int) {
 			errs = append(errs, "chmod: cannot access '"+f+"': No such file or directory")
 			continue
 		}
+		if s.readOnly(clean) {
+			errs = append(errs, "chmod: "+f+": Read-only file system")
+			continue
+		}
 		m := s.mutable(clean, n)
 		m.Mode = applyMode(m.Mode, mode)
 	}
@@ -241,6 +245,8 @@ func (s *Interpreter) rmBuiltin(args []string) (string, int) {
 			}
 		case n.Type == NodeDir && !recursive:
 			errs = append(errs, "rm: cannot remove '"+f+"': Is a directory")
+		case s.readOnly(clean):
+			errs = append(errs, "rm: can't remove '"+f+"': Read-only file system")
 		default:
 			s.remove(clean)
 		}
@@ -280,6 +286,10 @@ func (s *Interpreter) mkdirBuiltin(args []string) (string, int) {
 			errs = append(errs, "mkdir: cannot create directory '"+d+"': No such file or directory")
 			continue
 		}
+		if s.readOnly(missing[0]) {
+			errs = append(errs, "mkdir: can't create directory '"+d+"': Read-only file system")
+			continue
+		}
 		for _, p := range missing {
 			s.mkdirAt(p)
 		}
@@ -297,7 +307,12 @@ func (s *Interpreter) touchBuiltin(args []string) (string, int) {
 	}
 	var errs []string
 	for _, f := range ops {
-		if _, n := s.lookup(f); n != nil {
+		clean, n := s.lookup(f)
+		if n != nil {
+			continue
+		}
+		if s.readOnly(clean) {
+			errs = append(errs, "touch: "+f+": Read-only file system")
 			continue
 		}
 		if _, code := s.writeFile(f, "", false); code != 0 {
@@ -331,6 +346,9 @@ func (s *Interpreter) cpBuiltin(cmd string, args []string) (string, int) {
 	}
 	if _, dn := s.lookup(dst); dn != nil && dn.Type == NodeDir {
 		dst = path.Join(dst, path.Base(srcClean))
+	}
+	if s.readOnly(s.resolvePath(dst)) || (cmd == "mv" && s.readOnly(srcClean)) {
+		return cmd + ": can't create '" + dst + "': Read-only file system", 1
 	}
 	if _, code := s.writeFile(dst, n.Content, false); code != 0 {
 		return cmd + ": cannot create regular file '" + dst + "': No such file or directory", 1

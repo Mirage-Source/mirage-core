@@ -29,7 +29,10 @@ var DVR = &Profile{
 		openMissing: "-sh: can't open %s: no such file",
 		syntaxEOF:   "-sh: syntax error: unexpected end of file",
 		syntaxToken: `-sh: syntax error: unexpected "%s"`,
+		createRO:    "-sh: can't create %s: Read-only file system",
 	},
+	// The tmpfs and jffs2 mounts in /proc/mounts; / is squashfs.
+	writable:      []string{"/tmp", "/var", "/dev", "/mnt/mtd"},
 	allRoot:       true,
 	home:          "/",
 	busybox:       true,
