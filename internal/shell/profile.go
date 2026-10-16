@@ -20,10 +20,14 @@ type Profile struct {
 
 	msgs shellMsgs
 
-	// allRoot: every login is uid 0 with home /, as on embedded devices.
+	// allRoot: every login is uid 0 with home dir home, as on embedded devices.
 	allRoot bool
+	home    string
 	busybox bool
-	prompt  func(s *Interpreter) string
+	// busyboxBanner replaces the first line of `busybox` usage output.
+	busyboxBanner string
+	prompt        func(s *Interpreter) string
+	ps            func(s *Interpreter) string // nil: the Ubuntu ps table
 }
 
 // Ubuntu is the SSH sensor's identity: an Ubuntu 22.04 EC2 instance.

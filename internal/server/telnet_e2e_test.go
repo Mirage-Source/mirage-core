@@ -128,8 +128,10 @@ func TestEndToEndTelnetELFProbeSessionPersists(t *testing.T) {
 		}
 	}
 	conn.Close()
-	if !bytes.Contains(wire, []byte("\x7fELF\x02\x01\x01\x00")) {
-		t.Errorf("attacker did not receive the ELF header; wire = %q", wire)
+	// ELF32, little-endian, then e_machine 0x28 (ARM) at offset 18: the DVR's armv7l.
+	i := bytes.Index(wire, []byte("\x7fELF\x01\x01\x01\x00"))
+	if i < 0 || len(wire) < i+20 || wire[i+18] != 0x28 {
+		t.Errorf("attacker did not receive the ARM ELF header; wire = %q", wire)
 	}
 
 	var commandCount int

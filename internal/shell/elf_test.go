@@ -16,14 +16,19 @@ var elfProbes = []string{
 	"/bin/busybox cat /bin/ls|head -n 1",
 	"/bin/busybox cat /bin/ls|more",
 	"/bin/busybox cat /bin/echo", // 8
-	// 3 IPs, 449 sessions; /bin/busybox exists only in busybox mode.
+	// 3 IPs, 449 sessions.
 	"/bin/busybox cat /bin/busybox || while read i; do echo $i; done < /bin/busybox",
 }
 
+// wantELF maps `uname -m` to the ELF (class, e_machine) a loader expects.
+var wantELF = map[string][2]byte{"x86_64": {2, 0x3e}, "armv7l": {1, 0x28}}
+
 func TestELFProbesSeeAHeaderMatchingUname(t *testing.T) {
 	s := newBusyboxInterpreter()
-	if m, _, _ := s.Run("uname -m"); m != "x86_64" {
-		t.Fatalf("uname -m = %q; this test assumes x86_64", m)
+	m, _, _ := s.Run("uname -m")
+	want, ok := wantELF[m]
+	if !ok {
+		t.Fatalf("no expected ELF for uname -m %q", m)
 	}
 	for _, line := range elfProbes {
 		out, code, _ := s.Run(line)
@@ -35,10 +40,20 @@ func TestELFProbesSeeAHeaderMatchingUname(t *testing.T) {
 			t.Errorf("%q -> %q, want an ELF header", line, out)
 			continue
 		}
-		// EI_CLASS=2 (64-bit), EI_DATA=1 (little-endian), e_machine=0x3e (x86-64).
-		if out[4] != 2 || out[5] != 1 || out[18] != 0x3e || out[19] != 0 {
-			t.Errorf("%q header class=%d data=%d machine=%#x%02x, want 64-bit LE x86-64",
-				line, out[4], out[5], out[19], out[18])
+		if out[4] != want[0] || out[5] != 1 || out[18] != want[1] || out[19] != 0 {
+			t.Errorf("%q header class=%d data=%d machine=%#x, want class %d LE machine %#x for %s",
+				line, out[4], out[5], out[18], want[0], want[1], m)
+		}
+	}
+}
+
+// SSH's Ubuntu box answers the same probes with an x86-64 header.
+func TestUbuntuELFMatchesUname(t *testing.T) {
+	s := NewInterpreter("root")
+	for _, line := range []string{"cat /proc/self/exe", "dd bs=52 count=1 if=/bin/ls"} {
+		out, _, _ := s.Run(line)
+		if len(out) < 20 || out[4] != 2 || out[18] != 0x3e {
+			t.Errorf("%q -> %q, want an x86-64 ELF64 header", line, firstLine(out))
 		}
 	}
 }
@@ -82,16 +97,8 @@ func TestBinariesAreListedWhereTheyExist(t *testing.T) {
 	}
 }
 
-func TestBusyboxBinaryExistsOnlyInBusyboxMode(t *testing.T) {
-	bb := newBusyboxInterpreter()
-	if out, _, _ := bb.Run("ls /bin"); !strings.Contains(out, "busybox") {
-		t.Errorf("busybox mode: ls /bin = %q, want busybox listed", out)
-	}
-	ssh := NewInterpreter("root")
-	if out, code, _ := ssh.Run("cat /bin/busybox"); code != 1 || !strings.Contains(out, "No such file") {
-		t.Errorf("SSH: cat /bin/busybox -> (%q, %d), want not found", out, code)
-	}
-	if out, _, _ := ssh.Run("ls /bin"); strings.Contains(out, "busybox") {
-		t.Errorf("SSH: ls /bin = %q lists busybox", out)
+func TestBusyboxBinaryExistsOnTheDVR(t *testing.T) {
+	if out, _, _ := newBusyboxInterpreter().Run("ls /bin"); !strings.Contains(out, "busybox") {
+		t.Errorf("DVR: ls /bin = %q, want busybox listed", out)
 	}
 }

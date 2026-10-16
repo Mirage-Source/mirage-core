@@ -179,8 +179,12 @@ func NewInterpreter(username string) *Interpreter {
 func NewInterpreterFor(username string, p *Profile) *Interpreter {
 	homeDir := ubuntuHomeDir
 	identity := "ubuntu"
-	if username == "root" || p.allRoot {
+	if username == "root" {
 		homeDir = rootHomeDir
+		identity = "root"
+	}
+	if p.allRoot {
+		homeDir = p.home
 		identity = "root"
 	}
 	s := &Interpreter{
@@ -613,6 +617,9 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 		return s.findBuiltin(args, action)
 
 	case "ps":
+		if s.profile.ps != nil {
+			return s.profile.ps(s), 0
+		}
 		return s.psOutput(args), 0
 
 	case "netstat":
@@ -1195,7 +1202,7 @@ func (s *Interpreter) findWalk(p string, n *Node, action, namePattern string, ty
 			names = append(names, cc.Name)
 		}
 	}
-	names = append(names, s.addedChildren(n.Path)...)
+	names = append(names, s.overlayChildren[n.Path]...)
 	for _, name := range names {
 		childPath, child := s.lookup(path.Join(p, name))
 		if child == nil {

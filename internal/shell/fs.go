@@ -335,8 +335,10 @@ func emptySystemDir() *Node {
 }
 
 func init() {
-	for p, n := range fs {
-		n.Path = p
+	for _, tree := range []map[string]*Node{fs, dvrFS} {
+		for p, n := range tree {
+			n.Path = p
+		}
 	}
 }
 
@@ -348,34 +350,11 @@ func (s *Interpreter) lookup(target string) (string, *Node) {
 	if n, ok := s.overlay[clean]; ok {
 		return clean, n
 	}
-	if s.Busybox && clean == busyboxPath {
-		return clean, busyboxBinary
-	}
 	n, ok := s.profile.fs[clean]
 	if !ok {
 		return clean, nil
 	}
 	return clean, n
-}
-
-// /bin/busybox exists only on the busybox (telnet) box, so it lives outside
-// the shared fs map that SSH sessions also see.
-const busyboxPath = "/bin/busybox"
-
-var busyboxBinary = func() *Node {
-	n := binaryNode("Mar 23  2022", 2007728)
-	n.Path = busyboxPath
-	return n
-}()
-
-// addedChildren lists entries a session sees in dir beyond the base fs:
-// its own writes, and /bin/busybox in busybox mode.
-func (s *Interpreter) addedChildren(dir string) []string {
-	names := s.overlayChildren[dir]
-	if s.Busybox && dir == path.Dir(busyboxPath) {
-		names = append(append([]string{}, names...), path.Base(busyboxPath))
-	}
-	return names
 }
 
 // writeFile creates or overwrites a file at target in this session's
@@ -476,7 +455,7 @@ func (s *Interpreter) lsListing(n *Node, action string, longFormat, showAll bool
 			names = append(names, cc.Name)
 		}
 	}
-	names = append(names, s.addedChildren(n.Path)...)
+	names = append(names, s.overlayChildren[n.Path]...)
 	for _, name := range names {
 		if !showAll && strings.HasPrefix(name, ".") {
 			continue

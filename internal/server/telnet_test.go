@@ -368,3 +368,23 @@ func TestTelnetSingleLineScannerIsStillPersisted(t *testing.T) {
 			shouldPersistTelnet(h.guard), s.Outcome, len(s.AuthAttempts))
 	}
 }
+
+// The telnet sensor is the DVR end to end: no Ubuntu banner or welcome,
+// the device's own login prompt and an ash prompt after login.
+func TestTelnetPresentsTheDVR(t *testing.T) {
+	h := startTelnetHarness(t, testTelnetConfig())
+	pre := h.readUntil("LocalHost login: ")
+	h.send([]byte("root\r\nxc3511\r\n"))
+	h.readUntil("Password: ")
+	post := h.readUntil("# ")
+	h.send([]byte("uname -m\r\nenable\r\nexit\r\n"))
+	rest := h.readUntil("logout")
+	h.wait()
+	all := string(pre) + string(post) + string(rest)
+	if strings.Contains(all, "Ubuntu") || strings.Contains(all, "Welcome") {
+		t.Errorf("wire shows the Ubuntu identity: %q", all)
+	}
+	if !strings.Contains(string(rest), "armv7l") || !strings.Contains(string(rest), "-sh: enable: not found") {
+		t.Errorf("after login = %q, want armv7l and ash errors", rest)
+	}
+}

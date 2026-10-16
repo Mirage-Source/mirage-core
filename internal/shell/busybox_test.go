@@ -5,10 +5,9 @@ import (
 	"testing"
 )
 
+// newBusyboxInterpreter is the telnet sensor's shell.
 func newBusyboxInterpreter() *Interpreter {
-	s := NewInterpreter("root")
-	s.Busybox = true
-	return s
+	return NewInterpreterFor("root", DVR)
 }
 
 func TestBusyboxUnknownAppletMatchesRealBusybox(t *testing.T) {
@@ -46,7 +45,7 @@ func TestBusyboxRealButUnemulatedAppletSucceedsSilently(t *testing.T) {
 func TestBusyboxBareShowsBanner(t *testing.T) {
 	s := newBusyboxInterpreter()
 	out, code, _ := s.Run("/bin/busybox")
-	if !strings.HasPrefix(out, "BusyBox v1.30.1 (Ubuntu 1:1.30.1-7ubuntu3) multi-call binary.\n") || !strings.Contains(out, "Currently defined functions:") || code != 0 {
+	if !strings.HasPrefix(out, "BusyBox v1.20.2 (2018-03-08 15:32:11 CST) multi-call binary.\n") || !strings.Contains(out, "Currently defined functions:") || code != 0 {
 		t.Errorf("bare busybox -> (%q, %d)", out, code)
 	}
 }

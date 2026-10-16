@@ -23,8 +23,6 @@ import (
 	"github.com/mirage-source/mirage-core/internal/validity"
 )
 
-const telnetIssue = "Ubuntu 22.04.3 LTS\r\n"
-
 // Echo-loaders write a payload 32 bytes per command, so a full binary takes
 // 1,000-3,000 commands; the SSH cap of 500 cut every one off. Measured cost
 // at 4,000 commands is ~3 MiB heap per session, so the connection cap is
@@ -187,20 +185,18 @@ func handleTelnet(conn net.Conn, cfg telnetConfig, guard *sessionGuard) {
 
 	conn.SetDeadline(time.Now().Add(cfg.loginTimeout))
 	ts.writeRaw(ts.neg.Initial())
-	ts.write(telnetIssue)
 
-	hostname := shell.NewInterpreter("").Hostname
+	// The DVR's telnetd prints no issue banner and login prints no motd.
+	hostname := shell.NewInterpreterFor("", shell.DVR).Hostname
 	username, ok := telnetLogin(ts, cfg, guard, hostname)
 	if !ok {
 		return
 	}
 
-	interp := shell.NewInterpreter(username)
+	interp := shell.NewInterpreterFor(username, shell.DVR)
 	interp.Hostname = hostname
-	interp.Busybox = true
 	ts.idle = cfg.idleTimeout
 	refreshDeadlines(conn, cfg.idleTimeout)
-	ts.write("Welcome to Ubuntu 22.04.3 LTS\r\n")
 
 	for {
 		if guard.commandCount() >= guard.commandLimit() {
