@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"maps"
 	"path"
 	"strings"
 )
@@ -15,6 +16,7 @@ const (
 	kindFor
 	kindWhile
 	kindUntil
+	kindSubshell
 )
 
 const maxLoopIterations = 1000
@@ -184,6 +186,9 @@ func (p *parser) nonEmpty(stops map[string]bool, stopAtDoubleSemi bool) ([]item,
 
 func (p *parser) item() (item, error) {
 	st, _ := p.cur()
+	if strings.HasPrefix(st.Text, "(") && !strings.HasPrefix(st.Text, "((") {
+		return p.subshellItem(st)
+	}
 	kw, rest := splitKeyword(st.Text)
 	switch kw {
 	case "if":
@@ -305,6 +310,86 @@ func (p *parser) forItem(sep, rest string) (item, error) {
 	}
 	it.body = body
 	return it, p.expect("done")
+}
+
+// subshellItem parses `( list ) [redirects]`. The statement splitter keeps
+// a parenthesised group in one statement, so its body is re-split here and
+// whatever follows the closing paren is kept as the group's redirects.
+func (p *parser) subshellItem(st statement) (item, error) {
+	end := closingParen(st.Text)
+	if end < 0 {
+		return item{}, syntaxError("")
+	}
+	body, err := parseStatements(splitStatements(st.Text[1:end]))
+	if err != nil {
+		return item{}, err
+	}
+	if len(body) == 0 {
+		return item{}, syntaxError(")")
+	}
+	p.pos++
+	return item{kind: kindSubshell, sep: st.Sep, body: body, text: strings.TrimSpace(st.Text[end+1:])}, nil
+}
+
+// closingParen returns the index of the paren closing text[0], or -1.
+func closingParen(text string) int {
+	depth := 0
+	var quote byte
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '\'' || c == '"':
+			quote = c
+		case c == '(':
+			depth++
+		case c == ')':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// runSubshell runs a ( ) group: cd and variable changes stay inside it, file
+// writes do not. Output that follows a nonzero exit is treated as the
+// group's stderr, the same heuristic simple commands use (isErrorChannel),
+// so `(fetch || fetch) > f` shows its errors and still creates f.
+func (s *Interpreter) runSubshell(it item, depth int, bait *[]BaitHit, action string, outputs *[]string) int {
+	cwd, env := s.Cwd, maps.Clone(s.Env)
+	var inner []string
+	code := s.runItems(it.body, depth, bait, action, &inner)
+	s.Cwd, s.Env = cwd, env
+
+	// `( ... ) | cmd` hands the output to a reader this shell doesn't run.
+	if strings.HasPrefix(it.text, "|") {
+		return code
+	}
+	var words []string
+	for _, w := range tokenizeWords(it.text) {
+		words = append(words, s.substitute(w, depth, bait, action))
+	}
+	_, red := extractRedirects(words)
+	errChan := code != 0
+	if errChan && red.stdoutFile != "" {
+		if msg, c := s.writeFile(red.stdoutFile, "", red.appendMode); c != 0 {
+			*outputs = append(*outputs, msg)
+			return 1
+		}
+	}
+	visible, ok := s.routeStageOutput(strings.Join(inner, "\r\n"), errChan, red, true)
+	if visible != "" {
+		*outputs = append(*outputs, visible)
+	}
+	if !ok {
+		return 1
+	}
+	return code
 }
 
 func (p *parser) whileItem(sep string, until bool) (item, error) {
@@ -465,6 +550,8 @@ func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action 
 			}
 		case kindWhile, kindUntil:
 			last = s.runWhile(it, depth, bait, action, outputs)
+		case kindSubshell:
+			last = s.runSubshell(it, depth, bait, action, outputs)
 		case kindCase:
 			last = 0
 			word := s.expandWord(it.word, depth, bait, action)

