@@ -169,7 +169,7 @@ func GetStats(db *sql.DB, protocol session.Protocol) (*api.HoneypotStats, error)
 			credential,
 			COUNT(*) AS count
 		FROM auth_attempts
-		WHERE `+childProtocolFilter(protocol)+`
+		WHERE method = 'password' AND `+childProtocolFilter(protocol)+`
 		GROUP BY credential
 		ORDER BY count DESC
 		LIMIT 10
@@ -202,7 +202,7 @@ func GetStats(db *sql.DB, protocol session.Protocol) (*api.HoneypotStats, error)
 			credential,
 			COUNT(*) AS count
 		FROM auth_attempts
-		WHERE `+childProtocolFilter(protocol)+`
+		WHERE method = 'password' AND `+childProtocolFilter(protocol)+`
 		GROUP BY username, credential
 		ORDER BY count DESC
 		LIMIT 10

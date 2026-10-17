@@ -123,12 +123,13 @@ def map_mitre(prod: ProductionSession) -> list[TechniqueHit]:
             add(tech, f"command matched /{pattern.pattern[:40]}/ ({match.group(0)!r})")
 
     # Credential-access signals from auth attempts.
-    distinct_creds = {a.credential for a in prod.auth_attempts}
-    distinct_users = {a.username for a in prod.auth_attempts}
+    # Offered public keys are not guesses: an ordinary client offers every
+    # key in its agent first. Only password attempts count toward brute force.
     password_attempts = [a for a in prod.auth_attempts if a.method == "password"]
+    distinct_users = {a.username for a in password_attempts}
 
-    if len(prod.auth_attempts) >= 1:
-        add(BRUTE_FORCE, f"{len(prod.auth_attempts)} credential attempt(s)")
+    if password_attempts:
+        add(BRUTE_FORCE, f"{len(password_attempts)} credential attempt(s)")
     if password_attempts:
         add(
             Technique("T1110.001", "Brute Force: Password Guessing", "Credential Access"),

@@ -106,9 +106,13 @@ def extract_features(prod: ProductionSession) -> IntelFeatures:
     has_exfil = float(any(b.access_type == "exfil_attempt" for b in prod.bait_events))
 
     # Auth.
-    n_auth = len(prod.auth_attempts)
-    distinct_creds = len({a.credential for a in prod.auth_attempts})
-    distinct_users = len({a.username for a in prod.auth_attempts})
+    # Password attempts only: these features were defined (and the models
+    # trained) before public-key attempts were recorded, so counting offered
+    # keys would shift them for any client with keys in its agent.
+    passwords = [a for a in prod.auth_attempts if a.method == "password"]
+    n_auth = len(passwords)
+    distinct_creds = len({a.credential for a in passwords})
+    distinct_users = len({a.username for a in passwords})
     any_success = float(any(a.success for a in prod.auth_attempts))
 
     # Exploration.

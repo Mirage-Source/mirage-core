@@ -342,47 +342,10 @@ func Start(addr string) {
 			},
 		}
 
-		config := &ssh.ServerConfig{
-			ServerVersion: "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6",
-			MaxAuthTries:  6,
-			PasswordCallback: func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
-				username := conn.User()
-				pass := string(password)
-				_, accepted := weakCreds[username+":"+pass]
-
-				// Captured here, not just after a successful handshake in
-				// handleConnection: ConnMetadata already has the client's
-				// version banner and remote address at auth time, and a
-				// rejected handshake never reaches handleConnection's
-				// post-handshake assignment, which used to leave every
-				// auth_failed session with a blank client_ip/banner.
-				sess.Network.SSHClientBanner = string(conn.ClientVersion())
-				if tcpAddr, ingressSource, proxyNodeID := resolveRemoteAddr(pp, conn.RemoteAddr()); tcpAddr != nil {
-					sess.Network.ClientIP = tcpAddr.IP.String()
-					sess.Network.ClientPort = tcpAddr.Port
-					sess.Network.IngressSource = ingressSource
-					sess.Network.ProxyNodeID = proxyNodeID
-				}
-
-				sess.AuthAttempts = append(sess.AuthAttempts, session.AuthAttempt{
-					TimestampMS: time.Now().UnixMilli(),
-					Method:      session.AuthMethodPassword,
-					Username:    username,
-					Credential:  pass,
-					Success:     accepted,
-				})
-				log.Printf("Auth attempt user=%s password=%s accepted=%v", username, pass, accepted)
-
-				delay := time.Duration(500+rand.Intn(2500)) * time.Millisecond
-				time.Sleep(delay)
-
-				if !accepted {
-					return nil, errors.New("invalid credentials")
-				}
-				return nil, nil
-			},
-		}
-		config.AddHostKey(parsedKey)
+		config := newSSHServerConfig(&sess, pp, sshAuthConfig{
+			weakCreds: weakCreds,
+			authDelay: func() time.Duration { return time.Duration(500+rand.Intn(2500)) * time.Millisecond },
+		}, parsedKey)
 		guard := &sessionGuard{sess: &sess}
 		go func() {
 			defer func() { <-connSlots }()
@@ -508,6 +471,83 @@ func resolveRemoteAddr(pp *proxyproto.Conn, fallback net.Addr) (addr *net.TCPAdd
 		return tcpAddr, session.IngressSourceDirect, ""
 	}
 	return nil, session.IngressSourceDirect, ""
+}
+
+type sshAuthConfig struct {
+	weakCreds map[string]struct{}
+	// authDelay runs after every password attempt; a real sshd's PAM
+	// failure delay is what attackers' tooling is tuned against.
+	authDelay func() time.Duration
+}
+
+// newSSHServerConfig builds the per-connection config whose auth callbacks
+// fill in sess. Every callback runs on the handshake goroutine, before any
+// channel goroutine exists, so they write sess without the guard's mutex.
+func newSSHServerConfig(sess *session.Session, pp *proxyproto.Conn, auth sshAuthConfig, hostKey ssh.Signer) *ssh.ServerConfig {
+	// Captured at auth time, not just after a successful handshake in
+	// handleConnection: ConnMetadata already has the client's version banner
+	// and remote address here, and a rejected handshake never reaches
+	// handleConnection's post-handshake assignment, which used to leave
+	// every auth_failed session with a blank client_ip/banner.
+	captureNetwork := func(conn ssh.ConnMetadata) {
+		sess.Network.SSHClientBanner = string(conn.ClientVersion())
+		if tcpAddr, ingressSource, proxyNodeID := resolveRemoteAddr(pp, conn.RemoteAddr()); tcpAddr != nil {
+			sess.Network.ClientIP = tcpAddr.IP.String()
+			sess.Network.ClientPort = tcpAddr.Port
+			sess.Network.IngressSource = ingressSource
+			sess.Network.ProxyNodeID = proxyNodeID
+		}
+	}
+
+	config := &ssh.ServerConfig{
+		ServerVersion: "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6",
+		MaxAuthTries:  6,
+		PasswordCallback: func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
+			username := conn.User()
+			pass := string(password)
+			_, accepted := auth.weakCreds[username+":"+pass]
+			captureNetwork(conn)
+
+			sess.AuthAttempts = append(sess.AuthAttempts, session.AuthAttempt{
+				TimestampMS: time.Now().UnixMilli(),
+				Method:      session.AuthMethodPassword,
+				Username:    username,
+				Credential:  pass,
+				Success:     accepted,
+			})
+			log.Printf("Auth attempt user=%s password=%s accepted=%v", username, pass, accepted)
+
+			time.Sleep(auth.authDelay())
+
+			if !accepted {
+				return nil, errors.New("invalid credentials")
+			}
+			return nil, nil
+		},
+		// Always rejects: no key is ever authorized, but which keys bots
+		// offer identifies campaigns across source IPs (a reused key is a
+		// stronger link than a reused password). The library caches the
+		// result per key, so the unsigned query and the signed retry an
+		// OpenSSH client sends produce one row, not two. Advertising
+		// "publickey" also matches a stock Ubuntu sshd, which lists
+		// "publickey,password" where this sensor used to list only
+		// "password". No delay: sshd answers a key query immediately.
+		PublicKeyCallback: func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+			captureNetwork(conn)
+			credential := key.Type() + " " + ssh.FingerprintSHA256(key)
+			sess.AuthAttempts = append(sess.AuthAttempts, session.AuthAttempt{
+				TimestampMS: time.Now().UnixMilli(),
+				Method:      session.AuthMethodPublicKey,
+				Username:    conn.User(),
+				Credential:  credential,
+				Success:     false,
+			})
+			log.Printf("Auth attempt user=%s publickey=%s accepted=false", conn.User(), credential)
+			return nil, errors.New("key not authorized")
+		},
+	}
+	config.AddHostKey(hostKey)
+	return config
 }
 
 // refreshDeadlines pushes both the read and the write deadline out by idle.
