@@ -77,6 +77,12 @@ allowed to open it at all. The container will crash-loop on
 chmod 644 config/hostkey
 ```
 
+The script now also writes `config/hostkey_rsa` and `config/hostkey_ecdsa`
+(already `644`), since a real Ubuntu sshd offers RSA, ECDSA and ed25519 host
+keys. It is safe to re-run on an existing deployment: present keys are kept.
+If compose started before they existed, it will have created empty
+directories at those paths; the script removes them before writing.
+
 ---
 
 ## 2a. `fleet_queue` volume: same non-root-user problem, for the local retry queue

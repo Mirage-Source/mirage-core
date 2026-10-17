@@ -14,12 +14,17 @@ import (
 // serverKexInit returns the algorithm lists the sensor's KEXINIT advertises.
 func serverKexInit(t *testing.T) sshfp.Lists {
 	t.Helper()
+	return serverKexInitWith(t, []ssh.Signer{testSigner(t)})
+}
+
+func serverKexInitWith(t *testing.T, keys []ssh.Signer) sshfp.Lists {
+	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ln.Close()
-	cfg := newSSHServerConfig(&session.Session{}, nil, sshAuthConfig{authDelay: func() time.Duration { return 0 }}, testSigner(t))
+	cfg := newSSHServerConfig(&session.Session{}, nil, sshAuthConfig{authDelay: func() time.Duration { return 0 }}, keys...)
 	go func() {
 		c, err := ln.Accept()
 		if err != nil {

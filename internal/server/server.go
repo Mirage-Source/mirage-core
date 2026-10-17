@@ -252,15 +252,7 @@ func (g *sessionGuard) finalize(db *sql.DB, fleetClient *fleet.Client) {
 }
 
 func Start(addr string) {
-	hostKey, err := os.ReadFile("config/hostkey")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	parsedKey, err := ssh.ParsePrivateKey(hostKey)
-	if err != nil {
-		log.Fatal(err)
-	}
+	hostKeys := loadHostKeys("config/hostkey")
 
 	credPath := os.Getenv("WEAK_CREDENTIALS_FILE")
 	if credPath == "" {
@@ -384,7 +376,7 @@ func Start(addr string) {
 			weakCreds:           weakCreds,
 			authDelay:           func() time.Duration { return time.Duration(500+rand.Intn(2500)) * time.Millisecond },
 			keyboardInteractive: keyboardInteractive,
-		}, parsedKey)
+		}, hostKeys...)
 		guard := &sessionGuard{sess: &sess}
 		go func() {
 			defer func() { <-connSlots }()
@@ -571,7 +563,7 @@ type sshAuthConfig struct {
 // newSSHServerConfig builds the per-connection config whose auth callbacks
 // fill in sess. Every callback runs on the handshake goroutine, before any
 // channel goroutine exists, so they write sess without the guard's mutex.
-func newSSHServerConfig(sess *session.Session, pp *proxyproto.Conn, auth sshAuthConfig, hostKey ssh.Signer) *ssh.ServerConfig {
+func newSSHServerConfig(sess *session.Session, pp *proxyproto.Conn, auth sshAuthConfig, hostKeys ...ssh.Signer) *ssh.ServerConfig {
 	// Captured at auth time, not just after a successful handshake in
 	// handleConnection: ConnMetadata already has the client's version banner
 	// and remote address here, and a rejected handshake never reaches
@@ -654,8 +646,49 @@ func newSSHServerConfig(sess *session.Session, pp *proxyproto.Conn, auth sshAuth
 			return checkPassword(conn, session.AuthMethodKeyboardInteractive, answers[0])
 		}
 	}
-	config.AddHostKey(hostKey)
+	for _, k := range hostKeys {
+		config.AddHostKey(k)
+	}
 	return config
+}
+
+// loadHostKeys loads the required ed25519 key at path plus the optional
+// path+"_rsa" and path+"_ecdsa", returned in OpenSSH's advertising order
+// (RSA, ECDSA, ed25519). A stock Ubuntu sshd offers all three; offering
+// only ed25519 is visible to any scanner. A missing or unreadable extra key
+// is skipped with a warning so existing deployments keep working.
+func loadHostKeys(path string) []ssh.Signer {
+	load := func(p string) (ssh.Signer, error) {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			return nil, err
+		}
+		return ssh.ParsePrivateKey(raw)
+	}
+
+	main, err := load(path)
+	if err != nil {
+		log.Fatalf("host key %s: %v", path, err)
+	}
+
+	var keys []ssh.Signer
+	for _, suffix := range []string{"_rsa", "_ecdsa"} {
+		k, err := load(path + suffix)
+		if err != nil {
+			log.Printf("warning: optional host key %s not loaded (%v); run scripts/generate_hostkey.sh", path+suffix, err)
+			continue
+		}
+		if k.PublicKey().Type() == ssh.KeyAlgoRSA {
+			// OpenSSH 8.9 signs with SHA-2 only; ssh-rsa would be a tell.
+			if as, ok := k.(ssh.AlgorithmSigner); ok {
+				if ms, err := ssh.NewSignerWithAlgorithms(as, []string{ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256}); err == nil {
+					k = ms
+				}
+			}
+		}
+		keys = append(keys, k)
+	}
+	return append(keys, main)
 }
 
 // refreshDeadlines pushes both the read and the write deadline out by idle.
