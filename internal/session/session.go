@@ -131,6 +131,12 @@ type Network struct {
 	// which behind a tunnel says nothing about what was targeted. Zero
 	// (omitted, NULL in the store) when IngressSource is "direct".
 	TargetPort int `json:"target_port,omitempty"`
+
+	// HASSH is md5 of HASSHAlgorithms, the client-to-server kex, cipher,
+	// MAC and compression lists from the SSH client's KEXINIT (see
+	// internal/sshfp). SSH only; empty if the client never sent a KEXINIT.
+	HASSH           string `json:"hassh,omitempty"`
+	HASSHAlgorithms string `json:"hassh_algorithms,omitempty"`
 }
 
 const (

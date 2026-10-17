@@ -139,3 +139,13 @@ func TestRejectedRequestsAreCappedAndTruncated(t *testing.T) {
 		t.Errorf("detail is %d bytes, want at most %d", len(d), maxRejectedDetailBytes)
 	}
 }
+
+func TestSessionRecordsClientHASSH(t *testing.T) {
+	client, finish := dialRecordingSensor(t)
+	client.Close()
+	s := finish()
+
+	if len(s.Network.HASSH) != 32 || !strings.Contains(s.Network.HASSHAlgorithms, ";") {
+		t.Fatalf("network = %+v", s.Network)
+	}
+}

@@ -22,6 +22,7 @@ import (
 	"github.com/mirage-source/mirage-core/internal/proxyproto"
 	"github.com/mirage-source/mirage-core/internal/session"
 	"github.com/mirage-source/mirage-core/internal/shell"
+	"github.com/mirage-source/mirage-core/internal/sshfp"
 	"github.com/mirage-source/mirage-core/internal/store"
 	"github.com/mirage-source/mirage-core/internal/validity"
 	"golang.org/x/crypto/ssh"
@@ -615,7 +616,14 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGua
 	log.Printf("New connection from %v", conn.RemoteAddr())
 
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
-	sshConn, chans, reqs, err := ssh.NewServerConn(conn, config)
+	// The client's KEXINIT is read inside NewServerConn, before any auth
+	// callback, so the fingerprint is known on every path below.
+	kexCapture := sshfp.NewCapture(conn)
+	sshConn, chans, reqs, err := ssh.NewServerConn(kexCapture, config)
+	if fp, ok := kexCapture.Result(); ok {
+		guard.sess.Network.HASSH = fp.HASSH
+		guard.sess.Network.HASSHAlgorithms = fp.Algorithms
+	}
 	if err != nil {
 		log.Printf("Failed to handshake: %v", err)
 		// A rejected/abandoned handshake never opens a channel, so nothing
