@@ -76,12 +76,9 @@ func StartTelnet(addr string) {
 
 	// Separate from SSH's TRUST_PROXY_PROTOCOL because both sensors read the
 	// same .env: one shared flag would make a public listener trust headers
-	// the moment the other sensor was put behind a relay. Same rule applies:
-	// only enable when nothing but the relay can reach this port.
-	trustProxyProtocol := envBool("TELNET_TRUST_PROXY_PROTOCOL", false)
-	if trustProxyProtocol {
-		log.Printf("Telnet: trusting PROXY protocol v1 headers (TELNET_TRUST_PROXY_PROTOCOL=true)")
-	}
+	// the moment the other sensor was put behind a relay. The peer
+	// allowlist, PROXY_TRUSTED_PEERS, is shared: it names the relay.
+	proxyTrust := loadProxyTrust("TELNET_TRUST_PROXY_PROTOCOL")
 	connSlots := make(chan struct{}, maxConnections)
 
 	listener, err := net.Listen("tcp", addr)
@@ -119,9 +116,7 @@ func StartTelnet(addr string) {
 			continue
 		}
 
-		if trustProxyProtocol {
-			conn = proxyproto.Wrap(conn)
-		}
+		conn = proxyTrust.wrap(conn)
 
 		guard := newTelnetGuard()
 		go func() {

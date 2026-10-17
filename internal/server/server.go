@@ -274,19 +274,10 @@ func Start(addr string) {
 	log.Printf("Max concurrent connections: %d", maxConnections)
 
 	// Off by default, and deliberately so: turning this on tells Mirage to
-	// believe a PROXY protocol v1 header prepended to the raw TCP stream
-	// over conn.RemoteAddr() for that connection. That's correct and
-	// necessary when every connection reaching this listener is guaranteed
-	// to come through a trusted relay/load balancer that prepends one -- but
-	// on a listener directly reachable from the open internet it would let
-	// literally anyone claim any source IP they want, silently poisoning
-	// every downstream log/classification/re-identification signal. Never
-	// enable this unless something in front of Mirage is the only thing
-	// that can reach this port.
-	trustProxyProtocol := envBool("TRUST_PROXY_PROTOCOL", false)
-	if trustProxyProtocol {
-		log.Printf("Trusting PROXY protocol v1 headers on incoming connections (TRUST_PROXY_PROTOCOL=true)")
-	}
+	// believe a PROXY protocol v1 header over conn.RemoteAddr(). Anyone whose
+	// header is believed can claim any source IP, so set PROXY_TRUSTED_PEERS
+	// to the relay's addresses; see proxytrust.go.
+	proxyTrust := loadProxyTrust("TRUST_PROXY_PROTOCOL")
 
 	deceptionRuntime := deception.NewRuntime(deception.ConfigFromEnv())
 	log.Printf(
@@ -372,12 +363,8 @@ func Start(addr string) {
 		// through every call in between. Wrap itself does no I/O -- header
 		// detection happens lazily on first Read, so this can never block
 		// the accept loop.
-		var handlerConn net.Conn = conn
-		var pp *proxyproto.Conn
-		if trustProxyProtocol {
-			pp = proxyproto.Wrap(conn)
-			handlerConn = pp
-		}
+		handlerConn := proxyTrust.wrap(conn)
+		pp, _ := handlerConn.(*proxyproto.Conn)
 
 		sess := session.Session{
 			SessionID:     uuid.New().String(),
