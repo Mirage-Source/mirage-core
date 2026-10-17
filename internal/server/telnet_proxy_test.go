@@ -66,6 +66,9 @@ func TestTelnetTrustedProxyHeaderSetsRealSource(t *testing.T) {
 	if s.Network.ProxyNodeID != "198.51.100.7" {
 		t.Errorf("proxy node = %q", s.Network.ProxyNodeID)
 	}
+	if s.Network.TargetPort != 2323 {
+		t.Errorf("target port = %d, want 2323", s.Network.TargetPort)
+	}
 	// The header line must never surface as a username.
 	if len(s.AuthAttempts) != 1 || s.AuthAttempts[0].Username != "root" {
 		t.Errorf("auth attempts = %+v", s.AuthAttempts)

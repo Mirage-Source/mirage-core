@@ -126,6 +126,11 @@ type Network struct {
 	// identifying which relay/sensor node this session came through. Empty
 	// when IngressSource is "direct".
 	ProxyNodeID string `json:"proxy_node_id"`
+	// TargetPort is the PROXY header's dst-port: the port the client
+	// connected to on the relay. ServerPort is this listener's own port,
+	// which behind a tunnel says nothing about what was targeted. Zero
+	// (omitted, NULL in the store) when IngressSource is "direct".
+	TargetPort int `json:"target_port,omitempty"`
 }
 
 const (

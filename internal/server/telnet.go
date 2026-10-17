@@ -193,12 +193,7 @@ func handleTelnet(conn net.Conn, cfg telnetConfig, guard *sessionGuard) {
 		// "login:"), so asking up front would stall a bot that waits for the
 		// prompt. By now the first read has happened or the conn is dead.
 		if pp, ok := conn.(*proxyproto.Conn); ok {
-			if a, ingress, node := resolveRemoteAddr(pp, conn.RemoteAddr()); a != nil {
-				sess.Network.ClientIP = a.IP.String()
-				sess.Network.ClientPort = a.Port
-				sess.Network.IngressSource = ingress
-				sess.Network.ProxyNodeID = node
-			}
+			applyRemoteAddr(&sess.Network, pp, conn.RemoteAddr())
 		}
 		m := ts.neg.Meta()
 		opts := make([]int, len(m.ClientWill))

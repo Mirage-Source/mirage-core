@@ -92,3 +92,26 @@ func TestResolveRemoteAddrProxyConnNoHeaderFallsBackToRealPeer(t *testing.T) {
 		t.Fatalf("got nodeID %q, want empty", nodeID)
 	}
 }
+
+func TestApplyRemoteAddrRecordsTargetPortWhenProxied(t *testing.T) {
+	client, srv := net.Pipe()
+	defer client.Close()
+	defer srv.Close()
+	go client.Write([]byte("PROXY TCP4 198.51.100.7 sensor-7 33333 2323\r\n"))
+
+	var n session.Network
+	applyRemoteAddr(&n, proxyproto.Wrap(srv), &net.TCPAddr{IP: net.ParseIP("10.0.0.1"), Port: 55})
+	want := session.Network{ClientIP: "198.51.100.7", ClientPort: 33333, IngressSource: session.IngressSourceProxied, ProxyNodeID: "sensor-7", TargetPort: 2323}
+	if n != want {
+		t.Fatalf("got %+v, want %+v", n, want)
+	}
+}
+
+func TestApplyRemoteAddrDirectHasNoTargetPort(t *testing.T) {
+	var n session.Network
+	applyRemoteAddr(&n, nil, &net.TCPAddr{IP: net.ParseIP("10.0.0.1"), Port: 55})
+	want := session.Network{ClientIP: "10.0.0.1", ClientPort: 55, IngressSource: session.IngressSourceDirect}
+	if n != want {
+		t.Fatalf("got %+v, want %+v", n, want)
+	}
+}

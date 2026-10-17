@@ -91,6 +91,14 @@ func valuesClause(rows, cols int) string {
 // statement comfortably. CopyIn wins in the tens of thousands, at the cost of
 // its own prepared statement, deferred error reporting, and not interleaving
 // with the other inserts in this transaction.
+// nullIfZero stores 0 as NULL, for columns where zero means "unknown".
+func nullIfZero(n int) any {
+	if n == 0 {
+		return nil
+	}
+	return n
+}
+
 func execBatch(tx *sql.Tx, table, columns string, cols int, args []any) error {
 	if len(args) == 0 {
 		return nil
@@ -144,7 +152,7 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 		INSERT INTO sessions (
 			session_id, schema_version, node_id, protocol,
 			client_ip, client_port, server_port, ssh_client_banner,
-			ingress_source, proxy_node_id,
+			ingress_source, proxy_node_id, target_port,
 			start_ms, end_ms, duration_ms, outcome,
 			command_count, bait_hit_count,
 			attacker_class, classifier_confidence, cluster_id,
@@ -153,16 +161,16 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 		) VALUES (
 			$1, $2, $3, $4,
 			$5, $6, $7, $8,
-			$9, $10,
-			$11, $12, $13, $14,
-			$15, $16,
-			$17, $18, $19,
-			$20, $21,
-			$22
+			$9, $10, $11,
+			$12, $13, $14, $15,
+			$16, $17,
+			$18, $19, $20,
+			$21, $22,
+			$23
 		)
 	`, pgArgs([]any{sess.SessionID, sess.SchemaVersion, sess.NodeID, sess.Protocol,
 		sess.Network.ClientIP, sess.Network.ClientPort, sess.Network.ServerPort, sess.Network.SSHClientBanner,
-		sess.Network.IngressSource, sess.Network.ProxyNodeID,
+		sess.Network.IngressSource, sess.Network.ProxyNodeID, nullIfZero(sess.Network.TargetPort),
 		sess.Timing.StartMS, sess.Timing.EndMS, sess.Timing.DurationMS, sess.Outcome,
 		len(sess.Commands), len(sess.BaitEvents),
 		sess.Intelligence.AttackerClass, sess.Intelligence.ClassifierConfidence, sess.Intelligence.ClusterID,

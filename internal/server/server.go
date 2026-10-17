@@ -510,6 +510,23 @@ func watchRuntimeFlags(db *sql.DB, rt *deception.Runtime, interval time.Duration
 	return func() { close(done) }
 }
 
+// applyRemoteAddr fills the source fields of n for one connection: the
+// PROXY header's claims when pp parsed one, the TCP peer otherwise.
+func applyRemoteAddr(n *session.Network, pp *proxyproto.Conn, fallback net.Addr) {
+	tcpAddr, ingressSource, proxyNodeID := resolveRemoteAddr(pp, fallback)
+	if tcpAddr == nil {
+		return
+	}
+	n.ClientIP = tcpAddr.IP.String()
+	n.ClientPort = tcpAddr.Port
+	n.IngressSource = ingressSource
+	n.ProxyNodeID = proxyNodeID
+	n.TargetPort = 0
+	if ingressSource == session.IngressSourceProxied {
+		n.TargetPort, _ = pp.TargetPort()
+	}
+}
+
 func resolveRemoteAddr(pp *proxyproto.Conn, fallback net.Addr) (addr *net.TCPAddr, ingressSource, proxyNodeID string) {
 	if pp != nil {
 		if tcpAddr, dstRaw, found := pp.RealRemoteAddr(); found {
@@ -540,12 +557,7 @@ func newSSHServerConfig(sess *session.Session, pp *proxyproto.Conn, auth sshAuth
 	// every auth_failed session with a blank client_ip/banner.
 	captureNetwork := func(conn ssh.ConnMetadata) {
 		sess.Network.SSHClientBanner = string(conn.ClientVersion())
-		if tcpAddr, ingressSource, proxyNodeID := resolveRemoteAddr(pp, conn.RemoteAddr()); tcpAddr != nil {
-			sess.Network.ClientIP = tcpAddr.IP.String()
-			sess.Network.ClientPort = tcpAddr.Port
-			sess.Network.IngressSource = ingressSource
-			sess.Network.ProxyNodeID = proxyNodeID
-		}
+		applyRemoteAddr(&sess.Network, pp, conn.RemoteAddr())
 	}
 
 	config := &ssh.ServerConfig{
@@ -638,12 +650,7 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGua
 
 	guard.sess.Network.SSHClientBanner = string(sshConn.ClientVersion())
 
-	if tcpAddr, ingressSource, proxyNodeID := resolveRemoteAddr(pp, remoteAddr); tcpAddr != nil {
-		guard.sess.Network.ClientIP = tcpAddr.IP.String()
-		guard.sess.Network.ClientPort = tcpAddr.Port
-		guard.sess.Network.IngressSource = ingressSource
-		guard.sess.Network.ProxyNodeID = proxyNodeID
-	}
+	applyRemoteAddr(&guard.sess.Network, pp, remoteAddr)
 
 	if tcpAddr, ok := conn.LocalAddr().(*net.TCPAddr); ok {
 		guard.sess.Network.ServerPort = tcpAddr.Port
