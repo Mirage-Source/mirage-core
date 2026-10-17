@@ -199,3 +199,60 @@ func TestTrickledReadsStillParse(t *testing.T) {
 		t.Fatalf("got payload %q, want %q", buf[:n], "hello")
 	}
 }
+
+func TestHeaderDestinationPortIsKept(t *testing.T) {
+	client, server := tcpPipe(t)
+	defer client.Close()
+	defer server.Close()
+	go client.Write([]byte("PROXY TCP4 203.0.113.5 198.51.100.1 41000 2323\r\n"))
+
+	c := Wrap(server)
+	if port, ok := c.TargetPort(); !ok || port != 2323 {
+		t.Fatalf("TargetPort = %d, %v; want 2323, true", port, ok)
+	}
+}
+
+func TestTargetPortAbsentWithoutHeader(t *testing.T) {
+	client, server := tcpPipe(t)
+	defer client.Close()
+	defer server.Close()
+	go client.Write([]byte("SSH-2.0-x\r\n"))
+
+	if _, ok := Wrap(server).TargetPort(); ok {
+		t.Fatal("TargetPort reported without a header")
+	}
+}
+
+func TestTCP6HeaderParses(t *testing.T) {
+	client, server := tcpPipe(t)
+	defer client.Close()
+	defer server.Close()
+	go client.Write([]byte("PROXY TCP6 2001:db8::5 2001:db8::1 41000 22\r\nhello"))
+
+	c := Wrap(server)
+	addr, dstRaw, found := c.RealRemoteAddr()
+	if !found || addr.IP.String() != "2001:db8::5" || addr.Port != 41000 || dstRaw != "2001:db8::1" {
+		t.Fatalf("got %v %q %v", addr, dstRaw, found)
+	}
+	buf := make([]byte, 5)
+	if _, err := io.ReadFull(c, buf); err != nil || string(buf) != "hello" {
+		t.Fatalf("payload %q, %v", buf, err)
+	}
+}
+
+// The address family must match the protocol field; a mismatch is a
+// malformed header, not one to half-trust.
+func TestFamilyMismatchIsRejected(t *testing.T) {
+	for _, line := range []string{
+		"PROXY TCP4 2001:db8::5 198.51.100.1 41000 22\r\n",
+		"PROXY TCP6 203.0.113.5 2001:db8::1 41000 22\r\n",
+	} {
+		client, server := tcpPipe(t)
+		go client.Write([]byte(line))
+		if _, _, found := Wrap(server).RealRemoteAddr(); found {
+			t.Errorf("%q accepted", line)
+		}
+		client.Close()
+		server.Close()
+	}
+}

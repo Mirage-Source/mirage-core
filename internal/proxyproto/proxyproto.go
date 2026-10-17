@@ -25,6 +25,7 @@ type Conn struct {
 	found   bool
 	srcAddr *net.TCPAddr
 	dstRaw  string // the header's dst-ip field, kept opaque -- see RealRemoteAddr.
+	dstPort int    // the header's dst-port: the port the client originally targeted.
 }
 
 // Wrap returns a Conn wrapping c. 
@@ -48,6 +49,17 @@ func (c *Conn) RealRemoteAddr() (*net.TCPAddr, string, bool) {
 	return c.srcAddr, c.dstRaw, true
 }
 
+// TargetPort returns the header's dst-port, i.e. the port the client
+// connected to on the relay, which behind a tunnel differs from this
+// listener's own port. ok is false when no valid header was present.
+func (c *Conn) TargetPort() (port int, ok bool) {
+	c.detect()
+	if !c.found {
+		return 0, false
+	}
+	return c.dstPort, true
+}
+
 func (c *Conn) detect() {
 	c.once.Do(func() {
 		prefix := []byte(headerPrefix)
@@ -65,9 +77,10 @@ func (c *Conn) detect() {
 				}
 			} else if idx := bytes.IndexByte(peeked, '\n'); idx >= 0 {
 				line := peeked[:idx+1]
-				if addr, dstRaw, ok := parseV1TCP4Line(line); ok {
+				if addr, dstRaw, dstPort, ok := parseV1Line(line); ok {
 					c.srcAddr = addr
 					c.dstRaw = dstRaw
+					c.dstPort = dstPort
 					c.found = true
 					c.r.Discard(len(line))
 				}
@@ -83,23 +96,37 @@ func (c *Conn) detect() {
 }
 
 
-func parseV1TCP4Line(line []byte) (addr *net.TCPAddr, dstRaw string, ok bool) {
+// parseV1Line parses a "PROXY TCP4|TCP6 src dst sport dport\r\n" line. The
+// source address family must match the protocol field.
+func parseV1Line(line []byte) (addr *net.TCPAddr, dstRaw string, dstPort int, ok bool) {
 	if !bytes.HasSuffix(line, []byte("\r\n")) {
-		return nil, "", false // v1 requires CRLF, not bare LF
+		return nil, "", 0, false // v1 requires CRLF, not bare LF
 	}
 	s := string(line[:len(line)-2])
 
 	fields := strings.Split(s, " ")
-	if len(fields) != 6 {
-		return nil, "", false
-	}
-	if fields[0] != "PROXY" || fields[1] != "TCP4" {
-		return nil, "", false
+	if len(fields) != 6 || fields[0] != "PROXY" {
+		return nil, "", 0, false
 	}
 
 	srcIP := net.ParseIP(fields[2])
-	if srcIP == nil || srcIP.To4() == nil {
-		return nil, "", false
+	if srcIP == nil {
+		return nil, "", 0, false
+	}
+	// IPv6 text always contains ':', IPv4 text never does; checking the
+	// text rather than To4() keeps "::ffff:1.2.3.4" out of TCP4.
+	isV6 := strings.Contains(fields[2], ":")
+	switch fields[1] {
+	case "TCP4":
+		if isV6 {
+			return nil, "", 0, false
+		}
+	case "TCP6":
+		if !isV6 {
+			return nil, "", 0, false
+		}
+	default:
+		return nil, "", 0, false
 	}
 	// fields[3] (dst-ip) is intentionally NOT validated as an IP -- callers
 	// get it back as an opaque string (see RealRemoteAddr's doc comment).
@@ -107,12 +134,12 @@ func parseV1TCP4Line(line []byte) (addr *net.TCPAddr, dstRaw string, ok bool) {
 
 	srcPort, err := strconv.Atoi(fields[4])
 	if err != nil || srcPort < 0 || srcPort > 65535 {
-		return nil, "", false
+		return nil, "", 0, false
 	}
-	dstPort, err := strconv.Atoi(fields[5])
+	dstPort, err = strconv.Atoi(fields[5])
 	if err != nil || dstPort < 0 || dstPort > 65535 {
-		return nil, "", false
+		return nil, "", 0, false
 	}
 
-	return &net.TCPAddr{IP: srcIP, Port: srcPort}, dstRaw, true
+	return &net.TCPAddr{IP: srcIP, Port: srcPort}, dstRaw, dstPort, true
 }
