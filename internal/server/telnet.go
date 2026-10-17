@@ -41,6 +41,11 @@ const (
 // still bounds memory.
 const telnetMaxLine = 1024
 
+// foreignPayloadMax bounds the raw opening bytes kept from a client that
+// turns out not to speak telnet: enough for an HTTP request with headers or
+// a TLS ClientHello.
+const foreignPayloadMax = 4096
+
 // maxContinuationLines bounds one multi-line command.
 const maxContinuationLines = 64
 
@@ -203,6 +208,9 @@ func handleTelnet(conn net.Conn, cfg telnetConfig, guard *sessionGuard) {
 			WindowHeight:        m.WindowHeight,
 			ForeignProtocolLine: ts.foreignLine,
 		}
+		if ts.foreignLine != "" {
+			sess.Telnet.ForeignPayloadB64 = base64.StdEncoding.EncodeToString(ts.firstBytes)
+		}
 		if ts.foreignLine != "" && !loggedIn(sess) {
 			sess.Outcome = session.OutcomeProtocolMismatch
 		}
@@ -273,6 +281,11 @@ func telnetLogin(ts *telnetStream, cfg telnetConfig, guard *sessionGuard, hostna
 		ts.write(hostname + " login: ")
 		username, err := ts.readLine(MaxInput, true)
 		if err != nil {
+			// A binary probe (TLS, RDP, ...) never sends a line ending; what
+			// it did send is only visible as the unfinished line.
+			if ts.foreignLine == "" && username != "" && isForeignProtocolLine(username) {
+				ts.foreignLine = username
+			}
 			guard.recordOutcome(telnetOutcome(err))
 			return "", false
 		}
@@ -352,6 +365,10 @@ type telnetStream struct {
 	pending     []byte
 	skipLF      bool
 	foreignLine string // first line of a non-telnet client, if any
+	// firstBytes is the connection's opening bytes exactly as received,
+	// before IAC handling: a TLS ClientHello's 0xFF bytes would otherwise be
+	// eaten as telnet commands. Kept only if the client proves foreign.
+	firstBytes []byte
 }
 
 func loggedIn(s *session.Session) bool {
@@ -428,6 +445,9 @@ func (s *telnetStream) readLine(max int, echo bool) (string, error) {
 		}
 		n, err := s.conn.Read(buf)
 		if n > 0 {
+			if room := foreignPayloadMax - len(s.firstBytes); room > 0 {
+				s.firstBytes = append(s.firstBytes, buf[:min(n, room)]...)
+			}
 			data, reply := s.neg.Feed(buf[:n])
 			if len(reply) > 0 {
 				s.writeRaw(reply)

@@ -110,6 +110,9 @@ type TelnetMeta struct {
 
 	// Set when the client spoke another protocol; see OutcomeProtocolMismatch.
 	ForeignProtocolLine string `json:"foreign_protocol_line,omitempty"`
+	// ForeignPayloadB64 is the connection's first bytes as received (up to
+	// 4 KiB, base64), set only alongside ForeignProtocolLine.
+	ForeignPayloadB64 string `json:"foreign_payload_b64,omitempty"`
 }
 
 type Network struct {
