@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"log"
-	"math/rand"
 	"net"
 	"os"
 	"regexp"
@@ -41,6 +40,11 @@ const (
 // still bounds memory.
 const telnetMaxLine = 1024
 
+// busyboxLoginFailDelay is BusyBox login's LOGIN_FAIL_DELAY, measured at a
+// constant 3.00s for every username against busybox:1.36 telnetd. A random
+// delay would not look like the device.
+const busyboxLoginFailDelay = 3 * time.Second
+
 // foreignPayloadMax bounds the raw opening bytes kept from a client that
 // turns out not to speak telnet: enough for an HTTP request with headers or
 // a TLS ClientHello.
@@ -71,9 +75,7 @@ func StartTelnet(addr string) {
 		loginTimeout:     envDuration("TELNET_LOGIN_TIMEOUT_SECONDS", 60*time.Second),
 		idleTimeout:      envDuration("TELNET_IDLE_TIMEOUT_SECONDS", defaultIdleTimeout),
 		maxLoginAttempts: envInt("TELNET_MAX_LOGIN_ATTEMPTS", 5),
-		authDelay: func() time.Duration {
-			return time.Duration(2000+rand.Intn(1500)) * time.Millisecond
-		},
+		authDelay:        func() time.Duration { return busyboxLoginFailDelay },
 	}
 	log.Printf("Telnet: loaded %d weak credential pair(s) from %s", len(cfg.weakCreds), credPath)
 
@@ -322,7 +324,9 @@ func telnetLogin(ts *telnetStream, cfg telnetConfig, guard *sessionGuard, hostna
 			return username, true
 		}
 		time.Sleep(cfg.authDelay())
-		ts.write("\r\nLogin incorrect\r\n")
+		// The "\r\n" written after the password is the only one: BusyBox
+		// sends it at once, then the message after the delay.
+		ts.write("Login incorrect\r\n")
 	}
 	guard.recordOutcome(session.OutcomeAuthFailed)
 	return "", false
