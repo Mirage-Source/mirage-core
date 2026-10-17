@@ -67,6 +67,8 @@ type sessionGuard struct {
 	once       sync.Once
 	inputBytes int
 
+	uploadBytes int64 // scp and sftp bytes accepted, all channels
+
 	// Zero means maxCommandsPerSession / maxSessionInputBytes (SSH).
 	maxCommands   int
 	maxInputBytes int
@@ -907,8 +909,17 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 			if ssh.Unmarshal(req.Payload, &payload) != nil {
 				payload.Name = ""
 			}
-			guard.appendRejected(session.RejectedKindSubsystem, payload.Name, "")
-			req.Reply(false, nil)
+			if payload.Name != "sftp" {
+				guard.appendRejected(session.RejectedKindSubsystem, payload.Name, "")
+				req.Reply(false, nil)
+				continue
+			}
+			req.Reply(true, nil)
+			log.Printf("sftp subsystem started")
+			runSFTP(channel, guard, shell.NewInterpreter(guard.username()), func() { refreshDeadlines(conn, idleTimeout) })
+			channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{Status: 0}))
+			guard.recordOutcome(session.OutcomeCleanDisconnect)
+			return
 		case "exec":
 			var payload struct {
 				Command string

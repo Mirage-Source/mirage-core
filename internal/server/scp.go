@@ -15,15 +15,28 @@ import (
 	"github.com/mirage-source/mirage-core/internal/session"
 )
 
-// Upload caps. Content is hashed as it streams and then discarded, so these
-// bound bandwidth and time spent per session, not memory.
+// Upload caps, shared by scp and sftp. Content is hashed as it streams and
+// then discarded, so these bound bandwidth and time spent per session, not
+// memory.
 const (
-	scpMaxFileBytes    = 64 << 20
-	scpMaxSessionBytes = 256 << 20
-	maxFileTransfers   = 64
-	scpMaxLine         = 4096
-	scpMaxDepth        = 32
+	uploadMaxFileBytes    = 64 << 20
+	uploadMaxSessionBytes = 256 << 20
+	maxFileTransfers      = 64
+	scpMaxLine            = 4096
+	scpMaxDepth           = 32
 )
+
+// reserveUpload claims n bytes of the session's upload budget, across all
+// its channels, or reports that it is spent.
+func (g *sessionGuard) reserveUpload(n int64) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.uploadBytes+n > uploadMaxSessionBytes {
+		return false
+	}
+	g.uploadBytes += n
+	return true
+}
 
 // appendTransfer records one upload, dropping it silently past the cap.
 func (g *sessionGuard) appendTransfer(f session.FileTransfer) {
@@ -72,7 +85,6 @@ type scpSink struct {
 	w       io.Writer
 	guard   *sessionGuard
 	refresh func()
-	total   int64
 }
 
 func runSCPSink(rw io.ReadWriter, guard *sessionGuard, target string, refresh func()) int {
@@ -127,7 +139,7 @@ func runSCPSink(rw io.ReadWriter, guard *sessionGuard, target string, refresh fu
 // session (a cap was hit or the stream broke), with code as exit status.
 func (s *scpSink) receive(p string, size int64) (code int, done bool) {
 	rec := session.FileTransfer{TimestampMS: time.Now().UnixMilli(), Method: session.TransferMethodSCP, Path: p, Size: size}
-	if size > scpMaxFileBytes || s.total+size > scpMaxSessionBytes {
+	if size > uploadMaxFileBytes || !s.guard.reserveUpload(size) {
 		s.guard.appendTransfer(rec)
 		// What scp prints when the disk fills: a fatal error record.
 		fmt.Fprintf(s.w, "\x02scp: %s: No space left on device\n", p)
@@ -143,7 +155,6 @@ func (s *scpSink) receive(p string, size int64) (code int, done bool) {
 		n, err := s.r.Read(buf[:min(int64(len(buf)), remaining)])
 		h.Write(buf[:n])
 		remaining -= int64(n)
-		s.total += int64(n)
 		if err != nil {
 			s.guard.appendTransfer(rec)
 			return 1, true

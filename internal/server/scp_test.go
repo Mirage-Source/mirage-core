@@ -117,7 +117,7 @@ func TestSCPRecursiveUploadWithTimestamps(t *testing.T) {
 func TestSCPOversizedFileIsCutOff(t *testing.T) {
 	client, finish := dialRecordingSensor(t)
 	c := startSCP(t, client, "scp -t /tmp")
-	c.send(fmt.Sprintf("C0644 %d big\n", scpMaxFileBytes+1))
+	c.send(fmt.Sprintf("C0644 %d big\n", uploadMaxFileBytes+1))
 	// Refused before any data moves, with scp's own disk-full error.
 	if b, _ := c.out.ReadByte(); b != 2 {
 		t.Errorf("got %q, want fatal error byte 0x02", b)
@@ -129,7 +129,7 @@ func TestSCPOversizedFileIsCutOff(t *testing.T) {
 	if len(s.FileTransfers) != 1 {
 		t.Fatalf("transfers = %+v", s.FileTransfers)
 	}
-	if f := s.FileTransfers[0]; f.Complete || f.Size != scpMaxFileBytes+1 || f.SHA256 != "" {
+	if f := s.FileTransfers[0]; f.Complete || f.Size != uploadMaxFileBytes+1 || f.SHA256 != "" {
 		t.Errorf("got %+v; want declared size, no hash, incomplete", f)
 	}
 }

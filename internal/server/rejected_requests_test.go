@@ -102,25 +102,6 @@ func TestUnknownChannelTypeIsRecorded(t *testing.T) {
 	}
 }
 
-func TestSFTPSubsystemIsRecordedAndRefused(t *testing.T) {
-	client, finish := dialRecordingSensor(t)
-	sshSess, err := client.NewSession()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := sshSess.RequestSubsystem("sftp"); err == nil {
-		t.Error("sftp subsystem must be refused")
-	}
-	s := finish()
-
-	if len(s.RejectedRequests) != 1 {
-		t.Fatalf("rejected requests = %+v", s.RejectedRequests)
-	}
-	if r := s.RejectedRequests[0]; r.Kind != session.RejectedKindSubsystem || r.Type != "sftp" {
-		t.Errorf("got %+v", r)
-	}
-}
-
 // Refused channels cost the server nothing, so nothing limited them. Once
 // each one is stored, an uncapped list would let one connection grow the
 // session without bound.
