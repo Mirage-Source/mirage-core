@@ -10,7 +10,10 @@ import (
 	"github.com/mirage-source/mirage-core/internal/validity"
 )
 
-const offeredKey = "ssh-ed25519 SHA256:publickey-isolation-test"
+const (
+	offeredKey  = "ssh-ed25519 SHA256:publickey-isolation-test"
+	kbdPassword = "kbd-interactive-test-pass"
+)
 
 // keySession is an SSH session whose client offered offeredKey n times
 // (one row per key per connection in production; n just makes it outrank
@@ -38,6 +41,17 @@ func TestPublicKeyAttemptsStayOutOfPasswordStats(t *testing.T) {
 		}
 	}
 
+	kbd := keySession("198.51.100.34", 0)
+	for i := 0; i < 500; i++ {
+		kbd.AuthAttempts = append(kbd.AuthAttempts, session.AuthAttempt{
+			TimestampMS: kbd.Timing.StartMS + int64(i), Method: session.AuthMethodKeyboardInteractive,
+			Username: "root", Credential: kbdPassword,
+		})
+	}
+	if err := store.SaveSession(db, kbd); err != nil {
+		t.Fatal(err)
+	}
+
 	stats, err := store.GetStats(db, session.ProtocolSSH)
 	if err != nil {
 		t.Fatal(err)
@@ -46,6 +60,13 @@ func TestPublicKeyAttemptsStayOutOfPasswordStats(t *testing.T) {
 		if p.Password == offeredKey {
 			t.Errorf("key fingerprint in TopPasswords")
 		}
+	}
+	foundKbd := false
+	for _, p := range stats.TopPasswords {
+		foundKbd = foundKbd || p.Password == kbdPassword
+	}
+	if !foundKbd {
+		t.Errorf("keyboard-interactive answer missing from TopPasswords")
 	}
 	for _, c := range stats.TopCredentials {
 		if c.Password == offeredKey {

@@ -28,6 +28,9 @@ type AuthMethod string
 const (
 	AuthMethodPassword  AuthMethod = "password"
 	AuthMethodPublicKey AuthMethod = "publickey"
+	// AuthMethodKeyboardInteractive answers are password guesses typed at a
+	// "Password: " prompt, and count as passwords in every password metric.
+	AuthMethodKeyboardInteractive AuthMethod = "keyboard-interactive"
 )
 
 type ResponseSource string

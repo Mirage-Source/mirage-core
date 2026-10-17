@@ -40,3 +40,12 @@ def test_offered_keys_do_not_change_features_or_mitre() -> None:
     assert len(keyed.auth_attempts) == len(base.auth_attempts) + 4
     assert extract_features(keyed).as_dict() == extract_features(base).as_dict()
     assert map_mitre_ids(keyed) == map_mitre_ids(base)
+
+
+def test_keyboard_interactive_counts_as_password() -> None:
+    doc = make_session_document("manual_recon", random.Random(5), 0)
+    base = extract_features(parse_session_document(doc)).as_dict()
+    kbd = copy.deepcopy(doc)
+    for a in kbd["auth_attempts"]:
+        a["method"] = "keyboard-interactive"
+    assert extract_features(parse_session_document(kbd)).as_dict() == base

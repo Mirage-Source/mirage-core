@@ -8,7 +8,7 @@ import numpy as np
 
 from ..analysis.timing import compute_timing_features
 from ..viz.tool_signature import TOOL_SIGNATURES, infer_tool_signature
-from .ingest import ProductionSession
+from .ingest import PASSWORD_METHODS, ProductionSession
 
 __all__ = ["IntelFeatures", "extract_features", "FEATURE_NAMES"]
 
@@ -109,7 +109,7 @@ def extract_features(prod: ProductionSession) -> IntelFeatures:
     # Password attempts only: these features were defined (and the models
     # trained) before public-key attempts were recorded, so counting offered
     # keys would shift them for any client with keys in its agent.
-    passwords = [a for a in prod.auth_attempts if a.method == "password"]
+    passwords = [a for a in prod.auth_attempts if a.method in PASSWORD_METHODS]
     n_auth = len(passwords)
     distinct_creds = len({a.credential for a in passwords})
     distinct_users = len({a.username for a in passwords})

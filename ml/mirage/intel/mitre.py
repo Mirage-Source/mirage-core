@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from .ingest import ProductionSession
+from .ingest import PASSWORD_METHODS, ProductionSession
 
 __all__ = ["Technique", "TechniqueHit", "map_mitre", "map_mitre_ids"]
 
@@ -125,7 +125,7 @@ def map_mitre(prod: ProductionSession) -> list[TechniqueHit]:
     # Credential-access signals from auth attempts.
     # Offered public keys are not guesses: an ordinary client offers every
     # key in its agent first. Only password attempts count toward brute force.
-    password_attempts = [a for a in prod.auth_attempts if a.method == "password"]
+    password_attempts = [a for a in prod.auth_attempts if a.method in PASSWORD_METHODS]
     distinct_users = {a.username for a in password_attempts}
 
     if password_attempts:

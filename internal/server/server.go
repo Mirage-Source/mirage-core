@@ -279,6 +279,7 @@ func Start(addr string) {
 	// header is believed can claim any source IP, so set PROXY_TRUSTED_PEERS
 	// to the relay's addresses; see proxytrust.go.
 	proxyTrust := loadProxyTrust("TRUST_PROXY_PROTOCOL")
+	keyboardInteractive := envBool("SSH_KEYBOARD_INTERACTIVE", false)
 
 	deceptionRuntime := deception.NewRuntime(deception.ConfigFromEnv())
 	log.Printf(
@@ -380,8 +381,9 @@ func Start(addr string) {
 		}
 
 		config := newSSHServerConfig(&sess, pp, sshAuthConfig{
-			weakCreds: weakCreds,
-			authDelay: func() time.Duration { return time.Duration(500+rand.Intn(2500)) * time.Millisecond },
+			weakCreds:           weakCreds,
+			authDelay:           func() time.Duration { return time.Duration(500+rand.Intn(2500)) * time.Millisecond },
+			keyboardInteractive: keyboardInteractive,
 		}, parsedKey)
 		guard := &sessionGuard{sess: &sess}
 		go func() {
@@ -532,6 +534,10 @@ type sshAuthConfig struct {
 	// authDelay runs after every password attempt; a real sshd's PAM
 	// failure delay is what attackers' tooling is tuned against.
 	authDelay func() time.Duration
+	// keyboardInteractive offers the keyboard-interactive method. Off by
+	// default: stock Ubuntu 22.04 sets KbdInteractiveAuthentication no, so
+	// offering it changes the advertised method list.
+	keyboardInteractive bool
 }
 
 // newSSHServerConfig builds the per-connection config whose auth callbacks
@@ -548,30 +554,35 @@ func newSSHServerConfig(sess *session.Session, pp *proxyproto.Conn, auth sshAuth
 		applyRemoteAddr(&sess.Network, pp, conn.RemoteAddr())
 	}
 
+	// checkPassword records one password guess, waits like PAM does after
+	// it, and accepts it only if it is on the weak-credential list.
+	checkPassword := func(conn ssh.ConnMetadata, method session.AuthMethod, pass string) (*ssh.Permissions, error) {
+		username := conn.User()
+		_, accepted := auth.weakCreds[username+":"+pass]
+		captureNetwork(conn)
+
+		sess.AuthAttempts = append(sess.AuthAttempts, session.AuthAttempt{
+			TimestampMS: time.Now().UnixMilli(),
+			Method:      method,
+			Username:    username,
+			Credential:  pass,
+			Success:     accepted,
+		})
+		log.Printf("Auth attempt user=%s %s=%s accepted=%v", username, method, pass, accepted)
+
+		time.Sleep(auth.authDelay())
+
+		if !accepted {
+			return nil, errors.New("invalid credentials")
+		}
+		return nil, nil
+	}
+
 	config := &ssh.ServerConfig{
 		ServerVersion: "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6",
 		MaxAuthTries:  6,
 		PasswordCallback: func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
-			username := conn.User()
-			pass := string(password)
-			_, accepted := auth.weakCreds[username+":"+pass]
-			captureNetwork(conn)
-
-			sess.AuthAttempts = append(sess.AuthAttempts, session.AuthAttempt{
-				TimestampMS: time.Now().UnixMilli(),
-				Method:      session.AuthMethodPassword,
-				Username:    username,
-				Credential:  pass,
-				Success:     accepted,
-			})
-			log.Printf("Auth attempt user=%s password=%s accepted=%v", username, pass, accepted)
-
-			time.Sleep(auth.authDelay())
-
-			if !accepted {
-				return nil, errors.New("invalid credentials")
-			}
-			return nil, nil
+			return checkPassword(conn, session.AuthMethodPassword, string(password))
 		},
 		// Always rejects: no key is ever authorized, but which keys bots
 		// offer identifies campaigns across source IPs (a reused key is a
@@ -594,6 +605,21 @@ func newSSHServerConfig(sess *session.Session, pp *proxyproto.Conn, auth sshAuth
 			log.Printf("Auth attempt user=%s publickey=%s accepted=false", conn.User(), credential)
 			return nil, errors.New("key not authorized")
 		},
+	}
+	if auth.keyboardInteractive {
+		// One "Password: " prompt with echo off, as OpenSSH sends through
+		// PAM. A client that answers with the wrong number of responses is
+		// rejected without recording anything.
+		config.KeyboardInteractiveCallback = func(conn ssh.ConnMetadata, client ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
+			answers, err := client("", "", []string{"Password: "}, []bool{false})
+			if err != nil {
+				return nil, err
+			}
+			if len(answers) != 1 {
+				return nil, errors.New("unexpected number of answers")
+			}
+			return checkPassword(conn, session.AuthMethodKeyboardInteractive, answers[0])
+		}
 	}
 	config.AddHostKey(hostKey)
 	return config

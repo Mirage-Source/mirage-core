@@ -170,7 +170,7 @@ func FetchCampaignInputs(db *sql.DB) (sessionCounts map[string]int, credentialPa
 		SELECT s.client_ip, a.username, a.credential
 		FROM auth_attempts a
 		JOIN sessions s ON s.session_id = a.session_id
-		WHERE s.client_ip <> '' AND s.protocol = 'ssh' AND a.method = 'password'`)
+		WHERE s.client_ip <> '' AND s.protocol = 'ssh' AND a.method IN ('password', 'keyboard-interactive')`)
 	if err != nil {
 		return nil, nil, fmt.Errorf("validity: querying credential pairs: %w", err)
 	}

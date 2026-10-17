@@ -28,6 +28,10 @@ func testSigner(t *testing.T) ssh.Signer {
 // runAuth performs one SSH handshake against newSSHServerConfig and returns
 // the session the callbacks filled in, plus the client's handshake error.
 func runAuth(t *testing.T, clientAuth []ssh.AuthMethod) (*session.Session, error) {
+	return runAuthWith(t, clientAuth, false)
+}
+
+func runAuthWith(t *testing.T, clientAuth []ssh.AuthMethod, keyboardInteractive bool) (*session.Session, error) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -37,8 +41,9 @@ func runAuth(t *testing.T, clientAuth []ssh.AuthMethod) (*session.Session, error
 
 	sess := &session.Session{SessionID: uuid.New().String(), Protocol: session.ProtocolSSH}
 	cfg := newSSHServerConfig(sess, nil, sshAuthConfig{
-		weakCreds: map[string]struct{}{"root:root": {}},
-		authDelay: func() time.Duration { return 0 },
+		weakCreds:           map[string]struct{}{"root:root": {}},
+		authDelay:           func() time.Duration { return 0 },
+		keyboardInteractive: keyboardInteractive,
 	}, testSigner(t))
 
 	done := make(chan struct{})
@@ -110,5 +115,60 @@ func TestPublicKeyOnlyClientStillGetsNetworkMetadata(t *testing.T) {
 	// auth_failed row would have a blank client_ip and banner.
 	if sess.Network.ClientIP != "127.0.0.1" || sess.Network.SSHClientBanner == "" {
 		t.Errorf("network = %+v", sess.Network)
+	}
+}
+
+func answer(pass string, prompts *[]string) ssh.AuthMethod {
+	return ssh.KeyboardInteractive(func(name, instruction string, questions []string, echos []bool) ([]string, error) {
+		*prompts = append(*prompts, questions...)
+		out := make([]string, len(questions))
+		for i := range out {
+			out[i] = pass
+		}
+		return out, nil
+	})
+}
+
+func TestKeyboardInteractiveIsRecordedWhenEnabled(t *testing.T) {
+	var prompts []string
+	calls := 0
+	method := ssh.RetryableAuthMethod(ssh.KeyboardInteractive(func(_, _ string, questions []string, _ []bool) ([]string, error) {
+		prompts = append(prompts, questions...)
+		calls++
+		if calls == 1 {
+			return []string{"wrong"}, nil
+		}
+		return []string{"root"}, nil
+	}), 2)
+	sess, err := runAuthWith(t, []ssh.AuthMethod{method}, true)
+	if err != nil {
+		t.Fatalf("keyboard-interactive login failed: %v", err)
+	}
+	if len(prompts) == 0 || prompts[0] != "Password: " {
+		t.Errorf("prompts = %q, want PAM's \"Password: \"", prompts)
+	}
+	if len(sess.AuthAttempts) != 2 {
+		t.Fatalf("attempts = %+v", sess.AuthAttempts)
+	}
+	for i, wantOK := range []bool{false, true} {
+		a := sess.AuthAttempts[i]
+		if a.Method != session.AuthMethodKeyboardInteractive || a.Success != wantOK || a.Username != "root" {
+			t.Errorf("attempt %d = %+v", i, a)
+		}
+	}
+	if sess.AuthAttempts[1].Credential != "root" {
+		t.Errorf("credential = %q", sess.AuthAttempts[1].Credential)
+	}
+}
+
+// Off by default: a stock Ubuntu 22.04 sshd does not offer it.
+func TestKeyboardInteractiveIsNotOfferedByDefault(t *testing.T) {
+	var prompts []string
+	sess, err := runAuth(t, []ssh.AuthMethod{answer("root", &prompts)})
+	if err == nil {
+		t.Fatal("keyboard-interactive succeeded with the method disabled")
+	}
+	if len(prompts) != 0 || len(sess.AuthAttempts) != 0 {
+		t.Errorf("prompts = %q, attempts = %+v", prompts, sess.AuthAttempts)
 	}
 }

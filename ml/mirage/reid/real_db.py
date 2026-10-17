@@ -113,7 +113,7 @@ def fetch_credential_pair_sets(
             FROM auth_attempts a
             JOIN sessions s ON s.session_id = a.session_id
             WHERE s.client_ip = ANY(%s) AND s.protocol = 'ssh'
-              AND a.method = 'password'
+              AND a.method IN ('password', 'keyboard-interactive')
             """,
             (ip_list,),
         )
@@ -201,7 +201,7 @@ def fetch_real_sessions(conn, ips: Iterable[str] | None = None) -> list[Session]
             """
             SELECT session_id, username, credential
             FROM auth_attempts
-            WHERE session_id = ANY(%s) AND method = 'password'
+            WHERE session_id = ANY(%s) AND method IN ('password', 'keyboard-interactive')
             ORDER BY session_id, timestamp_ms
             """,
             (session_ids,),

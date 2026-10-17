@@ -21,6 +21,11 @@ __all__ = [
 ACCESS_ESCALATION: dict[str, int] = {"read": 1, "copy": 2, "exfil_attempt": 3}
 
 
+# Auth methods whose credential is a typed password guess. Public keys are
+# offered automatically by clients and are not guesses.
+PASSWORD_METHODS = frozenset({"password", "keyboard-interactive"})
+
+
 @dataclass(slots=True)
 class AuthAttempt:
     """One credential attempt against the honeypot."""
