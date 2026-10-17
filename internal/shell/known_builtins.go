@@ -63,6 +63,12 @@ var knownBuiltins = map[string]struct{}{
 	"env":      {},
 	"printenv": {},
 	"printf":   {},
+	"free":     {},
+	"nproc":    {},
+	"awk":      {},
+	"mawk":     {},
+	"apt-get":  {},
+	"apt":      {},
 }
 
 // IsKnownBuiltin reports whether execBuiltin has a case for name -- i.e.

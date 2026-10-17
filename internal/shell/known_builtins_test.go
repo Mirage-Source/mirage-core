@@ -16,7 +16,7 @@ var wantBuiltins = []string{
 	"chmod", "chown", "chgrp", "rm", "mkdir", "touch", "cp", "mv", "wget", "curl",
 	"sh", "bash", "nohup", "sleep", "kill", "pkill", "killall",
 	"true", ":", "false", "ping", "perl", "dd", "more", "read",
-	"env", "printenv", "printf",
+	"env", "printenv", "printf", "free", "nproc", "awk", "mawk", "apt-get", "apt",
 }
 
 func TestIsKnownBuiltinCoversEveryExecBuiltinCase(t *testing.T) {
@@ -43,7 +43,7 @@ func TestIsKnownBuiltinRejectsUnhandledCommands(t *testing.T) {
 	// Commands the preprint observed in real sessions that this shell does
 	// NOT implement -- these are exactly the ones the completion fallback
 	// exists to serve.
-	for _, name := range []string{"uptime", "nproc", "lspci", "nvidia-smi", "free", "df", "lscpu", "last"} {
+	for _, name := range []string{"uptime", "lspci", "nvidia-smi", "df", "lscpu", "last"} {
 		if IsKnownBuiltin(name) {
 			t.Errorf("IsKnownBuiltin(%q) = true, want false -- execBuiltin has no case for it", name)
 		}

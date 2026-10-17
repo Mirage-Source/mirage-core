@@ -61,6 +61,12 @@ func IsReservedWord(name string) bool {
 }
 
 func splitKeyword(text string) (string, string) {
+	// A closing word can take a redirect with no space: `done</proc/self/exe`.
+	for _, kw := range []string{"done", "fi", "esac", "}"} {
+		if rest, ok := strings.CutPrefix(text, kw); ok && rest != "" && (rest[0] == '<' || rest[0] == '>') {
+			return kw, rest
+		}
+	}
 	i := strings.IndexAny(text, " \t")
 	if i < 0 {
 		return text, ""
@@ -422,9 +428,6 @@ func (p *parser) whileItem(sep string, until bool) (item, error) {
 		return item{}, syntaxError("")
 	}
 	got, rest := splitKeyword(st.Text)
-	if strings.HasPrefix(got, "done<") {
-		got, rest = "done", strings.TrimSpace(st.Text[len("done"):])
-	}
 	if got != "done" {
 		return item{}, syntaxError(got)
 	}

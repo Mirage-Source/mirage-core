@@ -2,6 +2,7 @@ package shell
 
 import (
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 )
@@ -59,21 +60,27 @@ func (s *Interpreter) ddBuiltin(args []string, stdin *string) (string, int) {
 		partial = 1
 	}
 	records := fmt.Sprintf("%d+%d", len(data)/bs, partial)
-	rate := float64(len(data)) / 5.1e-05
+	// A small copy takes tens of microseconds, never the same twice.
+	secs := (30 + rand.Float64()*90) * 1e-6
+	rate := float64(len(data)) / secs
 	speed := fmt.Sprintf("%.0f kB/s", rate/1e3)
 	if rate >= 1e6 {
 		speed = fmt.Sprintf("%.1f MB/s", rate/1e6)
 	}
-	summary := records + " records in\r\n" + records + " records out\r\n" +
-		fmt.Sprintf("%d bytes copied, 5.1e-05 s, %s", len(data), speed)
+	// The summary is dd's stderr, written after the data.
+	summary := []string{records + " records in", records + " records out",
+		fmt.Sprintf("%d bytes copied, %.5g s, %s", len(data), secs, speed)}
 
 	if outFile != "" {
 		if _, code := s.writeFile(outFile, data, false); code != 0 {
 			return "dd: failed to open '" + outFile + "': No such file or directory", 1
 		}
-		return summary, 0
+		s.pendingErr = append(s.pendingErr, summary...)
+		return "", 0
 	}
-	return strings.ReplaceAll(data, "\n", "\r\n") + summary, 0
+	s.pendingErr = append(s.pendingErr, summary...)
+	s.noTrailingNewline = true
+	return strings.ReplaceAll(data, "\n", "\r\n"), 0
 }
 
 // moreBuiltin behaves like more(1) when not on a terminal: it copies its

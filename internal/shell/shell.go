@@ -12,6 +12,7 @@ import (
 	"net/netip"
 	"path"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -70,21 +71,6 @@ func randomPIDs() map[string]int {
 		"gunicorn2":    gunicorn1 + 1,
 		"bash":         bash,
 		"ps":           bash + 50 + rand.Intn(100),
-	}
-}
-
-// procUptimeNode builds this session's /proc/uptime content from bootTime:
-// seconds since boot, then a smaller "idle time" figure (a single-core-
-// equivalent idle-time accumulator, always somewhat less than uptime --
-// real /proc/uptime's second field can even exceed the first on a multi-core
-// box, but staying under it is the simpler, always-plausible choice here).
-func procUptimeNode(bootTime time.Time) *Node {
-	uptimeSeconds := time.Since(bootTime).Seconds()
-	idleSeconds := uptimeSeconds * (0.7 + rand.Float64()*0.25)
-	return &Node{
-		Path: "/proc/uptime", Type: NodeFile, Mode: "-r--r--r--", Owner: "root", Group: "root",
-		MTime:   "Jul 11 09:11",
-		Content: fmt.Sprintf("%.2f %.2f", uptimeSeconds, idleSeconds),
 	}
 }
 
@@ -185,6 +171,11 @@ type Machine struct {
 	Busybox bool
 	profile *Profile
 
+	mem       memBase // see memSnapshot
+	idleRatio float64 // /proc/uptime's idle seconds per second of uptime
+
+	aptNotUpgraded int // pending updates apt reports; a stale box has dozens
+
 	overlay         map[string]*Node
 	overlayChildren map[string][]string
 }
@@ -199,9 +190,10 @@ func NewMachine(p *Profile) *Machine {
 		Busybox:      p.busybox,
 		profile:      p,
 	}
-	m.overlay = map[string]*Node{
-		"/proc/uptime": procUptimeNode(m.BootTime),
-	}
+	m.overlay = map[string]*Node{}
+	m.mem = newMemBase()
+	m.idleRatio = 0.7 + rand.Float64()*0.25
+	m.aptNotUpgraded = 20 + rand.Intn(60)
 	return m
 }
 
@@ -292,6 +284,15 @@ func (s *Interpreter) param(name string) string {
 // site that returns file content to the attacker (readStdinFile,
 // builtinInput, catBuiltin) must route through this so the shared base
 // filesystem's placeholder never leaks verbatim.
+// content is what reading n returns: generated now for /proc files, else
+// the stored text with this machine's hostname filled in.
+func (s *Interpreter) content(n *Node) string {
+	if n.gen != nil {
+		return n.gen(s)
+	}
+	return s.expandHostname(n.Content)
+}
+
 func (s *Interpreter) expandHostname(content string) string {
 	return strings.ReplaceAll(content, hostnamePlaceholder, s.Hostname)
 }
@@ -573,7 +574,8 @@ func (s *Interpreter) routePendingErr(out string, red redirects) string {
 func isErrorChannel(cmd string, code int) bool {
 	// printf reports bad numbers on stderr itself (pendingErr) and still
 	// prints its output.
-	if cmd == "which" || (cmd == "ping" && code == 1) || (cmd == "printf" && code == 1) {
+	// apt writes its errors to pendingErr; its usage text is stdout.
+	if cmd == "which" || (cmd == "ping" && code == 1) || (cmd == "printf" && code == 1) || cmd == "apt" || cmd == "apt-get" {
 		return false
 	}
 	return code != 0
@@ -649,7 +651,7 @@ func (s *Interpreter) readStdinFile(target string) (string, bool) {
 	if n == nil || n.Type != NodeFile {
 		return "", false
 	}
-	return s.expandHostname(n.Content), true
+	return s.content(n), true
 }
 
 // substitute resolves `$(...)` command substitutions and `$NAME`/`${NAME}`
@@ -817,6 +819,18 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 	case "printf":
 		return s.printfBuiltin(args)
 
+	case "free":
+		return s.freeBuiltin(args)
+
+	case "nproc":
+		return s.nprocBuiltin()
+
+	case "awk", "mawk":
+		return s.awkBuiltin(args, stdin)
+
+	case "apt-get", "apt":
+		return s.aptBuiltin(cmd, args)
+
 	case "test", "[":
 		return "", s.testBuiltin(cmd, args)
 
@@ -949,7 +963,7 @@ func (s *Interpreter) builtinInput(fileArg string, stdin *string) (text string, 
 		if n == nil || n.Type != NodeFile {
 			return "", false
 		}
-		return s.expandHostname(n.Content), true
+		return s.content(n), true
 	}
 	if stdin != nil {
 		return *stdin, true
@@ -1047,7 +1061,7 @@ func (s *Interpreter) testBuiltin(cmd string, args []string) int {
 		case "-x":
 			return result(n != nil && strings.Contains(n.Mode, "x"))
 		case "-s":
-			return result(n != nil && sizeOf(n) > 0)
+			return result(n != nil && s.sizeOf(n) > 0)
 		case "-z":
 			return result(target == "")
 		case "-n":
@@ -1107,38 +1121,82 @@ func (s *Interpreter) catBuiltin(args []string, bait *[]BaitHit, action string, 
 	if n.Bait != nil {
 		*bait = append(*bait, BaitHit{BaitID: n.Bait.BaitID, BaitType: n.Bait.BaitType, AccessType: session.AccessTypeRead})
 	}
-	content := n.Content
+	content := s.content(n)
 	if action == deceptionActionEnrich && n.EnrichedContent != "" {
-		content = n.EnrichedContent
+		content = s.expandHostname(n.EnrichedContent)
 	}
-	return strings.ReplaceAll(s.expandHostname(content), "\n", "\r\n"), 0
+	return strings.ReplaceAll(content, "\n", "\r\n"), 0
 }
 
 func (s *Interpreter) lsBuiltin(args []string, action string) (string, int) {
-	target := s.Cwd
-	var longFormat, showAll bool
+	var longFormat, showAll, dirOnly bool
+	var targets []string
 	for _, a := range args {
-		if !strings.HasPrefix(a, "-") {
-			target = a
+		if !strings.HasPrefix(a, "-") || a == "-" {
+			targets = append(targets, a)
 			continue
 		}
-		if strings.Contains(a, "l") {
-			longFormat = true
+		longFormat = longFormat || strings.Contains(a, "l")
+		showAll = showAll || strings.ContainsAny(a, "aA")
+		dirOnly = dirOnly || strings.Contains(a, "d")
+	}
+	if len(targets) == 0 {
+		if _, n := s.lookup(s.Cwd); n != nil && !dirOnly {
+			return s.lsListing(n, action, longFormat, showAll), 0
 		}
-		if strings.Contains(a, "a") {
-			showAll = true
+		targets = []string{"."}
+	}
+
+	// Like coreutils: missing names on stderr first, then the files (one
+	// listing), then each directory under a "name:" header.
+	code := 0
+	var files []lsEntry
+	var dirs []string
+	for _, t := range targets {
+		_, n := s.lookupNoFollow(t)
+		if n == nil {
+			s.pendingErr = append(s.pendingErr, "ls: cannot access '"+t+"': No such file or directory")
+			code = 2
+			continue
+		}
+		if n.Link != "" && !longFormat {
+			if _, to := s.lookup(t); to != nil && to.Type == NodeDir {
+				n = to
+			}
+		}
+		if n.Type == NodeDir && !dirOnly {
+			dirs = append(dirs, t)
+			continue
+		}
+		files = append(files, s.entryFor(t, n))
+	}
+	sort.SliceStable(files, func(i, j int) bool { return files[i].name < files[j].name })
+	sort.Strings(dirs)
+
+	var parts []string
+	if len(files) > 0 {
+		if longFormat {
+			parts = append(parts, formatLong(files))
+		} else {
+			names := make([]string, len(files))
+			for i, f := range files {
+				names[i] = f.name
+			}
+			parts = append(parts, strings.Join(names, s.lsSep()))
 		}
 	}
-	_, n := s.lookup(target)
-	switch {
-	case n == nil:
-		return "ls: cannot access '" + target + "': No such file or directory", 2
-	case n.Type == NodeFile && longFormat:
-		return fmt.Sprintf("%s %2d %-6s %-6s %5d %s %s", n.Mode, 1, n.Owner, n.Group, sizeOf(n), n.MTime, target), 0
-	case n.Type == NodeFile:
-		return target, 0
+	for _, d := range dirs {
+		_, n := s.lookup(d)
+		listing := s.lsListing(n, action, longFormat, showAll)
+		if len(targets) > 1 {
+			listing = strings.TrimSuffix(d+":\r\n"+listing, "\r\n")
+		}
+		parts = append(parts, listing)
 	}
-	return s.lsListing(n, action, longFormat, showAll), 0
+	if code != 0 && len(parts) == 0 {
+		return "", code
+	}
+	return strings.Join(parts, "\r\n\r\n"), code
 }
 
 func (s *Interpreter) cdBuiltin(args []string) (string, int) {

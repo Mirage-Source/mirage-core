@@ -63,7 +63,7 @@ func TestWriteFileOwnershipMatchesLoginIdentity(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("ls -la /root failed: %s", out)
 	}
-	if !strings.Contains(out, "root   root") {
+	if !strings.Contains(out, "root root") || !strings.Contains(out, "x.txt") {
 		t.Errorf("a file root wrote should be owned by root, got: %s", out)
 	}
 }

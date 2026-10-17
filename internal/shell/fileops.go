@@ -63,7 +63,7 @@ func (s *Interpreter) execPath(cmd string, args []string, bait *[]BaitHit, actio
 		// A dropped bot binary daemonises; the shell sees it exit at once.
 		return "", 0
 	}
-	return s.runNested(s.expandHostname(n.Content), bait, action)
+	return s.runNested(s.content(n), bait, action)
 }
 
 // mutable returns the session's own copy of the node at clean, so changes

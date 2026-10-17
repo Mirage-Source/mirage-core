@@ -83,6 +83,46 @@ func TestInteractiveRunUnchanged(t *testing.T) {
 	}
 }
 
+// SANS ISC 31064: bots read 22 bytes of their own shell binary to learn
+// the architecture from the ELF header.
+func TestDDSelfExeOneLiner(t *testing.T) {
+	const line = "busybox dd if=$SHELL bs=22 count=1||dd if=/proc/self/exe bs=22 count=1||" +
+		"while read i;do busybox echo -n $i;done</proc/self/exe||cat /proc/self/exe"
+	out, _, code, _ := NewMachine(Ubuntu).NewInterpreter("root").RunExec(line)
+	if len(out) != 22 || !strings.HasPrefix(out, "\x7fELF") || code != 0 {
+		t.Errorf("got %d bytes %q, exit %d; want 22 bytes of ELF header", len(out), out, code)
+	}
+	for _, c := range []string{"while read i;do echo $i;done</etc/hostname", "dd if=$SHELL bs=22 count=1", "ls /bin/bash /bin/sh /dev/shm"} {
+		if _, errOut, code, _ := NewMachine(Ubuntu).NewInterpreter("root").RunExec(c); code != 0 {
+			t.Errorf("%q: exit %d, %q", c, code, errOut)
+		}
+	}
+}
+
+// Measured on 8.9p1 / coreutils 8.32 with no tty: one name per line, files
+// before directories, errors on stderr first, columns sized to the widest
+// entry, symlinks shown as links.
+func TestLsLikeCoreutilsWithoutATerminal(t *testing.T) {
+	p := NewMachine(Ubuntu).NewInterpreter("root")
+	p.RunExec("mkdir -p /tmp/lt/d1 /tmp/lt/d2; touch /tmp/lt/d1/a /tmp/lt/d1/b /tmp/lt/f")
+	for _, tc := range []struct {
+		cmd, stdout, stderr string
+		code                int
+	}{
+		{"cd /tmp/lt; ls d1", "a\nb\n", "", 0},
+		{"cd /tmp/lt; ls f nope d1 d2", "f\n\nd1:\na\nb\n\nd2:\n", "ls: cannot access 'nope': No such file or directory\n", 2},
+		{"ls -l /bin/sh", "lrwxrwxrwx 1 root root 4 Mar 23  2022 /bin/sh -> dash\n", "", 0},
+		{"dd if=/bin/sh bs=4 count=1 2>/dev/null", "\x7fELF", "", 0},
+	} {
+		p := p.Machine.NewInterpreter("root")
+		stdout, stderr, code, _ := p.RunExec(tc.cmd)
+		if stdout != tc.stdout || stderr != tc.stderr || code != tc.code {
+			t.Errorf("%q:\n got  out=%q err=%q code=%d\n want out=%q err=%q code=%d",
+				tc.cmd, stdout, stderr, code, tc.stdout, tc.stderr, tc.code)
+		}
+	}
+}
+
 // Single quotes and backslashes stop expansion. They used to be removed
 // before expansion ran, so `echo '$(id)'` ran id and awk '{print $1}' got
 // an empty program.

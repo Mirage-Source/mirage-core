@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -55,10 +56,12 @@ type Node struct {
 	Group               string
 	Size                int64
 	MTime               string
-	Content             string             // files only
-	EnrichedContent     string             // files only; used instead of Content when action is ENRICH
-	Children            []string           // dirs only, ordered basenames, always shown
-	ConditionalChildren []ConditionalChild // dirs only, shown only for a matching action
+	Link                string                    // symlinks only: the target as stored (`sh` -> "dash"); Mode starts with "l"
+	gen                 func(*Interpreter) string // files only: content generated at each read (/proc)
+	Content             string                    // files only
+	EnrichedContent     string                    // files only; used instead of Content when action is ENRICH
+	Children            []string                  // dirs only, ordered basenames, always shown
+	ConditionalChildren []ConditionalChild        // dirs only, shown only for a matching action
 	Bait                *BaitInfo
 	Total               int // dirs only, the "total N" ls header value
 }
@@ -73,18 +76,28 @@ var fs = map[string]*Node{
 	},
 	"/bin": {
 		Type: NodeDir, Mode: "drwxr-xr-x", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Total: 172,
-		Children: []string{"echo", "ls"},
+		Children: []string{"bash", "cat", "dash", "dd", "echo", "ls", "sh"},
 	},
+	// Sizes from 22.04's bash 5.1-6ubuntu1, dash 0.5.11 and coreutils 8.32.
+	"/bin/bash": binaryNode("Jan  6  2022", 1396520),
+	"/bin/cat":  binaryNode("Feb  7  2022", 35280),
+	"/bin/dash": binaryNode("Mar 23  2022", 125688),
+	"/bin/dd":   binaryNode("Feb  7  2022", 68104),
 	"/bin/echo": binaryNode("Feb  7  2022", 35120),
 	"/bin/ls":   binaryNode("Feb  7  2022", 138216),
+	"/bin/sh":   {Type: NodeFile, Mode: "lrwxrwxrwx", Owner: "root", Group: "root", MTime: "Mar 23  2022", Link: "dash"},
 	"/boot":     emptySystemDir(),
-	"/dev":      emptySystemDir(),
-	"/lib":      emptySystemDir(),
-	"/lib64":    emptySystemDir(),
-	"/opt":      emptySystemDir(),
+	"/dev": {
+		Type: NodeDir, Mode: "drwxr-xr-x", Owner: "root", Group: "root", MTime: "Jul 11 09:11", Total: 0,
+		Children: []string{"shm"},
+	},
+	"/dev/shm": {Type: NodeDir, Mode: "drwxrwxrwt", Owner: "root", Group: "root", MTime: "Jul 11 09:11", Total: 0},
+	"/lib":     emptySystemDir(),
+	"/lib64":   emptySystemDir(),
+	"/opt":     emptySystemDir(),
 	"/proc": {
 		Type: NodeDir, Mode: "dr-xr-xr-x", Owner: "root", Group: "root", MTime: "Jul 11 09:11", Total: 0,
-		Children: []string{"version", "cpuinfo", "uptime", "self"},
+		Children: []string{"version", "cpuinfo", "meminfo", "uptime", "self"},
 	},
 	"/proc/self": {
 		Type: NodeDir, Mode: "dr-xr-xr-x", Owner: "root", Group: "root", MTime: "Jul 11 09:11", Total: 0,
@@ -101,7 +114,11 @@ var fs = map[string]*Node{
 	},
 	"/proc/uptime": {
 		Type: NodeFile, Mode: "-r--r--r--", Owner: "root", Group: "root", MTime: "Jul 11 09:11",
-		Content: "1284213.42 1198021.11",
+		gen: (*Interpreter).uptimeContent,
+	},
+	"/proc/meminfo": {
+		Type: NodeFile, Mode: "-r--r--r--", Owner: "root", Group: "root", MTime: "Jul 11 09:11",
+		gen: (*Interpreter).meminfoContent,
 	},
 	"/root": {
 		Type: NodeDir, Mode: "drwx------", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Total: 0,
@@ -145,8 +162,8 @@ var fs = map[string]*Node{
 		}, "\n"),
 	},
 	"/home/ubuntu/.bashrc": {
-		Type: NodeFile, Mode: "-rw-r--r--", Owner: "ubuntu", Group: "ubuntu", MTime: "Jan 12 09:11", Size: 3526,
-		Content: "# ~/.bashrc: executed by bash(1) for non-login shells.\nexport PATH=\"$HOME/.local/bin:$PATH\"\nHISTCONTROL=ignoreboth\n",
+		Type: NodeFile, Mode: "-rw-r--r--", Owner: "ubuntu", Group: "ubuntu", MTime: "Jan 12 09:11",
+		Content: rootFile("home/ubuntu/.bashrc"),
 	},
 	"/home/ubuntu/.cache": {
 		Type: NodeDir, Mode: "drwx------", Owner: "ubuntu", Group: "ubuntu", MTime: "Jan 12 09:11", Total: 0,
@@ -164,7 +181,7 @@ var fs = map[string]*Node{
 		Content: "Django==4.2.7\ngunicorn==21.2.0\npsycopg2-binary==2.9.9\n",
 	},
 	"/home/ubuntu/.env": {
-		Type: NodeFile, Mode: "-rw-rw-r--", Owner: "ubuntu", Group: "ubuntu", MTime: "May 29 13:51", Size: 312,
+		Type: NodeFile, Mode: "-rw-rw-r--", Owner: "ubuntu", Group: "ubuntu", MTime: "May 29 13:51",
 		Content: strings.Join([]string{
 			"DJANGO_SECRET_KEY=8f3b2c1a9d7e6f4b0a2c5d8e1f3a6b9c",
 			"DATABASE_URL=postgres://django_app:Prod_db_2024!@10.0.4.12:5432/appdb",
@@ -189,7 +206,7 @@ var fs = map[string]*Node{
 		Children: []string{"credentials"},
 	},
 	"/home/ubuntu/.aws/credentials": {
-		Type: NodeFile, Mode: "-rw-------", Owner: "ubuntu", Group: "ubuntu", MTime: "May 29 13:40", Size: 116,
+		Type: NodeFile, Mode: "-rw-------", Owner: "ubuntu", Group: "ubuntu", MTime: "May 29 13:40",
 		Content: strings.Join([]string{
 			"[default]",
 			"aws_access_key_id=AKIAQXJ3EXAMPLEKEY9",
@@ -198,8 +215,8 @@ var fs = map[string]*Node{
 		Bait: &BaitInfo{BaitID: "home-aws-credentials", BaitType: session.BaitTypeCredential, Hidden: true},
 	},
 	"/home/ubuntu/.profile": {
-		Type: NodeFile, Mode: "-rw-r--r--", Owner: "ubuntu", Group: "ubuntu", MTime: "Jan 12 09:11", Size: 675,
-		Content: "# ~/.profile: executed by the command interpreter for login shells.\n",
+		Type: NodeFile, Mode: "-rw-r--r--", Owner: "ubuntu", Group: "ubuntu", MTime: "Jan 12 09:11",
+		Content: rootFile("home/ubuntu/.profile"),
 	},
 	"/home/ubuntu/.ssh": {
 		Type: NodeDir, Mode: "drwx------", Owner: "ubuntu", Group: "ubuntu", MTime: "Jan 12 09:11", Total: 12,
@@ -225,56 +242,67 @@ var fs = map[string]*Node{
 		Type: NodeDir, Mode: "drwxr-xr-x", Owner: "root", Group: "root", MTime: "May 29 14:01", Total: 212,
 		Children: []string{"adduser.conf", "apt", "bash.bashrc", "cron.d", "hosts", "hostname", "nsswitch.conf", "os-release", "passwd", "shadow", "nginx", "ssh", "systemd"},
 	},
-	"/etc/adduser.conf": {Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Size: 2981, Content: "# /etc/adduser.conf\nDSHELL=/bin/bash\n"},
-	"/etc/apt":          {Type: NodeDir, Mode: "drwxr-xr-x", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Total: 4},
-	"/etc/bash.bashrc":  {Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Size: 367, Content: "# System-wide .bashrc\n"},
-	"/etc/cron.d":       {Type: NodeDir, Mode: "drwxr-xr-x", Owner: "root", Group: "root", MTime: "May 29 14:01", Total: 4},
+	"/etc/adduser.conf": {
+		Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11",
+		Content: rootFile("etc/adduser.conf"),
+	},
+	"/etc/apt": {Type: NodeDir, Mode: "drwxr-xr-x", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Total: 4},
+	"/etc/bash.bashrc": {
+		Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11",
+		Content: rootFile("etc/bash.bashrc"),
+	},
+	"/etc/cron.d": {Type: NodeDir, Mode: "drwxr-xr-x", Owner: "root", Group: "root", MTime: "May 29 14:01", Total: 4},
 	"/etc/hosts": {
-		Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Size: 1748,
+		Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11",
 		Content: "127.0.0.1 localhost\n127.0.1.1 {{hostname}}\n",
 	},
 	"/etc/hostname": {
-		Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Size: 191,
+		Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11",
 		Content: "{{hostname}}\n",
 	},
-	"/etc/nsswitch.conf": {Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Size: 522, Content: "passwd: files\ngroup: files\nshadow: files\n"},
+	"/etc/nsswitch.conf": {
+		Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11",
+		Content: rootFile("etc/nsswitch.conf"),
+	},
 	"/etc/os-release": {
-		Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Size: 1317,
-		Content: strings.Join([]string{
-			`NAME="Ubuntu"`,
-			`VERSION="22.04.3 LTS (Jammy Jellyfish)"`,
-			`ID=ubuntu`,
-			`ID_LIKE=debian`,
-			`PRETTY_NAME="Ubuntu 22.04.3 LTS"`,
-			`VERSION_ID="22.04"`,
-			`HOME_URL="https://www.ubuntu.com/"`,
-		}, "\n"),
-		EnrichedContent: strings.Join([]string{
-			`NAME="Ubuntu"`,
-			`VERSION="22.04.3 LTS (Jammy Jellyfish)"`,
-			`ID=ubuntu`,
-			`ID_LIKE=debian`,
-			`PRETTY_NAME="Ubuntu 22.04.3 LTS"`,
-			`VERSION_ID="22.04"`,
-			`HOME_URL="https://www.ubuntu.com/"`,
-			`UBUNTU_CODENAME=jammy`,
-		}, "\n"),
+		Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11",
+		Content: rootFile("etc/os-release"),
 	},
 	"/etc/passwd": {
-		Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11", Size: 552,
-		Content: strings.Join([]string{
-			"root:x:0:0:root:/root:/bin/bash",
-			"daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin",
-			"ubuntu:x:1000:1000:Ubuntu:/home/ubuntu:/bin/bash",
-			"www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin",
-		}, "\n"),
+		Type: NodeFile, Mode: "-rw-r--r--", Owner: "root", Group: "root", MTime: "Jan 12 09:11",
+		Content: rootFile("etc/passwd"),
 	},
 	"/etc/shadow": {
 		Type: NodeFile, Mode: "-rw-r-----", Owner: "root", Group: "shadow", MTime: "Jan 12 09:11",
+		// Every account, as on a real box; hashes are yescrypt-shaped ($y$),
+		// 22.04's default, and match no password.
 		Content: strings.Join([]string{
-			"root:$6$rZ1x9K2m$OqR3n7pXvL8wYbT5cFhJ4sEuIzA1MdN0gQkVxW6oPcB2yH9jS7tK3rM8nDpZfXvGqCwLbYh5eIuJoR4:19700:0:99999:7:::",
-			"ubuntu:$6$Ab3xQ9mZ$K7pT2vL8nR5wYcF4hJ1sEuI0zA9MdN3gQkV6xW2oPcB8yH5jS1tK7rM4nDpZ0fXvGqCwLbYh3eIuJoR9:19700:0:99999:7:::",
-		}, "\n"),
+			"root:$y$j9T$RQ68T22M4i1SfMUJAGQZTV$mvddqNVn3Tbn.NNLIljDbVx1Z.ZgTpQfh24YMTcaD5n:19700:0:99999:7:::",
+			"daemon:*:19400:0:99999:7:::",
+			"bin:*:19400:0:99999:7:::",
+			"sys:*:19400:0:99999:7:::",
+			"sync:*:19400:0:99999:7:::",
+			"games:*:19400:0:99999:7:::",
+			"man:*:19400:0:99999:7:::",
+			"lp:*:19400:0:99999:7:::",
+			"mail:*:19400:0:99999:7:::",
+			"news:*:19400:0:99999:7:::",
+			"uucp:*:19400:0:99999:7:::",
+			"proxy:*:19400:0:99999:7:::",
+			"www-data:*:19400:0:99999:7:::",
+			"backup:*:19400:0:99999:7:::",
+			"list:*:19400:0:99999:7:::",
+			"irc:*:19400:0:99999:7:::",
+			"gnats:*:19400:0:99999:7:::",
+			"nobody:*:19400:0:99999:7:::",
+			"_apt:*:19400:0:99999:7:::",
+			"systemd-network:*:19400:0:99999:7:::",
+			"systemd-resolve:*:19400:0:99999:7:::",
+			"messagebus:*:19400:0:99999:7:::",
+			"systemd-timesync:*:19400:0:99999:7:::",
+			"sshd:*:19400:0:99999:7:::",
+			"ubuntu:$y$j9T$b8n4.KZ8vv1npgHOgiIPaY$LRqABJwlecQluTiqT9IXihejq8gcBkB3WSk3vOl6kTw:19700:0:99999:7:::",
+		}, "\n") + "\n",
 		Bait: &BaitInfo{BaitID: "etc-shadow", BaitType: session.BaitTypeShadow},
 	},
 	"/etc/nginx": {
@@ -346,6 +374,17 @@ func init() {
 // absolute form and the node at that path, if any. s.overlay (this
 // session's `>`/`>>` writes) shadows the shared base filesystem.
 func (s *Interpreter) lookup(target string) (string, *Node) {
+	clean, n := s.lookupNoFollow(target)
+	if n != nil && n.Link != "" {
+		// Follow the final symlink once; base links point at real files.
+		_, to := s.lookupNoFollow(path.Join(path.Dir(clean), n.Link))
+		return clean, to
+	}
+	return clean, n
+}
+
+// lookupNoFollow is lookup without following a final symlink (lstat).
+func (s *Interpreter) lookupNoFollow(target string) (string, *Node) {
 	clean := s.resolvePath(target)
 	if n, ok := s.overlay[clean]; ok {
 		return clean, n
@@ -437,19 +476,11 @@ func displayPath(p, home string) string {
 // about flags, to avoid disturbing every existing -la-shaped test/behavior)
 // -- only the short form (the new code path) sorts.
 func (s *Interpreter) lsListing(n *Node, action string, longFormat, showAll bool) string {
-	type entry struct {
-		name  string
-		mode  string
-		owner string
-		group string
-		size  int64
-		mtime string
-	}
-	var entries []entry
+	var entries []lsEntry
 	if showAll {
 		entries = append(entries,
-			entry{".", n.Mode, n.Owner, n.Group, 4096, n.MTime},
-			entry{"..", "drwxr-xr-x", "root", "root", 4096, n.MTime},
+			lsEntry{".", n.Mode, s.nlink(n), n.Owner, n.Group, 4096, n.MTime, ""},
+			lsEntry{"..", "drwxr-xr-x", 2, "root", "root", 4096, n.MTime, ""},
 		)
 	}
 	names := append([]string{}, n.Children...)
@@ -463,11 +494,11 @@ func (s *Interpreter) lsListing(n *Node, action string, longFormat, showAll bool
 		if !showAll && strings.HasPrefix(name, ".") {
 			continue
 		}
-		_, child := s.lookup(path.Join(n.Path, name))
+		_, child := s.lookupNoFollow(path.Join(n.Path, name))
 		if child == nil {
 			continue
 		}
-		entries = append(entries, entry{name, child.Mode, child.Owner, child.Group, sizeOf(child), child.MTime})
+		entries = append(entries, s.entryFor(name, child))
 	}
 
 	if !longFormat {
@@ -476,15 +507,65 @@ func (s *Interpreter) lsListing(n *Node, action string, longFormat, showAll bool
 			visible = append(visible, e.name)
 		}
 		sort.Strings(visible)
-		return strings.Join(visible, "  ")
+		return strings.Join(visible, s.lsSep())
 	}
+	return fmt.Sprintf("total %d\r\n", n.Total) + formatLong(entries)
+}
 
-	var b strings.Builder
-	fmt.Fprintf(&b, "total %d\r\n", n.Total)
-	for _, e := range entries {
-		fmt.Fprintf(&b, "%s %2d %-6s %-6s %5d %s %s\r\n", e.mode, 1, e.owner, e.group, e.size, e.mtime, e.name)
+// lsSep separates short-form names: columns on a terminal, one per line
+// when ls's stdout is not a tty (an exec without a pty).
+func (s *Interpreter) lsSep() string {
+	if s.exec && !s.tty {
+		return "\r\n"
 	}
-	return strings.TrimRight(b.String(), "\r\n")
+	return "  "
+}
+
+type lsEntry struct {
+	name, mode   string
+	links        int
+	owner, group string
+	size         int64
+	mtime, link  string
+}
+
+func (s *Interpreter) entryFor(name string, n *Node) lsEntry {
+	return lsEntry{name, n.Mode, s.nlink(n), n.Owner, n.Group, s.sizeOf(n), n.MTime, n.Link}
+}
+
+// nlink is 1 for a file and 2 plus its subdirectories for a directory.
+func (s *Interpreter) nlink(n *Node) int {
+	if n.Type != NodeDir {
+		return 1
+	}
+	links := 2
+	for _, c := range append(append([]string{}, n.Children...), s.overlayChildren[n.Path]...) {
+		if _, child := s.lookupNoFollow(path.Join(n.Path, c)); child != nil && child.Type == NodeDir {
+			links++
+		}
+	}
+	return links
+}
+
+// formatLong prints ls -l rows with GNU ls's column widths: each column as
+// wide as its widest value in this listing.
+func formatLong(entries []lsEntry) string {
+	var wl, wo, wg, ws int
+	for _, e := range entries {
+		wl = max(wl, len(strconv.Itoa(e.links)))
+		wo = max(wo, len(e.owner))
+		wg = max(wg, len(e.group))
+		ws = max(ws, len(strconv.FormatInt(e.size, 10)))
+	}
+	rows := make([]string, len(entries))
+	for i, e := range entries {
+		name := e.name
+		if e.link != "" {
+			name += " -> " + e.link
+		}
+		rows[i] = fmt.Sprintf("%s %*d %-*s %-*s %*d %s %s", e.mode, wl, e.links, wo, e.owner, wg, e.group, ws, e.size, e.mtime, name)
+	}
+	return strings.Join(rows, "\r\n")
 }
 
 // LooksLikeBaitAccess is a cheap, pre-execution heuristic for whether a raw
@@ -507,12 +588,18 @@ func LooksLikeBaitAccess(command string) bool {
 	return false
 }
 
-func sizeOf(n *Node) int64 {
+// sizeOf is what ls reports: a binary's declared Size (its content is
+// only an ELF header), otherwise the bytes cat would print, so ls -l and
+// wc -c agree on every file.
+func (s *Interpreter) sizeOf(n *Node) int64 {
 	if n.Type == NodeDir {
 		return 4096
+	}
+	if n.Link != "" {
+		return int64(len(n.Link))
 	}
 	if n.Size > 0 {
 		return n.Size
 	}
-	return int64(len(n.Content))
+	return int64(len(s.content(n)))
 }

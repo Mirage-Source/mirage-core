@@ -28,8 +28,8 @@ type FileInfo struct {
 	MTime string
 }
 
-func infoOf(name string, n *Node) FileInfo {
-	return FileInfo{Name: name, Dir: n.Type == NodeDir, Mode: n.Mode, Owner: n.Owner, Group: n.Group, Size: sizeOf(n), MTime: n.MTime}
+func (s *Interpreter) infoOf(name string, n *Node) FileInfo {
+	return FileInfo{Name: name, Dir: n.Type == NodeDir, Mode: n.Mode, Owner: n.Owner, Group: n.Group, Size: s.sizeOf(n), MTime: n.MTime}
 }
 
 // visible looks up p and hides bait that is only surfaced by the deception
@@ -53,7 +53,7 @@ func (s *Interpreter) Stat(p string) (FileInfo, error) {
 	if n == nil {
 		return FileInfo{}, iofs.ErrNotExist
 	}
-	return infoOf(path.Base(clean), n), nil
+	return s.infoOf(path.Base(clean), n), nil
 }
 
 // ReadDir lists a directory in ls -a order: ".", "..", then entries.
@@ -77,11 +77,11 @@ func (s *Interpreter) readDir(p string) ([]FileInfo, error) {
 			parent = pn
 		}
 	}
-	out := []FileInfo{infoOf(".", n), infoOf("..", parent)}
+	out := []FileInfo{s.infoOf(".", n), s.infoOf("..", parent)}
 	names := append(append([]string{}, n.Children...), s.overlayChildren[clean]...)
 	for _, name := range names {
 		if _, child := s.visible(path.Join(clean, name)); child != nil {
-			out = append(out, infoOf(name, child))
+			out = append(out, s.infoOf(name, child))
 		}
 	}
 	return out, nil
@@ -102,8 +102,8 @@ func (s *Interpreter) ReadFile(p string) (string, error) {
 	if n.Type == NodeDir {
 		return "", iofs.ErrInvalid
 	}
-	content := s.expandHostname(n.Content)
-	if pad := sizeOf(n) - int64(len(content)); pad > 0 && strings.HasPrefix(content, elfHeader[:4]) {
+	content := s.content(n)
+	if pad := s.sizeOf(n) - int64(len(content)); pad > 0 && strings.HasPrefix(content, elfHeader[:4]) {
 		content += strings.Repeat("\x00", int(pad))
 	}
 	return content, nil

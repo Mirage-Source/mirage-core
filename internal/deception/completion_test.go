@@ -5,7 +5,8 @@ import "testing"
 func TestShouldAttemptCompletionAcceptsUnhandledSimpleCommands(t *testing.T) {
 	// Commands the preprint observed in real sessions that the interpreter
 	// has no builtin for -- exactly what this fallback exists to serve.
-	for _, line := range []string{"uptime", "nproc", "lspci", "nvidia-smi -L", "free -m", "df -h", "lscpu"} {
+	// (nproc and free became builtins; they must agree with /proc.)
+	for _, line := range []string{"uptime", "lspci", "nvidia-smi -L", "df -h", "lscpu"} {
 		name, ok := ShouldAttemptCompletion(line)
 		if !ok {
 			t.Errorf("ShouldAttemptCompletion(%q) = (_, false), want true", line)
@@ -20,7 +21,7 @@ func TestShouldAttemptCompletionRejectsKnownBuiltins(t *testing.T) {
 	// These have curated, self-consistent deterministic output; letting a
 	// model invent replacements would break consistency with the fake
 	// filesystem the rest of the shell renders.
-	for _, line := range []string{"ls -la", "cat /etc/passwd", "uname -a", "whoami", "ps aux", "netstat -tulpn"} {
+	for _, line := range []string{"ls -la", "cat /etc/passwd", "uname -a", "whoami", "ps aux", "netstat -tulpn", "nproc", "free -m"} {
 		if _, ok := ShouldAttemptCompletion(line); ok {
 			t.Errorf("ShouldAttemptCompletion(%q) = true, want false -- it's a builtin", line)
 		}

@@ -26,7 +26,7 @@ func (s *Interpreter) shBuiltin(cmd string, args []string, bait *[]BaitHit, acti
 				}
 				return "sh: 0: cannot open " + a + ": No such file", 2
 			}
-			return s.runNested(s.expandHostname(n.Content), bait, action)
+			return s.runNested(s.content(n), bait, action)
 		}
 	}
 	if stdin != nil {

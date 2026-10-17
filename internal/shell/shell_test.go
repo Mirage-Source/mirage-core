@@ -103,8 +103,8 @@ func TestPipeGrep(t *testing.T) {
 	}
 
 	out, code, _ = s.Run("cat /etc/passwd | grep -v root | grep -c .")
-	if code != 0 || out != "3" {
-		t.Fatalf("expected 3 non-root lines, got out=%q code=%d", out, code)
+	if code != 0 || out != "24" { // stock 22.04 passwd (rootfs/etc/passwd)
+		t.Fatalf("expected 24 non-root lines, got out=%q code=%d", out, code)
 	}
 }
 
@@ -115,8 +115,8 @@ func TestPipeHeadTailWc(t *testing.T) {
 		t.Fatalf("head -n 1 mismatch: out=%q code=%d", out, code)
 	}
 	out, code, _ = s.Run("wc -l /etc/passwd")
-	if code != 0 || !strings.HasPrefix(out, "4 ") {
-		t.Fatalf("expected 4 lines counted, got out=%q code=%d", out, code)
+	if code != 0 || !strings.HasPrefix(out, "25 ") {
+		t.Fatalf("expected 25 lines counted, got out=%q code=%d", out, code)
 	}
 }
 
@@ -233,17 +233,15 @@ func TestEnrichRevealsPythonHistory(t *testing.T) {
 	}
 }
 
-func TestEnrichAddsUbuntuCodename(t *testing.T) {
-	s := NewInterpreter("ubuntu")
-	out, code, _ := s.RunWithDeception("cat /etc/os-release", "ENRICH")
-	if code != 0 || !strings.Contains(out, "UBUNTU_CODENAME=jammy") {
-		t.Fatalf("expected ENRICH to add UBUNTU_CODENAME, got: %q", out)
-	}
-
-	s2 := NewInterpreter("ubuntu")
-	out2, _, _ := s2.Run("cat /etc/os-release")
-	if strings.Contains(out2, "UBUNTU_CODENAME") {
-		t.Fatalf("expected no UBUNTU_CODENAME without ENRICH, got: %q", out2)
+// os-release used to omit UBUNTU_CODENAME unless ENRICH added it back, so
+// every session saw a file no stock Ubuntu has. It is now the stock file
+// whatever the action.
+func TestOSReleaseIsStockWhateverTheAction(t *testing.T) {
+	for _, action := range []string{"", "ENRICH"} {
+		out, code, _ := NewInterpreter("ubuntu").RunWithDeception("cat /etc/os-release", action)
+		if code != 0 || !strings.Contains(out, "UBUNTU_CODENAME=jammy") || !strings.HasPrefix(out, `PRETTY_NAME="Ubuntu 22.04.3 LTS"`) {
+			t.Errorf("action %q: %q", action, out)
+		}
 	}
 }
 
