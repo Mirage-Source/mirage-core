@@ -47,6 +47,8 @@ func (s *Interpreter) Abs(p string) string { return s.resolvePath(p) }
 
 // Stat follows the same rules as ls: no symlinks exist, so it is also lstat.
 func (s *Interpreter) Stat(p string) (FileInfo, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	clean, n := s.visible(p)
 	if n == nil {
 		return FileInfo{}, iofs.ErrNotExist
@@ -56,6 +58,12 @@ func (s *Interpreter) Stat(p string) (FileInfo, error) {
 
 // ReadDir lists a directory in ls -a order: ".", "..", then entries.
 func (s *Interpreter) ReadDir(p string) ([]FileInfo, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.readDir(p)
+}
+
+func (s *Interpreter) readDir(p string) ([]FileInfo, error) {
 	clean, n := s.visible(p)
 	if n == nil {
 		return nil, iofs.ErrNotExist
@@ -85,6 +93,8 @@ func (s *Interpreter) ReadDir(p string) ([]FileInfo, error) {
 // shortened content, and NUL padding in a text file is a worse tell than
 // the size mismatch.
 func (s *Interpreter) ReadFile(p string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	_, n := s.visible(p)
 	if n == nil {
 		return "", iofs.ErrNotExist
@@ -113,6 +123,8 @@ func (s *Interpreter) checkCreate(clean string) error {
 // CreateFile makes p an empty file owned by the session user, or truncates
 // it when truncate is set. Existing files are otherwise left as they are.
 func (s *Interpreter) CreateFile(p string, truncate bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	clean, n := s.visible(p)
 	if n != nil {
 		if n.Type == NodeDir {
@@ -140,6 +152,8 @@ func (s *Interpreter) CreateFile(p string, truncate bool) error {
 
 // SetSize records how big an uploaded file is. Its content is never kept.
 func (s *Interpreter) SetSize(p string, size int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	clean, n := s.visible(p)
 	if n == nil || n.Type == NodeDir {
 		return
@@ -149,6 +163,8 @@ func (s *Interpreter) SetSize(p string, size int64) {
 }
 
 func (s *Interpreter) Mkdir(p string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	clean, n := s.visible(p)
 	if n != nil {
 		return iofs.ErrExist
@@ -162,6 +178,8 @@ func (s *Interpreter) Mkdir(p string) error {
 
 // Remove deletes a file (dir false) or an empty directory (dir true).
 func (s *Interpreter) Remove(p string, dir bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	clean, n := s.visible(p)
 	switch {
 	case n == nil:
@@ -171,7 +189,7 @@ func (s *Interpreter) Remove(p string, dir bool) error {
 	case dir && n.Type != NodeDir, !dir && n.Type == NodeDir:
 		return iofs.ErrInvalid
 	case dir:
-		if entries, _ := s.ReadDir(clean); len(entries) > 2 {
+		if entries, _ := s.readDir(clean); len(entries) > 2 {
 			return iofs.ErrExist
 		}
 	}
@@ -182,6 +200,8 @@ func (s *Interpreter) Remove(p string, dir bool) error {
 // Rename moves a file or directory. Like posix rename it replaces an
 // existing file at newp.
 func (s *Interpreter) Rename(oldp, newp string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	oldClean, n := s.visible(oldp)
 	if n == nil {
 		return iofs.ErrNotExist
@@ -231,6 +251,8 @@ func (s *Interpreter) collect(p string, n *Node, into map[string]*Node) {
 
 // Chmod sets the permission bits (and setuid/setgid/sticky) of p.
 func (s *Interpreter) Chmod(p string, perm uint32) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	clean, n := s.visible(p)
 	if n == nil {
 		return iofs.ErrNotExist

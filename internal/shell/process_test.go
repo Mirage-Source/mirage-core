@@ -35,7 +35,7 @@ func TestShRunsItsInput(t *testing.T) {
 
 func TestBackgroundAmpersandSeparates(t *testing.T) {
 	got := splitStatements("./a & ./b &")
-	want := []statement{{"", "./a"}, {";", "./b"}}
+	want := []statement{{"", "./a", 1}, {";", "./b", 1}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %#v", got)
 	}

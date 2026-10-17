@@ -259,7 +259,7 @@ func handleTelnet(conn net.Conn, cfg telnetConfig, guard *sessionGuard) {
 
 		now := time.Now().UnixMilli()
 		cwd := interp.Cwd
-		response, code, baitHits, _, _ := applyDeception(nil, interp, guard.sessionID(), line)
+		response, _, code, baitHits, _, _ := applyDeception(nil, interp, guard.sessionID(), line, nil)
 		cmd, ok := guard.appendCommand(telnetCommand(line, cwd, response, code, baitHits, now), true)
 		if !ok {
 			guard.recordOutcome(session.OutcomeCommandLimitReached)

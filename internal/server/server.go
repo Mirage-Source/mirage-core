@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -46,9 +47,12 @@ const maxCommandsPerSession = 500
 // and no per-request check of its own).
 const maxSessionInputBytes = 256 * 1024
 
-// maxChannelsPerConnection bounds goroutines and read buffers per connection.
-// SSH allows unlimited channels; 8 is well above what any real client opens.
-const maxChannelsPerConnection = 8
+// maxChannelsPerConnection bounds session channels open at once on one
+// connection (goroutines and read buffers), as sshd's MaxSessions does:
+// default 10, and the 11th concurrent open fails with "open failed"
+// (measured on 8.9p1). Sequential channels are unlimited there too; what a
+// connection can store is bounded by the command and input caps instead.
+const maxChannelsPerConnection = 10
 
 const defaultIdleTimeout = 120 * time.Second
 const defaultHandshakeTimeout = 20 * time.Second
@@ -68,6 +72,8 @@ type sessionGuard struct {
 	inputBytes int
 
 	uploadBytes int64 // scp and sftp bytes accepted, all channels
+
+	machine *shell.Machine // see process
 
 	// Zero means maxCommandsPerSession / maxSessionInputBytes (SSH).
 	maxCommands   int
@@ -107,6 +113,34 @@ func (g *sessionGuard) username() string {
 		return ""
 	}
 	return attempts[len(attempts)-1].Username
+}
+
+// process starts a new process on this connection's machine. Every exec,
+// shell and sftp channel on a connection shares one machine, as on a real
+// box: a file one channel writes is there for the next, and the hostname
+// does not change between execs.
+func (g *sessionGuard) process() *shell.Interpreter {
+	g.mu.Lock()
+	if g.machine == nil {
+		g.machine = shell.NewMachine(shell.Ubuntu)
+	}
+	m := g.machine
+	g.mu.Unlock()
+	p := m.NewInterpreter(g.username())
+	// sshd's environment names both ends. Network is written during the
+	// handshake, before any channel exists (see username). The server end
+	// is the address the hostname claims, on the port the client targeted.
+	if n := g.sess.Network; n.ClientIP != "" {
+		port := 22
+		if n.TargetPort != 0 {
+			port = n.TargetPort
+		}
+		p.Env["SSH_CLIENT"] = fmt.Sprintf("%s %d %d", n.ClientIP, n.ClientPort, port)
+		if ip := m.PrivateIP(); ip != "" {
+			p.Env["SSH_CONNECTION"] = fmt.Sprintf("%s %d %s %d", n.ClientIP, n.ClientPort, ip, port)
+		}
+	}
+	return p
 }
 
 // Refused channels and subsystems cost the server nothing, so nothing ever
@@ -787,25 +821,26 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGua
 // channel has stopped mutating it.
 func handleChannels(conn net.Conn, idleTimeout time.Duration, chans <-chan ssh.NewChannel, guard *sessionGuard, db *sql.DB, deceptionRuntime *deception.Runtime, fleetClient *fleet.Client) {
 	var wg sync.WaitGroup
-	var opened int
+	var open atomic.Int32
 	for newChannel := range chans {
 		log.Printf("New channel type: %s", newChannel.ChannelType())
 		switch newChannel.ChannelType() {
 		case "session":
-			if opened >= maxChannelsPerConnection {
+			if open.Load() >= maxChannelsPerConnection {
 				log.Printf("Channel limit reached for %v; rejecting", conn.RemoteAddr())
-				newChannel.Reject(ssh.ResourceShortage, "too many channels")
+				newChannel.Reject(ssh.ConnectionFailed, "open failed")
 				continue
 			}
-			opened++
 			channel, requests, err := newChannel.Accept()
 			if err != nil {
 				log.Printf("Could not accept channel: %v", err)
 				continue
 			}
+			open.Add(1)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				defer open.Add(-1)
 				defer func() {
 					if r := recover(); r != nil {
 						log.Printf("recovered panic in handleSessionRequests for %v: %v", conn.RemoteAddr(), r)
@@ -834,10 +869,20 @@ func handleChannels(conn net.Conn, idleTimeout time.Duration, chans <-chan ssh.N
 // usedLLM reports that the response came from the completion fallback rather
 // than from the interpreter, so the caller can record the right
 // session.ResponseSource against the command.
-func applyDeception(deceptionRuntime *deception.Runtime, interp *shell.Interpreter, sessionID, command string) (response string, code int, baitHits []shell.BaitHit, deceptionAction *string, usedLLM bool) {
+//
+// run executes the command on interp with a deception action; nil means the
+// interactive shell (interp.RunWithDeception, all output in response). The
+// exec path passes RunExecWithDeception, whose stderr comes back in errOut.
+func applyDeception(deceptionRuntime *deception.Runtime, interp *shell.Interpreter, sessionID, command string, run execFunc) (response, errOut string, code int, baitHits []shell.BaitHit, deceptionAction *string, usedLLM bool) {
+	if run == nil {
+		run = func(command, action string) (string, string, int, []shell.BaitHit) {
+			out, code, bait := interp.RunWithDeception(command, action)
+			return out, "", code, bait
+		}
+	}
 	if deceptionRuntime == nil {
-		response, code, baitHits = interp.Run(command)
-		return response, code, baitHits, nil, false
+		response, errOut, code, baitHits = run(command, "")
+		return response, errOut, code, baitHits, nil, false
 	}
 
 	// Tried before the interpreter runs, and only for a command the
@@ -857,14 +902,14 @@ func applyDeception(deceptionRuntime *deception.Runtime, interp *shell.Interpret
 				Username: interp.Username,
 			}
 			if out, exitCode, ok := deceptionRuntime.Client.Complete(sessionID, command, shellCtx); ok {
-				return out, exitCode, nil, nil, true
+				return out, "", exitCode, nil, nil, true
 			}
 		}
 	}
 
 	if !deceptionRuntime.PolicyEnabled.Load() {
-		response, code, baitHits = interp.Run(command)
-		return response, code, baitHits, nil, false
+		response, errOut, code, baitHits = run(command, "")
+		return response, errOut, code, baitHits, nil, false
 	}
 
 	baitHint := shell.LooksLikeBaitAccess(command)
@@ -882,7 +927,7 @@ func applyDeception(deceptionRuntime *deception.Runtime, interp *shell.Interpret
 	if applyActions {
 		execAction = action
 	}
-	response, code, baitHits = interp.RunWithDeception(command, execAction)
+	response, errOut, code, baitHits = run(command, execAction)
 
 	if applyActions {
 		var delay time.Duration
@@ -892,12 +937,16 @@ func applyDeception(deceptionRuntime *deception.Runtime, interp *shell.Interpret
 		}
 	}
 
-	return response, code, baitHits, &action, false
+	return response, errOut, code, baitHits, &action, false
 }
+
+// execFunc runs one command line with a deception action ("" for none).
+type execFunc func(command, action string) (stdout, stderr string, code int, bait []shell.BaitHit)
 
 func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh.Channel, requests <-chan *ssh.Request, guard *sessionGuard, deceptionRuntime *deception.Runtime) {
 	defer channel.Close()
 	var inputBuffer []byte
+	pty := false
 	log.Printf("Session started.")
 
 	for req := range requests {
@@ -905,6 +954,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 
 		switch req.Type {
 		case "pty-req":
+			pty = true
 			req.Reply(true, nil)
 		case "subsystem":
 			var payload struct{ Name string }
@@ -918,7 +968,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 			}
 			req.Reply(true, nil)
 			log.Printf("sftp subsystem started")
-			runSFTP(channel, guard, shell.NewInterpreter(guard.username()), func() { refreshDeadlines(conn, idleTimeout) })
+			runSFTP(channel, guard, guard.process(), func() { refreshDeadlines(conn, idleTimeout) })
 			channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{Status: 0}))
 			guard.recordOutcome(session.OutcomeCleanDisconnect)
 			return
@@ -935,10 +985,11 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 
 			log.Printf("Executing command: %s", payload.Command)
 
-			interp := shell.NewInterpreter(guard.username())
+			interp := guard.process()
 			beforeCwd := interp.Cwd
 			var (
 				response        string
+				errResponse     string
 				code            int
 				baitHits        []shell.BaitHit
 				deceptionAction *string
@@ -949,12 +1000,18 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 				// on stdin/stdout instead of printing anything.
 				code = runSCPSink(channel, guard, target, func() { refreshDeadlines(conn, idleTimeout) })
 			} else {
-				response, code, baitHits, deceptionAction, usedLLM = applyDeception(deceptionRuntime, interp, guard.sessionID(), payload.Command)
+				run := func(command, action string) (string, string, int, []shell.BaitHit) {
+					return interp.RunExecWithDeception(command, action, pty)
+				}
+				response, errResponse, code, baitHits, deceptionAction, usedLLM = applyDeception(deceptionRuntime, interp, guard.sessionID(), payload.Command, run)
+				if usedLLM && response != "" && !strings.HasSuffix(response, "\n") {
+					response += "\n" // completions come without a final newline
+				}
 			}
 			refreshDeadlines(conn, idleTimeout)
-			if response != "" {
-				fmt.Fprintf(channel, "%s\r\n", response)
-			}
+			io.WriteString(channel, response)
+			io.WriteString(channel.Stderr(), errResponse)
+			response += errResponse // the session records what the attacker saw
 
 			now := time.Now().UnixMilli()
 			raw := base64.StdEncoding.EncodeToString([]byte(payload.Command))
@@ -1005,7 +1062,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 			req.Reply(true, nil)
 			fmt.Fprintf(channel, "Welcome to Ubuntu 22.04.3 LTS\r\n")
 
-			interp := shell.NewInterpreter(guard.username())
+			interp := guard.process()
 
 			for {
 				if guard.commandCount() >= maxCommandsPerSession {
@@ -1072,7 +1129,7 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 				parsedCommand, parsedArgs, chain := parseCommandLine(cli)
 
 				beforeCwd := interp.Cwd
-				response, code, baitHits, deceptionAction, usedLLM := applyDeception(deceptionRuntime, interp, guard.sessionID(), cli)
+				response, _, code, baitHits, deceptionAction, usedLLM := applyDeception(deceptionRuntime, interp, guard.sessionID(), cli, nil)
 				refreshDeadlines(conn, idleTimeout)
 
 				status := code

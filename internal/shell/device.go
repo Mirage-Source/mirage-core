@@ -30,6 +30,7 @@ var DVR = &Profile{
 		syntaxEOF:   "-sh: syntax error: unexpected end of file",
 		syntaxToken: `-sh: syntax error: unexpected "%s"`,
 		createRO:    "-sh: can't create %s: Read-only file system",
+		cdMissing:   "cd: %s: No such file or directory", // unmeasured; unchanged
 	},
 	// The tmpfs and jffs2 mounts in /proc/mounts; / is squashfs.
 	writable:      []string{"/tmp", "/var", "/dev", "/mnt/mtd"},

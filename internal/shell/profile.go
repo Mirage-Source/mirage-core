@@ -31,7 +31,13 @@ type Profile struct {
 	// writable lists the mount points that accept writes; nil means the
 	// whole tree is writable. Everything else is a read-only rootfs.
 	writable []string
+
+	// loginEnv is the environment a new process starts with (nil: none).
+	loginEnv func(user, home string) map[string]string
 }
+
+// ubuntuPath is Ubuntu 22.04's /etc/environment PATH, as sshd hands it out.
+const ubuntuPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
 
 // Ubuntu is the SSH sensor's identity: an Ubuntu 22.04 EC2 instance.
 var Ubuntu = &Profile{
@@ -51,6 +57,16 @@ var Ubuntu = &Profile{
 		openMissing: "bash: %s: No such file or directory",
 		syntaxEOF:   "bash: syntax error: unexpected end of file",
 		syntaxToken: "bash: syntax error near unexpected token `%s'",
+		cdMissing:   "bash: cd: %s: No such file or directory",
+	},
+	// Measured on 8.9p1 for an exec session; the server adds SSH_CLIENT and
+	// SSH_CONNECTION, and RunExec sets SHLVL to 0.
+	loginEnv: func(user, home string) map[string]string {
+		return map[string]string{
+			"HOME": home, "LOGNAME": user, "USER": user, "PWD": home,
+			"PATH": ubuntuPath, "SHELL": "/bin/bash", "SHLVL": "1",
+			"LANG": "C.UTF-8", "MOTD_SHOWN": "pam",
+		}
 	},
 	prompt: func(s *Interpreter) string {
 		promptChar := "$"
@@ -68,6 +84,7 @@ type shellMsgs struct {
 	createNoDir, createIsDir, openMissing      string
 	syntaxEOF, syntaxToken                     string
 	createRO                                   string
+	cdMissing                                  string
 }
 
 // readOnly reports whether clean lies on the profile's read-only rootfs.

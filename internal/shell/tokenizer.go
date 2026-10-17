@@ -11,6 +11,7 @@ import (
 type statement struct {
 	Sep  string // "", ";", "&&", "||"
 	Text string
+	Line int // 1-based line its text starts on, for bash -c's "line N:"
 }
 
 // splitStatements breaks a line into statements on top-level `;`, `&&`, and
@@ -25,10 +26,14 @@ func splitStatements(line string) []statement {
 	var quote byte // 0, '\'', or '"'
 	parenDepth := 0
 
+	start := 0 // index in line where cur began
 	flush := func() {
-		text := strings.TrimSpace(cur.String())
+		raw := cur.String()
+		text := strings.TrimSpace(raw)
 		if text != "" {
-			stmts = append(stmts, statement{Sep: sep, Text: text})
+			lead := len(raw) - len(strings.TrimLeft(raw, " \t\r\n"))
+			n := 1 + strings.Count(line[:start], "\n") + strings.Count(raw[:lead], "\n")
+			stmts = append(stmts, statement{Sep: sep, Text: text, Line: n})
 		}
 		cur.Reset()
 	}
@@ -36,6 +41,9 @@ func splitStatements(line string) []statement {
 	runes := []byte(line)
 	for i := 0; i < len(runes); i++ {
 		c := runes[i]
+		if cur.Len() == 0 {
+			start = i
+		}
 
 		if quote != 0 {
 			cur.WriteByte(c)
@@ -222,6 +230,11 @@ func extractRedirects(words []string) ([]string, redirects) {
 // an opaque unit that whitespace inside it does not split on. The `$(...)`
 // spans themselves are left intact in the returned words for the caller to
 // resolve via substitution.
+// litDollar stands for a `$` that was quoted ('$x', "\$x" or \$x): the
+// tokenizer writes it, substitute never expands it and turns it back into
+// "$". A private-use rune, so it does not occur in typed commands.
+const litDollar = "\uE000"
+
 func tokenizeWords(text string) []string {
 	var words []string
 	var cur strings.Builder
@@ -243,16 +256,34 @@ func tokenizeWords(text string) []string {
 		c := runes[i]
 
 		if quote != 0 {
-			if c == quote {
+			switch {
+			case c == quote:
 				quote = 0
-			} else {
+			case c == '$' && quote == '\'':
+				cur.WriteString(litDollar) // '...' never expands
+			case c == '\\' && quote == '"' && i+1 < len(runes) && strings.IndexByte("$`\"\\", runes[i+1]) >= 0:
+				i++
+				if runes[i] == '$' {
+					cur.WriteString(litDollar)
+				} else {
+					cur.WriteByte(runes[i])
+				}
+			default:
 				cur.WriteByte(c)
-				hasCur = true
 			}
+			hasCur = true
 			continue
 		}
 
 		switch {
+		case c == '\\' && parenDepth == 0 && i+1 < len(runes):
+			i++
+			if runes[i] == '$' {
+				cur.WriteString(litDollar)
+			} else {
+				cur.WriteByte(runes[i])
+			}
+			hasCur = true
 		case c == '\'' || c == '"':
 			quote = c
 			hasCur = true
@@ -310,6 +341,9 @@ func ParseCommands(line string) []Invocation {
 			}
 			if len(words) == 0 {
 				continue
+			}
+			for i, w := range words {
+				words[i] = strings.ReplaceAll(w, litDollar, "$")
 			}
 			out = append(out, Invocation{
 				Name: path.Base(path.Clean(words[0])),

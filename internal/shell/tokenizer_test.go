@@ -11,12 +11,12 @@ func TestSplitStatementsNewline(t *testing.T) {
 		in   string
 		want []statement
 	}{
-		{"lf", "uname -a\nid", []statement{{"", "uname -a"}, {";", "id"}}},
-		{"crlf", "uname -a\r\nid", []statement{{"", "uname -a"}, {";", "id"}}},
-		{"blank lines", "\n\nid\n\n", []statement{{"", "id"}}},
-		{"inside quotes", "echo 'a\nb'", []statement{{"", "echo 'a\nb'"}}},
-		{"after &&", "true &&\nid", []statement{{"", "true"}, {"&&", "id"}}},
-		{"mixed", "cd /tmp\nwget x; sh x", []statement{{"", "cd /tmp"}, {";", "wget x"}, {";", "sh x"}}},
+		{"lf", "uname -a\nid", []statement{{"", "uname -a", 1}, {";", "id", 2}}},
+		{"crlf", "uname -a\r\nid", []statement{{"", "uname -a", 1}, {";", "id", 2}}},
+		{"blank lines", "\n\nid\n\n", []statement{{"", "id", 3}}},
+		{"inside quotes", "echo 'a\nb'", []statement{{"", "echo 'a\nb'", 1}}},
+		{"after &&", "true &&\nid", []statement{{"", "true", 1}, {"&&", "id", 2}}},
+		{"mixed", "cd /tmp\nwget x; sh x", []statement{{"", "cd /tmp", 1}, {";", "wget x", 2}, {";", "sh x", 2}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

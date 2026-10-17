@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net/netip"
 	"path"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mirage-source/mirage-core/internal/session"
@@ -134,11 +136,39 @@ type BaitHit struct {
 // "ubuntu", so a root login looks like root throughout, not a root login
 // into what whoami then claims is an ubuntu box.
 type Interpreter struct {
+	*Machine
+
 	Cwd      string
 	Env      map[string]string
-	Hostname string
 	Username string
 	HomeDir  string
+
+	nesting   int
+	loopInput *[]string // lines left for `read` in a `done < file` loop
+
+	exec     bool // running as sshd's `bash -c <command>` (RunExec), not a login shell
+	tty      bool // stdout is a terminal (interactive shell, or exec with a pty)
+	line     int  // line of the statement running, for exec's "bash: line N:"
+	lastCode int  // $?
+
+	exported   map[string]bool // names `export`ed beyond the login environment
+	direct     bool            // statement is one bash would exec in place (see exportedEnv)
+	pendingErr []string        // stderr a builtin wrote alongside its stdout
+	lastTop    *item           // last statement of the top-level list
+
+	noTrailingNewline bool
+}
+
+// Machine is the box an SSH connection logged in to: what stays the same
+// across every exec, shell and sftp channel on it (a file uploaded or
+// written by one is there for the next; hostname, boot time and PIDs do not
+// change). Each channel gets its own Interpreter, a process with its own
+// cwd and variables, from NewInterpreter. Channels run concurrently, so mu
+// serializes every entry point that touches the overlay.
+type Machine struct {
+	mu sync.Mutex
+
+	Hostname string
 
 	// BootTime, SessionStart, and pids back ps/netstat/`/proc/uptime` --
 	// fixed once per session, like Hostname, so a patient attacker
@@ -157,10 +187,22 @@ type Interpreter struct {
 
 	overlay         map[string]*Node
 	overlayChildren map[string][]string
-	nesting         int
-	loopInput       *[]string // lines left for `read` in a `done < file` loop
+}
 
-	noTrailingNewline bool
+// NewMachine creates the box for one connection.
+func NewMachine(p *Profile) *Machine {
+	m := &Machine{
+		Hostname:     p.hostname(),
+		BootTime:     randomBootTime(),
+		SessionStart: time.Now(),
+		pids:         randomPIDs(),
+		Busybox:      p.busybox,
+		profile:      p,
+	}
+	m.overlay = map[string]*Node{
+		"/proc/uptime": procUptimeNode(m.BootTime),
+	}
+	return m
 }
 
 // NewInterpreter derives the emulated identity from the username the
@@ -177,32 +219,72 @@ func NewInterpreter(username string) *Interpreter {
 // NewInterpreterFor is NewInterpreter for a machine other than the default
 // Ubuntu server.
 func NewInterpreterFor(username string, p *Profile) *Interpreter {
+	return NewMachine(p).NewInterpreter(username)
+}
+
+// NewInterpreter starts a process on m as username, in its home directory
+// with no shell variables set, like a fresh login shell or `bash -c`.
+func (m *Machine) NewInterpreter(username string) *Interpreter {
 	homeDir := ubuntuHomeDir
 	identity := "ubuntu"
 	if username == "root" {
 		homeDir = rootHomeDir
 		identity = "root"
 	}
-	if p.allRoot {
-		homeDir = p.home
+	if m.profile.allRoot {
+		homeDir = m.profile.home
 		identity = "root"
 	}
-	s := &Interpreter{
-		Cwd:          homeDir,
-		Env:          map[string]string{},
-		Hostname:     p.hostname(),
-		Username:     identity,
-		HomeDir:      homeDir,
-		BootTime:     randomBootTime(),
-		SessionStart: time.Now(),
-		pids:         randomPIDs(),
-		Busybox:      p.busybox,
-		profile:      p,
+	env := map[string]string{}
+	if m.profile.loginEnv != nil {
+		env = m.profile.loginEnv(identity, homeDir)
 	}
-	s.overlay = map[string]*Node{
-		"/proc/uptime": procUptimeNode(s.BootTime),
+	return &Interpreter{
+		Machine:  m,
+		Cwd:      homeDir,
+		Env:      env,
+		Username: identity,
+		HomeDir:  homeDir,
 	}
-	return s
+}
+
+// specialParam expands bash's one-character parameters. ok is false for a
+// character that is not one.
+func (s *Interpreter) specialParam(c byte) (string, bool) {
+	switch c {
+	case '?':
+		return strconv.Itoa(s.lastCode), true
+	case '$':
+		return strconv.Itoa(s.pids["bash"]), true
+	case '#':
+		return "0", true
+	case '0':
+		if s.Busybox {
+			return "-sh", true
+		}
+		if s.exec {
+			return "bash", true
+		}
+		return "-bash", true
+	case '-':
+		if s.exec {
+			return "hBc", true
+		}
+		return "himBHs", true
+	case '!', '1', '2', '3', '4', '5', '6', '7', '8', '9', '@', '*':
+		return "", true
+	}
+	return "", false
+}
+
+// param is the value of NAME in $NAME or ${NAME}.
+func (s *Interpreter) param(name string) string {
+	if len(name) == 1 {
+		if v, ok := s.specialParam(name[0]); ok {
+			return v
+		}
+	}
+	return s.Env[name]
 }
 
 // expandHostname substitutes this session's Hostname into a static fs.go
@@ -236,26 +318,119 @@ func (s *Interpreter) Run(line string) (output string, code int, bait []BaitHit)
 // when the deception policy is actually allowed to change output (see
 // server.go's applyDeception).
 func (s *Interpreter) RunWithDeception(line, action string) (output string, code int, bait []BaitHit) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	out, code := s.evalLine(line, 0, &bait, action)
 	return out, code, bait
 }
 
+// RunExec runs command the way sshd runs an exec request without a pty:
+// as `bash -c command`, a non-interactive shell with stdout and stderr kept
+// apart, \n line ends, and "bash: line N:" on bash's own errors. Each call
+// is a new process: create a fresh Interpreter per exec on the Machine.
+func (s *Interpreter) RunExec(command string) (stdout, stderr string, code int, bait []BaitHit) {
+	return s.RunExecWithDeception(command, "", false)
+}
+
+// RunExecWithDeception is RunExec with a deception action, as
+// RunWithDeception is to Run. With pty, the exec has a terminal: both
+// streams go to it (all in stdout here) with \r\n line ends.
+func (s *Interpreter) RunExecWithDeception(command, action string, pty bool) (stdout, stderr string, code int, bait []BaitHit) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.exec, s.tty = true, pty
+	chunks, code := s.evalChunks(command, 0, &bait, action)
+	var out, errOut strings.Builder
+	for _, c := range chunks {
+		text := strings.ReplaceAll(c.text, "\r\n", "\n")
+		// Builtins leave off their final newline unless they mean it.
+		if !strings.HasSuffix(text, "\n") && !c.noNewline {
+			text += "\n"
+		}
+		switch {
+		case pty:
+			out.WriteString(strings.ReplaceAll(text, "\n", "\r\n"))
+		case c.stderr:
+			errOut.WriteString(text)
+		default:
+			out.WriteString(text)
+		}
+	}
+	return out.String(), errOut.String(), code, bait
+}
+
+// PrivateIP is the address the hostname implies ("ip-172-31-9-171" is
+// 172.31.9.171, as on EC2), or "" for any other hostname.
+func (m *Machine) PrivateIP() string {
+	rest, ok := strings.CutPrefix(m.Hostname, "ip-")
+	if !ok {
+		return ""
+	}
+	ip := strings.ReplaceAll(rest, "-", ".")
+	if _, err := netip.ParseAddr(ip); err != nil {
+		return "" // netip, not net: this package must not be able to dial
+	}
+	return ip
+}
+
+// outChunk is one statement's visible output and the stream it went to.
+type outChunk struct {
+	text      string
+	stderr    bool
+	noNewline bool // printed without a final newline (echo -n, printf, dd)
+}
+
+func joinChunks(chunks []outChunk, sep string) string {
+	var b strings.Builder
+	for i, c := range chunks {
+		b.WriteString(c.text)
+		if i < len(chunks)-1 && !c.noNewline {
+			b.WriteString(sep)
+		}
+	}
+	return b.String()
+}
+
+// chunk tags output with its stream. Under bash -c, the shell's own errors
+// name the script line: "bash: line 2: x: command not found".
+func (s *Interpreter) chunk(text string, stderr bool) outChunk {
+	if stderr && s.exec && s.line > 0 {
+		lines := strings.Split(text, "\r\n")
+		for i, l := range lines {
+			if rest, ok := strings.CutPrefix(l, "bash: "); ok && !strings.HasPrefix(rest, "line ") {
+				lines[i] = fmt.Sprintf("bash: line %d: %s", s.line, rest)
+			}
+		}
+		text = strings.Join(lines, "\r\n")
+	}
+	return outChunk{text: text, stderr: stderr}
+}
+
 func (s *Interpreter) evalLine(line string, depth int, bait *[]BaitHit, action string) (string, int) {
+	chunks, code := s.evalChunks(line, depth, bait, action)
+	return joinChunks(chunks, "\r\n"), code
+}
+
+func (s *Interpreter) evalChunks(line string, depth int, bait *[]BaitHit, action string) ([]outChunk, int) {
 	items, err := parseStatements(splitStatements(line))
 	if err != nil {
 		if se, ok := err.(syntaxError); ok {
-			return s.syntaxMsg(se), 2
+			return []outChunk{{text: s.syntaxMsg(se), stderr: true}}, 2
 		}
-		return err.Error(), 2
+		return []outChunk{{text: err.Error(), stderr: true}}, 2
 	}
-	var outputs []string
+	if depth == 0 && len(items) > 0 {
+		s.lastTop = &items[len(items)-1]
+	}
+	var outputs []outChunk
 	code := s.runItems(items, depth, bait, action, &outputs)
-	return strings.Join(outputs, "\r\n"), code
+	return outputs, code
 }
 
 // execStatement runs one statement (possibly a pipeline). ran is false when
 // the statement had no words, which leaves the previous exit status alone.
-func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, action string) (out string, code int, ran bool) {
+// isErr reports that out is stderr content (see isErrorChannel).
+func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, action string) (out string, code int, ran, isErr bool) {
 	stages := splitPipeline(text)
 
 	// NAME=value assignment only applies to a lone, non-piped statement --
@@ -267,14 +442,14 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 			resolved = append(resolved, s.substitute(w, depth, bait, action))
 		}
 		if len(resolved) == 0 {
-			return "", 0, false
+			return "", 0, false, false
 		}
 		if isAssignmentOnly(resolved) {
 			for _, w := range resolved {
 				k, v, _ := strings.Cut(w, "=")
 				s.Env[k] = v
 			}
-			return "", 0, true
+			return "", 0, true, false
 		}
 
 		cmdWords, red := extractRedirects(resolved)
@@ -282,28 +457,30 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 		if len(cmdWords) == 0 {
 			// `> FILE` alone creates or truncates FILE.
 			if red.stdoutFile == "" {
-				return "", 0, false
+				return "", 0, false, false
 			}
 			if msg, code := s.writeFile(red.stdoutFile, "", red.appendMode); code != 0 {
-				return msg, 1, true
+				return msg, 1, true, true
 			}
-			return "", 0, true
+			return "", 0, true, false
 		}
 		var stdin *string
 		if red.stdinFile != "" {
 			in, ok := s.readStdinFile(red.stdinFile)
 			if !ok {
-				return red.stdinFile + ": No such file or directory", 1, true
+				return red.stdinFile + ": No such file or directory", 1, true, true
 			}
 			stdin = &in
 		}
 		out, code := s.execBuiltin(cmdWords[0], cmdWords[1:], bait, action, stdin)
-		errChan := isErrorChannel(cmdWords[0], code) && !red.mergeStderrToStdout
+		// A builtin that wrote its errors to pendingErr printed stdout.
+		errChan := isErrorChannel(cmdWords[0], code) && !red.mergeStderrToStdout && len(s.pendingErr) == 0
+		out = s.routePendingErr(out, red)
 		out, ok := s.routeStageOutput(out, errChan, red, true)
 		if !ok {
-			return out, 1, true
+			return out, 1, true, true
 		}
-		return out, code, true
+		return out, code, true, errChan
 	}
 
 	// A real pipeline: each stage after the first gets the previous
@@ -311,6 +488,7 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 	// reaches the attacker's terminal.
 	var stageOut string
 	var stageCode int
+	var stageErr bool
 	var pipedIn *string
 	for i, stageText := range stages {
 		words := tokenizeWords(stageText)
@@ -329,17 +507,19 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 		if red.stdinFile != "" {
 			in, ok := s.readStdinFile(red.stdinFile)
 			if !ok {
-				stageOut, stageCode = red.stdinFile+": No such file or directory", 1
+				stageOut, stageCode, stageErr = red.stdinFile+": No such file or directory", 1, true
 				break
 			}
 			stdin = &in
 		}
 
+		s.direct = true // each stage is a forked subshell that execs in place
 		stageOut, stageCode = s.execBuiltin(cmdWords[0], cmdWords[1:], bait, action, stdin)
 		// Error-channel content (e.g. "command not found") is this
 		// shell's stand-in for stderr, which a plain `|` never captures
 		// -- unless this stage explicitly merged it with 2>&1.
-		errChan := isErrorChannel(cmdWords[0], stageCode) && !red.mergeStderrToStdout
+		errChan := isErrorChannel(cmdWords[0], stageCode) && !red.mergeStderrToStdout && len(s.pendingErr) == 0
+		stageOut = s.routePendingErr(stageOut, red)
 		if errChan {
 			pipedIn = nil
 		} else {
@@ -351,11 +531,34 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 
 		var ok bool
 		stageOut, ok = s.routeStageOutput(stageOut, errChan, red, i == len(stages)-1)
+		stageErr = errChan || !ok
 		if !ok {
 			stageCode = 1
 		}
 	}
-	return stageOut, stageCode, true
+	return stageOut, stageCode, true, stageErr
+}
+
+// routePendingErr applies a statement's stderr redirects to what its
+// builtin wrote to pendingErr: 2>&1 and &> join it to stdout, 2> sends it
+// to the file. Unredirected, it stays pending and is shown after stdout.
+func (s *Interpreter) routePendingErr(out string, red redirects) string {
+	if len(s.pendingErr) == 0 {
+		return out
+	}
+	text := strings.Join(s.pendingErr, "\r\n")
+	switch {
+	case red.mergeStderrToStdout || red.combinedFile != "":
+		s.pendingErr = nil
+		if out == "" {
+			return text
+		}
+		return out + "\r\n" + text
+	case red.stderrFile != "":
+		s.pendingErr = nil
+		s.writeRedirectTarget(red.stderrFile, text, red.stderrAppendMode)
+	}
+	return out
 }
 
 // isErrorChannel reports whether cmd's output at this exit code is this
@@ -368,7 +571,9 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 // weren't found) while its printed output is still real matches on stdout,
 // never error text -- see whichBuiltin.
 func isErrorChannel(cmd string, code int) bool {
-	if cmd == "which" || (cmd == "ping" && code == 1) {
+	// printf reports bad numbers on stderr itself (pendingErr) and still
+	// prints its output.
+	if cmd == "which" || (cmd == "ping" && code == 1) || (cmd == "printf" && code == 1) {
 		return false
 	}
 	return code != 0
@@ -483,9 +688,17 @@ func (s *Interpreter) substitute(word string, depth int, bait *[]BaitHit, action
 				continue
 			}
 			name := word[i+2 : i+2+closeIdx]
-			out.WriteString(s.Env[name])
+			out.WriteString(s.param(name))
 			i = i + 2 + closeIdx + 1
 			continue
+		}
+
+		if c == '$' && i+1 < len(word) {
+			if v, ok := s.specialParam(word[i+1]); ok {
+				out.WriteString(v)
+				i += 2
+				continue
+			}
 		}
 
 		if c == '$' && i+1 < len(word) && isIdentStart(word[i+1]) {
@@ -501,7 +714,7 @@ func (s *Interpreter) substitute(word string, depth int, bait *[]BaitHit, action
 		out.WriteByte(c)
 		i++
 	}
-	return out.String()
+	return strings.ReplaceAll(out.String(), litDollar, "$")
 }
 
 func isAssignmentOnly(words []string) bool {
@@ -587,11 +800,22 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 
 	case "export":
 		for _, a := range args {
-			if k, v, ok := strings.Cut(a, "="); ok {
+			k, v, ok := strings.Cut(a, "=")
+			if ok {
 				s.Env[k] = v
 			}
+			s.markExported(k)
 		}
 		return "", 0
+
+	case "env":
+		return s.envBuiltin(args, bait, action, stdin)
+
+	case "printenv":
+		return s.printenvBuiltin(args)
+
+	case "printf":
+		return s.printfBuiltin(args)
 
 	case "test", "[":
 		return "", s.testBuiltin(cmd, args)
@@ -924,7 +1148,11 @@ func (s *Interpreter) cdBuiltin(args []string) (string, int) {
 	}
 	clean, n := s.lookup(target)
 	if n == nil || n.Type != NodeDir {
-		return "cd: " + target + ": No such file or directory", 1
+		return s.shellMsg(s.profile.msgs.cdMissing, target), 1
+	}
+	if _, ok := s.Env["PWD"]; ok {
+		s.Env["OLDPWD"] = s.Cwd
+		s.Env["PWD"] = clean
 	}
 	s.Cwd = clean
 	return "", 0

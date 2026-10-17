@@ -16,6 +16,7 @@ var wantBuiltins = []string{
 	"chmod", "chown", "chgrp", "rm", "mkdir", "touch", "cp", "mv", "wget", "curl",
 	"sh", "bash", "nohup", "sleep", "kill", "pkill", "killall",
 	"true", ":", "false", "ping", "perl", "dd", "more", "read",
+	"env", "printenv", "printf",
 }
 
 func TestIsKnownBuiltinCoversEveryExecBuiltinCase(t *testing.T) {

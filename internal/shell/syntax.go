@@ -40,6 +40,7 @@ type item struct {
 	arms     []caseArm
 	words    []string
 	input    string // while/until: file from `done < file`, read by `read`
+	line     int    // simple: see statement.Line
 }
 
 type syntaxError string
@@ -213,7 +214,7 @@ func (p *parser) item() (item, error) {
 		return p.whileItem(st.Sep, kw == "until")
 	}
 	p.pos++
-	return item{kind: kindSimple, sep: st.Sep, text: st.Text}, nil
+	return item{kind: kindSimple, sep: st.Sep, text: st.Text, line: st.Line}, nil
 }
 
 func (p *parser) ifItem(sep string) (item, error) {
@@ -360,9 +361,9 @@ func closingParen(text string) int {
 // writes do not. Output that follows a nonzero exit is treated as the
 // group's stderr, the same heuristic simple commands use (isErrorChannel),
 // so `(fetch || fetch) > f` shows its errors and still creates f.
-func (s *Interpreter) runSubshell(it item, depth int, bait *[]BaitHit, action string, outputs *[]string) int {
+func (s *Interpreter) runSubshell(it item, depth int, bait *[]BaitHit, action string, outputs *[]outChunk) int {
 	cwd, env := s.Cwd, maps.Clone(s.Env)
-	var inner []string
+	var inner []outChunk
 	code := s.runItems(it.body, depth, bait, action, &inner)
 	s.Cwd, s.Env = cwd, env
 
@@ -378,13 +379,17 @@ func (s *Interpreter) runSubshell(it item, depth int, bait *[]BaitHit, action st
 	errChan := code != 0
 	if errChan && red.stdoutFile != "" {
 		if msg, c := s.writeFile(red.stdoutFile, "", red.appendMode); c != 0 {
-			*outputs = append(*outputs, msg)
+			*outputs = append(*outputs, s.chunk(msg, true))
 			return 1
 		}
 	}
-	visible, ok := s.routeStageOutput(strings.Join(inner, "\r\n"), errChan, red, true)
+	if red.stdoutFile == "" && red.stderrFile == "" && red.combinedFile == "" {
+		*outputs = append(*outputs, inner...) // nothing redirected: keep each stream
+		return code
+	}
+	visible, ok := s.routeStageOutput(joinChunks(inner, "\r\n"), errChan, red, true)
 	if visible != "" {
-		*outputs = append(*outputs, visible)
+		*outputs = append(*outputs, outChunk{text: visible, stderr: errChan || !ok})
 	}
 	if !ok {
 		return 1
@@ -432,14 +437,14 @@ func (p *parser) whileItem(sep string, until bool) (item, error) {
 
 // runWhile runs a while/until loop, capped like for at maxLoopIterations.
 // A `done < file` redirect becomes the lines `read` consumes.
-func (s *Interpreter) runWhile(it item, depth int, bait *[]BaitHit, action string, outputs *[]string) int {
+func (s *Interpreter) runWhile(it item, depth int, bait *[]BaitHit, action string, outputs *[]outChunk) int {
 	saved := s.loopInput
 	defer func() { s.loopInput = saved }()
 	if it.input != "" {
 		file := s.expandWord(it.input, depth, bait, action)
 		text, ok := s.builtinInput(file, nil)
 		if !ok || file == "" {
-			*outputs = append(*outputs, s.shellMsg(s.profile.msgs.openMissing, file))
+			*outputs = append(*outputs, s.chunk(s.shellMsg(s.profile.msgs.openMissing, file), true))
 			return 1
 		}
 		lines := splitLines(text)
@@ -499,7 +504,7 @@ func (s *Interpreter) expandWord(raw string, depth int, bait *[]BaitHit, action 
 	return strings.Join(words, " ")
 }
 
-func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action string, outputs *[]string) int {
+func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action string, outputs *[]outChunk) int {
 	last := 0
 	for i, it := range items {
 		if i > 0 && ((it.sep == "&&" && last != 0) || (it.sep == "||" && last == 0)) {
@@ -507,14 +512,24 @@ func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action 
 		}
 		switch it.kind {
 		case kindSimple:
-			out, code, ran := s.execStatement(it.text, depth, bait, action)
+			s.line = it.line
+			s.direct = &items[i] == s.lastTop
+			s.pendingErr = nil
+			out, code, ran, isErr := s.execStatement(it.text, depth, bait, action)
+			if out != "" {
+				c := s.chunk(out, isErr)
+				c.noNewline = s.noTrailingNewline && !isErr
+				*outputs = append(*outputs, c)
+			}
+			if len(s.pendingErr) > 0 {
+				*outputs = append(*outputs, s.chunk(strings.Join(s.pendingErr, "\r\n"), true))
+				s.pendingErr = nil
+			}
 			if !ran {
 				continue
 			}
 			last = code
-			if out != "" {
-				*outputs = append(*outputs, out)
-			}
+			s.lastCode = code
 		case kindGroup:
 			last = s.runItems(it.body, depth, bait, action, outputs)
 		case kindIf:
