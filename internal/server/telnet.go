@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/mirage-source/mirage-core/internal/fleet"
+	"github.com/mirage-source/mirage-core/internal/proxyproto"
 	"github.com/mirage-source/mirage-core/internal/session"
 	"github.com/mirage-source/mirage-core/internal/shell"
 	"github.com/mirage-source/mirage-core/internal/store"
@@ -72,6 +73,15 @@ func StartTelnet(addr string) {
 	log.Printf("Telnet: loaded %d weak credential pair(s) from %s", len(cfg.weakCreds), credPath)
 
 	maxConnections := envInt("TELNET_MAX_CONCURRENT_CONNECTIONS", telnetMaxConcurrentConnections)
+
+	// Separate from SSH's TRUST_PROXY_PROTOCOL because both sensors read the
+	// same .env: one shared flag would make a public listener trust headers
+	// the moment the other sensor was put behind a relay. Same rule applies:
+	// only enable when nothing but the relay can reach this port.
+	trustProxyProtocol := envBool("TELNET_TRUST_PROXY_PROTOCOL", false)
+	if trustProxyProtocol {
+		log.Printf("Telnet: trusting PROXY protocol v1 headers (TELNET_TRUST_PROXY_PROTOCOL=true)")
+	}
 	connSlots := make(chan struct{}, maxConnections)
 
 	listener, err := net.Listen("tcp", addr)
@@ -107,6 +117,10 @@ func StartTelnet(addr string) {
 			log.Printf("At max concurrent connections (%d); dropping connection from %v", maxConnections, conn.RemoteAddr())
 			conn.Close()
 			continue
+		}
+
+		if trustProxyProtocol {
+			conn = proxyproto.Wrap(conn)
 		}
 
 		guard := newTelnetGuard()
@@ -174,6 +188,18 @@ func handleTelnet(conn net.Conn, cfg telnetConfig, guard *sessionGuard) {
 
 	ts := &telnetStream{conn: conn, neg: telnet.NewNegotiator()}
 	defer func() {
+		// Resolved at the end, not the start: the header is only detected on
+		// the first read, and the server speaks first (IAC negotiation, then
+		// "login:"), so asking up front would stall a bot that waits for the
+		// prompt. By now the first read has happened or the conn is dead.
+		if pp, ok := conn.(*proxyproto.Conn); ok {
+			if a, ingress, node := resolveRemoteAddr(pp, conn.RemoteAddr()); a != nil {
+				sess.Network.ClientIP = a.IP.String()
+				sess.Network.ClientPort = a.Port
+				sess.Network.IngressSource = ingress
+				sess.Network.ProxyNodeID = node
+			}
+		}
 		m := ts.neg.Meta()
 		opts := make([]int, len(m.ClientWill))
 		for i, o := range m.ClientWill {
