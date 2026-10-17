@@ -71,6 +71,31 @@ type Session struct {
 	Intelligence  Intelligence    `json:"intelligence"`
 
 	Telnet *TelnetMeta `json:"telnet,omitempty"`
+
+	// RejectedRequests is omitted when empty so documents of sessions that
+	// never asked for one stay byte-identical to before it existed.
+	RejectedRequests []RejectedRequest `json:"rejected_requests,omitempty"`
+}
+
+type RejectedKind string
+
+const (
+	// RejectedKindChannel is a channel open other than "session", e.g.
+	// direct-tcpip (using the sensor as a proxy) or x11.
+	RejectedKindChannel RejectedKind = "channel"
+	// RejectedKindSubsystem is a subsystem request on a session channel,
+	// e.g. sftp.
+	RejectedKindSubsystem RejectedKind = "subsystem"
+)
+
+// RejectedRequest is something an SSH client asked for that the sensor
+// refused. Type and Detail are client-supplied and stored truncated.
+type RejectedRequest struct {
+	TimestampMS int64        `json:"timestamp_ms"`
+	Kind        RejectedKind `json:"kind"`
+	Type        string       `json:"type"`
+	// Detail is "host:port" for direct-tcpip, empty otherwise.
+	Detail string `json:"detail,omitempty"`
 }
 
 type TelnetMeta struct {

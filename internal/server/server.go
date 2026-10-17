@@ -102,6 +102,55 @@ func (g *sessionGuard) username() string {
 	return attempts[len(attempts)-1].Username
 }
 
+// Refused channels and subsystems cost the server nothing, so nothing ever
+// limited how many a connection could ask for. Storing each one needs a cap,
+// or one connection could grow its session without bound.
+const (
+	maxRejectedRequests    = 64
+	maxRejectedDetailBytes = 255
+)
+
+// appendRejected records a refused request. Channel opens arrive on the
+// handleChannels goroutine and subsystem requests on per-channel ones, so
+// this takes the mutex. Requests past the cap are dropped silently.
+func (g *sessionGuard) appendRejected(kind session.RejectedKind, typ, detail string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if len(g.sess.RejectedRequests) >= maxRejectedRequests {
+		return
+	}
+	g.sess.RejectedRequests = append(g.sess.RejectedRequests, session.RejectedRequest{
+		TimestampMS: time.Now().UnixMilli(),
+		Kind:        kind,
+		Type:        truncateBytes(typ, maxRejectedDetailBytes),
+		Detail:      truncateBytes(detail, maxRejectedDetailBytes),
+	})
+}
+
+// truncateBytes cuts s to at most n bytes. It may split a UTF-8 sequence;
+// the store and JSON encoding already sanitise invalid UTF-8.
+func truncateBytes(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
+}
+
+// directTCPIPTarget returns "host:port" from a direct-tcpip open payload
+// (RFC 4254 7.2), or "" if it does not parse.
+func directTCPIPTarget(payload []byte) string {
+	var p struct {
+		Host     string
+		Port     uint32
+		OrigHost string
+		OrigPort uint32
+	}
+	if err := ssh.Unmarshal(payload, &p); err != nil {
+		return ""
+	}
+	return net.JoinHostPort(p.Host, strconv.FormatUint(uint64(p.Port), 10))
+}
+
 // appendCommand assigns SequenceNumber (and, if computeDelay, InterCommandDelayMS
 // relative to the previous command across ALL channels on this connection)
 // and appends atomically, so two channels can never be assigned the same
@@ -637,6 +686,11 @@ func handleChannels(conn net.Conn, idleTimeout time.Duration, chans <-chan ssh.N
 				handleSessionRequests(conn, idleTimeout, channel, requests, guard, deceptionRuntime)
 			}()
 		default:
+			detail := ""
+			if newChannel.ChannelType() == "direct-tcpip" {
+				detail = directTCPIPTarget(newChannel.ExtraData())
+			}
+			guard.appendRejected(session.RejectedKindChannel, newChannel.ChannelType(), detail)
 			newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
 		}
 	}
@@ -724,6 +778,13 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 		switch req.Type {
 		case "pty-req":
 			req.Reply(true, nil)
+		case "subsystem":
+			var payload struct{ Name string }
+			if ssh.Unmarshal(req.Payload, &payload) != nil {
+				payload.Name = ""
+			}
+			guard.appendRejected(session.RejectedKindSubsystem, payload.Name, "")
+			req.Reply(false, nil)
 		case "exec":
 			var payload struct {
 				Command string

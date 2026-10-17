@@ -114,8 +114,9 @@ func execBatch(tx *sql.Tx, table, columns string, cols int, args []any) error {
 }
 
 const (
-	authAttemptColumns = "session_id, timestamp_ms, method, username, credential, success"
-	commandColumns     = "event_id, session_id, sequence_number, timestamp_ms, " +
+	authAttemptColumns     = "session_id, timestamp_ms, method, username, credential, success"
+	rejectedRequestColumns = "session_id, timestamp_ms, kind, type, detail"
+	commandColumns         = "event_id, session_id, sequence_number, timestamp_ms, " +
 		"inter_command_delay_ms, raw_input_b64, parsed_command, parsed_args, command_chain, " +
 		"working_directory, response_text, exit_code, response_source, deception_action"
 	baitColumns = "event_id, session_id, timestamp_ms, bait_id, bait_type, " +
@@ -200,6 +201,14 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 	}
 	if err := execBatch(tx, "commands", commandColumns, 14, commandArgs); err != nil {
 		return fmt.Errorf("inserting commands: %w", err)
+	}
+
+	rejectedArgs := make([]any, 0, len(sess.RejectedRequests)*5)
+	for _, r := range sess.RejectedRequests {
+		rejectedArgs = append(rejectedArgs, sess.SessionID, r.TimestampMS, r.Kind, r.Type, r.Detail)
+	}
+	if err := execBatch(tx, "rejected_requests", rejectedRequestColumns, 5, rejectedArgs); err != nil {
+		return fmt.Errorf("inserting rejected requests: %w", err)
 	}
 
 	baitArgs := make([]any, 0, len(sess.BaitEvents)*7)
