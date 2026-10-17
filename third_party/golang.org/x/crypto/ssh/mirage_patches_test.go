@@ -78,6 +78,10 @@ func TestMirageIdentificationLikeSSHD(t *testing.T) {
 	addr := mirageServer(t, mirageConfig(t))
 	const invalid = "Invalid SSH identification string.\r\n"
 	const differ = "Protocol major versions differ.\r\n"
+	// sshd writes the message and its CRLF separately; with input still
+	// unread at close() the kernel drops the queued CRLF and resets.
+	const invalidCut = "Invalid SSH identification string."
+	const differCut = "Protocol major versions differ."
 	for _, tc := range []struct {
 		client string
 		want   string // "" means the handshake continues with KEXINIT
@@ -89,7 +93,7 @@ func TestMirageIdentificationLikeSSHD(t *testing.T) {
 		{"SSH-1.99-x\r\n", ""},
 		{"SSH-2.0-x y z\r\n", ""},
 		{"SSH-2.0-" + strings.Repeat("A", 1000) + "\r\n", ""},
-		{"SSH-2.0-" + strings.Repeat("A", 9000) + "\r\n", invalid},
+		{"SSH-2.0-" + strings.Repeat("A", 9000) + "\r\n", invalidCut},
 		{"SSH-1.5-x\r\n", differ},
 		{"SSH-3.0-x\r\n", differ},
 		{"SSH-2.0\r\n", invalid},
@@ -97,8 +101,13 @@ func TestMirageIdentificationLikeSSHD(t *testing.T) {
 		{"ssh-2.0-x\r\n", invalid},
 		{"\r\n", invalid},
 		{"GET / HTTP/1.0\r\n", invalid},
-		{"hello\r\nSSH-2.0-x\r\n", invalid},
-		{"SSH-2.0-x\x00\r\n", invalid},
+		{"hello\r\nSSH-2.0-x\r\n", invalidCut},
+		{"SSH-2.0-x\x00\r\n", invalidCut},
+		{"SSH-2.0-x\x00", invalid},
+		{"GET / HTTP/1.0\r\n\r\n", invalidCut},
+		{"\r\n\r\n", invalidCut},
+		{"ssh-2.0-x\r\nZ", invalidCut},
+		{"SSH-1.5-x\r\nX", differCut},
 	} {
 		_, got := talk(t, addr, []byte(tc.client))
 		switch {
@@ -195,5 +204,47 @@ func TestMirageRSAHostKeyOrder(t *testing.T) {
 	}
 	if got := strings.Join(kex.ServerHostKeyAlgos, ","); got != "ssh-ed25519,rsa-sha2-512,rsa-sha2-256" {
 		t.Errorf("host key algos = %s", got)
+	}
+}
+
+// wrappedConn stands in for Mirage's PROXY-header and HASSH wrappers.
+type wrappedConn struct{ net.Conn }
+
+func (w wrappedConn) NetConn() net.Conn { return w.Conn }
+
+// With one unread byte, sshd still resets the connection; reading that
+// byte to detect it must not turn the reset into a clean close.
+func TestMirageRejectResetsWithOneUnreadByte(t *testing.T) {
+	for _, wrap := range []bool{false, true} {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ln.Close()
+		go func() {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			defer c.Close()
+			var rw net.Conn = c
+			if wrap {
+				rw = wrappedConn{c}
+			}
+			serverExchangeVersions(rw, []byte("SSH-2.0-OpenSSH_8.9p1"))
+		}()
+		c, err := net.Dial("tcp", ln.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		br := bufio.NewReader(c)
+		br.ReadString('\n')
+		c.Write([]byte("SSH-1.5-x\r\nX"))
+		c.SetReadDeadline(time.Now().Add(2 * time.Second))
+		got, err := io.ReadAll(br)
+		c.Close()
+		if string(got) != "Protocol major versions differ." || err == nil || !strings.Contains(err.Error(), "reset") {
+			t.Errorf("wrap=%v: got %q, %v; want message without CRLF, then reset", wrap, got, err)
+		}
 	}
 }

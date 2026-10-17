@@ -115,6 +115,10 @@ func NewCapture(c net.Conn) *Capture {
 	return &Capture{Conn: c}
 }
 
+// NetConn returns the wrapped conn, so the SSH library can reach the TCP
+// socket (it sets SO_LINGER 0 to reset like sshd on a rejected client).
+func (c *Capture) NetConn() net.Conn { return c.Conn }
+
 func (c *Capture) Read(b []byte) (int, error) {
 	n, err := c.Conn.Read(b)
 	if n > 0 {

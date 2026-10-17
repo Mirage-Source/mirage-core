@@ -542,6 +542,7 @@ var (
 		"ecdh-sha2-nistp521",
 		"diffie-hellman-group-exchange-sha256",
 		"diffie-hellman-group16-sha512",
+		"diffie-hellman-group18-sha512", // added in third_party's x/crypto
 		"diffie-hellman-group14-sha256",
 	}
 	opensshCiphers = []string{
@@ -551,6 +552,7 @@ var (
 	}
 	opensshMACs = []string{
 		"hmac-sha2-256-etm@openssh.com", "hmac-sha2-512-etm@openssh.com",
+		"hmac-sha1-etm@openssh.com", // added in third_party's x/crypto
 		"hmac-sha2-256", "hmac-sha2-512", "hmac-sha1",
 	}
 )

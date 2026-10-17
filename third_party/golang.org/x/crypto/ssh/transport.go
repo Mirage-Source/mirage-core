@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
+	"time"
 )
 
 // debugTransport if set, will print packet types as they go over the
@@ -352,8 +354,15 @@ func serverExchangeVersions(rw io.ReadWriter, versionLine []byte) ([]byte, error
 }
 
 func readClientVersion(rw io.ReadWriter) ([]byte, error) {
+	// MIRAGE: sshd's send_error writes msg and "\r\n" in two writes with Nagle on,
+	// so the CRLF waits for the first segment's ACK. If client bytes are
+	// still unread when sshd then closes, the kernel discards that queued
+	// CRLF and sends RST: the client sees msg alone. Measured on 8.9p1.
 	reject := func(msg string) error {
 		rw.Write([]byte(msg))
+		if !inputPending(rw) {
+			rw.Write([]byte("\r\n"))
+		}
 		return errBadClientVersion
 	}
 	var line []byte
@@ -369,19 +378,50 @@ func readClientVersion(rw io.ReadWriter) ([]byte, error) {
 			break
 		}
 		if b[0] == 0 || len(line) >= maxClientVersionBytes {
-			return nil, reject("Invalid SSH identification string.\r\n")
+			return nil, reject("Invalid SSH identification string.")
 		}
 		line = append(line, b[0])
 	}
 	line = bytes.TrimSuffix(line, []byte("\r"))
 	major, minor, ok := parseIdentification(line)
 	if !ok {
-		return nil, reject("Invalid SSH identification string.\r\n")
+		return nil, reject("Invalid SSH identification string.")
 	}
 	if major != 2 && !(major == 1 && minor == 99) {
-		return nil, reject("Protocol major versions differ.\r\n")
+		return nil, reject("Protocol major versions differ.")
 	}
 	return line, nil
+}
+
+// inputPending reports whether the client has sent bytes that are not yet
+// read, as sshd's kernel would see them at close(). It reads through any
+// wrappers (a PROXY-header bufio may already hold them) with a 1ms
+// deadline; the connection is being rejected, so clobbering the deadline
+// does not matter. Reading a byte could leave nothing unread, turning
+// sshd's RST into a clean close, so a TCP socket found by unwrapping
+// NetConn() is set to reset on close.
+func inputPending(rw io.ReadWriter) bool {
+	d, ok := rw.(interface{ SetReadDeadline(time.Time) error })
+	if !ok || d.SetReadDeadline(time.Now().Add(time.Millisecond)) != nil {
+		return false
+	}
+	var b [1]byte
+	if n, _ := rw.Read(b[:]); n == 0 {
+		return false
+	}
+	var c any = rw
+	for i := 0; i < 8; i++ {
+		if tc, ok := c.(*net.TCPConn); ok {
+			tc.SetLinger(0)
+			break
+		}
+		u, ok := c.(interface{ NetConn() net.Conn })
+		if !ok {
+			break
+		}
+		c = u.NetConn()
+	}
+	return true
 }
 
 // parseIdentification is sscanf(line, "SSH-%d.%d-%[^\n]") == 3.

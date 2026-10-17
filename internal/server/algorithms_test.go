@@ -57,12 +57,12 @@ func serverKexInitWith(t *testing.T, keys []ssh.Signer) sshfp.Lists {
 
 // Measured 2026-10-17 with ssh-audit against ubuntu:22.04's
 // openssh-server 1:8.9p1-3ubuntu0.18, minus what x/crypto cannot do
-// (sntrup761x25519-sha512@openssh.com, diffie-hellman-group18-sha512, the
-// umac MACs, hmac-sha1-etm@openssh.com). Order is OpenSSH's.
+// (sntrup761x25519-sha512@openssh.com and the umac MACs). group18 and
+// hmac-sha1-etm come from third_party's patched x/crypto. Order is OpenSSH's.
 const (
-	wantKexPrefix = "curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group16-sha512,diffie-hellman-group14-sha256"
+	wantKexPrefix = "curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group14-sha256"
 	wantCiphers   = "chacha20-poly1305@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-gcm@openssh.com,aes256-gcm@openssh.com"
-	wantMACs      = "hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1"
+	wantMACs      = "hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,hmac-sha1-etm@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1"
 )
 
 func TestAdvertisedAlgorithmsFollowOpenSSH89(t *testing.T) {

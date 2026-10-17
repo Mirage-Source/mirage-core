@@ -36,6 +36,9 @@ func Wrap(c net.Conn) *Conn {
 	return &Conn{Conn: c, r: bufio.NewReaderSize(c, maxHeaderLen)}
 }
 
+// NetConn returns the wrapped conn (same convention as tls.Conn.NetConn).
+func (c *Conn) NetConn() net.Conn { return c.Conn }
+
 func (c *Conn) Read(b []byte) (int, error) {
 	c.detect()
 	return c.r.Read(b)
