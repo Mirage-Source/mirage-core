@@ -39,7 +39,7 @@ func dialRecordingSensor(t *testing.T) (*ssh.Client, func() *session.Session) {
 	}
 	cfg := newSSHServerConfig(sess, nil, sshAuthConfig{
 		weakCreds: map[string]struct{}{"root:root": {}},
-		authDelay: func() time.Duration { return 0 },
+		authDelay: func(string, bool) time.Duration { return 0 },
 	}, testSigner(t))
 
 	done := make(chan struct{})

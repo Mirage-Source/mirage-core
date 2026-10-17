@@ -42,7 +42,7 @@ func runAuthWith(t *testing.T, clientAuth []ssh.AuthMethod, keyboardInteractive 
 	sess := &session.Session{SessionID: uuid.New().String(), Protocol: session.ProtocolSSH}
 	cfg := newSSHServerConfig(sess, nil, sshAuthConfig{
 		weakCreds:           map[string]struct{}{"root:root": {}},
-		authDelay:           func() time.Duration { return 0 },
+		authDelay:           func(string, bool) time.Duration { return 0 },
 		keyboardInteractive: keyboardInteractive,
 	}, testSigner(t))
 

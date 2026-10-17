@@ -24,7 +24,7 @@ func serverKexInitWith(t *testing.T, keys []ssh.Signer) sshfp.Lists {
 		t.Fatal(err)
 	}
 	defer ln.Close()
-	cfg := newSSHServerConfig(&session.Session{}, nil, sshAuthConfig{authDelay: func() time.Duration { return 0 }}, keys...)
+	cfg := newSSHServerConfig(&session.Session{}, nil, sshAuthConfig{authDelay: func(string, bool) time.Duration { return 0 }}, keys...)
 	go func() {
 		c, err := ln.Accept()
 		if err != nil {

@@ -2,8 +2,12 @@ package server
 
 import (
 	"bufio"
+	"crypto/hmac"
+	cryptorand "crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -374,7 +378,7 @@ func Start(addr string) {
 
 		config := newSSHServerConfig(&sess, pp, sshAuthConfig{
 			weakCreds:           weakCreds,
-			authDelay:           func() time.Duration { return time.Duration(500+rand.Intn(2500)) * time.Millisecond },
+			authDelay:           opensshAuthDelay,
 			keyboardInteractive: keyboardInteractive,
 		}, hostKeys...)
 		guard := &sessionGuard{sess: &sess}
@@ -549,11 +553,37 @@ var (
 	}
 )
 
+// delayKey makes the per-user delays below unpredictable from this source:
+// with an unkeyed hash, anyone could compute root's delay and test a host
+// for it.
+var delayKey = func() []byte {
+	k := make([]byte, 32)
+	if _, err := cryptorand.Read(k); err != nil {
+		panic(err)
+	}
+	return k
+}()
+
+// opensshAuthDelay mimics measured Ubuntu 22.04 sshd timing (see
+// authdelay_test.go): a failed password costs a delay that is stable for a
+// given username but differs between usernames, in roughly 2.3-3.7s with a
+// few ms of jitter; a success answers in about 90ms end to end (the sleep is shorter to
+// leave room for handshake overhead, measured at ~45ms).
+func opensshAuthDelay(username string, accepted bool) time.Duration {
+	if accepted {
+		return time.Duration(42+rand.Intn(6)) * time.Millisecond
+	}
+	mac := hmac.New(sha256.New, delayKey)
+	mac.Write([]byte(username))
+	perUser := binary.BigEndian.Uint32(mac.Sum(nil)) % 1400
+	return time.Duration(2300+int(perUser)+rand.Intn(5)) * time.Millisecond
+}
+
 type sshAuthConfig struct {
 	weakCreds map[string]struct{}
-	// authDelay runs after every password attempt; a real sshd's PAM
-	// failure delay is what attackers' tooling is tuned against.
-	authDelay func() time.Duration
+	// authDelay is how long to wait before answering a password attempt;
+	// see opensshAuthDelay.
+	authDelay func(username string, accepted bool) time.Duration
 	// keyboardInteractive offers the keyboard-interactive method. Off by
 	// default: stock Ubuntu 22.04 sets KbdInteractiveAuthentication no, so
 	// offering it changes the advertised method list.
@@ -590,7 +620,7 @@ func newSSHServerConfig(sess *session.Session, pp *proxyproto.Conn, auth sshAuth
 		})
 		log.Printf("Auth attempt user=%s %s=%s accepted=%v", username, method, pass, accepted)
 
-		time.Sleep(auth.authDelay())
+		time.Sleep(auth.authDelay(username, accepted))
 
 		if !accepted {
 			return nil, errors.New("invalid credentials")
