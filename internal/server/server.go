@@ -924,7 +924,20 @@ func handleSessionRequests(conn net.Conn, idleTimeout time.Duration, channel ssh
 
 			interp := shell.NewInterpreter(guard.username())
 			beforeCwd := interp.Cwd
-			response, code, baitHits, deceptionAction, usedLLM := applyDeception(deceptionRuntime, interp, guard.sessionID(), payload.Command)
+			var (
+				response        string
+				code            int
+				baitHits        []shell.BaitHit
+				deceptionAction *string
+				usedLLM         bool
+			)
+			if target, ok := scpSinkTarget(payload.Command); ok {
+				// The remote end of an scp upload talks a binary protocol
+				// on stdin/stdout instead of printing anything.
+				code = runSCPSink(channel, guard, target, func() { refreshDeadlines(conn, idleTimeout) })
+			} else {
+				response, code, baitHits, deceptionAction, usedLLM = applyDeception(deceptionRuntime, interp, guard.sessionID(), payload.Command)
+			}
 			refreshDeadlines(conn, idleTimeout)
 			if response != "" {
 				fmt.Fprintf(channel, "%s\r\n", response)

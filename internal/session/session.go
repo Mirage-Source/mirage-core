@@ -78,6 +78,30 @@ type Session struct {
 	// RejectedRequests is omitted when empty so documents of sessions that
 	// never asked for one stay byte-identical to before it existed.
 	RejectedRequests []RejectedRequest `json:"rejected_requests,omitempty"`
+
+	// FileTransfers are uploads the client pushed over scp or sftp. Only
+	// the hash is kept; the content is discarded on the sensor.
+	FileTransfers []FileTransfer `json:"file_transfers,omitempty"`
+}
+
+type TransferMethod string
+
+const (
+	TransferMethodSCP  TransferMethod = "scp"
+	TransferMethodSFTP TransferMethod = "sftp"
+)
+
+// FileTransfer is one uploaded file. Path is client-supplied and cleaned.
+// SHA256 is set only when Complete: a transfer cut off by a size cap or a
+// dropped connection has no meaningful hash. For scp, Size is the size the
+// client declared; for sftp, the bytes received.
+type FileTransfer struct {
+	TimestampMS int64          `json:"timestamp_ms"`
+	Method      TransferMethod `json:"method"`
+	Path        string         `json:"path"`
+	Size        int64          `json:"size"`
+	SHA256      string         `json:"sha256,omitempty"`
+	Complete    bool           `json:"complete"`
 }
 
 type RejectedKind string

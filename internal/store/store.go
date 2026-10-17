@@ -124,6 +124,7 @@ func execBatch(tx *sql.Tx, table, columns string, cols int, args []any) error {
 const (
 	authAttemptColumns     = "session_id, timestamp_ms, method, username, credential, success"
 	rejectedRequestColumns = "session_id, timestamp_ms, kind, type, detail"
+	fileTransferColumns    = "session_id, timestamp_ms, method, path, size, sha256, complete"
 	commandColumns         = "event_id, session_id, sequence_number, timestamp_ms, " +
 		"inter_command_delay_ms, raw_input_b64, parsed_command, parsed_args, command_chain, " +
 		"working_directory, response_text, exit_code, response_source, deception_action"
@@ -220,6 +221,18 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 	}
 	if err := execBatch(tx, "rejected_requests", rejectedRequestColumns, 5, rejectedArgs); err != nil {
 		return fmt.Errorf("inserting rejected requests: %w", err)
+	}
+
+	transferArgs := make([]any, 0, len(sess.FileTransfers)*7)
+	for _, f := range sess.FileTransfers {
+		var sha any
+		if f.SHA256 != "" {
+			sha = f.SHA256
+		}
+		transferArgs = append(transferArgs, sess.SessionID, f.TimestampMS, f.Method, f.Path, f.Size, sha, f.Complete)
+	}
+	if err := execBatch(tx, "file_transfers", fileTransferColumns, 7, transferArgs); err != nil {
+		return fmt.Errorf("inserting file transfers: %w", err)
 	}
 
 	baitArgs := make([]any, 0, len(sess.BaitEvents)*7)
