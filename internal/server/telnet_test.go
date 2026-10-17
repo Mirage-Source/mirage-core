@@ -188,8 +188,8 @@ func TestTelnetRealClientNegotiationIsRecordedAndPasswordNotEchoed(t *testing.T)
 		telnet.IAC, telnet.WILL, telnet.OptNAWS,
 		telnet.IAC, telnet.SB, telnet.OptNAWS, 0, 120, 0, 40, telnet.IAC, telnet.SE,
 	})
-	h.readUntil(string([]byte{telnet.IAC, telnet.SB, telnet.OptTTYPE, 1, telnet.IAC, telnet.SE}))
-	h.send(append(append([]byte{telnet.IAC, telnet.SB, telnet.OptTTYPE, 0}, "XTERM-256COLOR"...), telnet.IAC, telnet.SE))
+	// BusyBox telnetd never sends DO TTYPE / SB TTYPE SEND, so no terminal
+	// type is learned; what the client offers and NAWS still are.
 	h.send([]byte("root\r\n"))
 	h.readUntil("Password: ")
 	h.send([]byte("xc3511\r\n"))
@@ -201,7 +201,7 @@ func TestTelnetRealClientNegotiationIsRecordedAndPasswordNotEchoed(t *testing.T)
 	s := h.wait()
 
 	m := s.Telnet
-	if m == nil || !m.Negotiated || m.TerminalType != "XTERM-256COLOR" || m.WindowWidth != 120 || m.WindowHeight != 40 {
+	if m == nil || !m.Negotiated || m.TerminalType != "" || m.WindowWidth != 120 || m.WindowHeight != 40 {
 		t.Errorf("telnet meta = %+v", m)
 	}
 	if len(m.ClientOptions) != 2 || m.ClientOptions[0] != int(telnet.OptTTYPE) || m.ClientOptions[1] != int(telnet.OptNAWS) {
@@ -424,5 +424,21 @@ func TestTelnetCtrlCDiscardsTheLineSoFar(t *testing.T) {
 	}
 	if !bytes.Contains(out, []byte("\x7fELF")) {
 		t.Errorf("no ELF header on the wire: %q", out)
+	}
+}
+
+// The opening bytes are what scanners compare: BusyBox telnetd's options,
+// then login's "\r\r\n" before the first prompt only (measured against
+// busybox telnetd -F with login).
+func TestTelnetGreetingIsBusyBoxs(t *testing.T) {
+	h := startTelnetHarness(t, testTelnetConfig())
+	got := h.readUntil(" login: ")
+	want := []byte{telnet.IAC, telnet.DO, telnet.OptEcho, telnet.IAC, telnet.DO, telnet.OptNAWS, telnet.IAC, telnet.WILL, telnet.OptEcho, telnet.IAC, telnet.WILL, telnet.OptSGA, '\r', '\r', '\n'}
+	if !bytes.HasPrefix(got, want) || bytes.Count(got, []byte{telnet.IAC}) != 4 {
+		t.Errorf("greeting %q", got)
+	}
+	h.send([]byte{telnet.IAC, telnet.WILL, 0, telnet.IAC, telnet.WILL, 18, '\r', '\n'})
+	if again := h.readUntil(" login: "); !bytes.HasPrefix(again, []byte("\r\n")) || bytes.IndexByte(again, telnet.IAC) >= 0 {
+		t.Errorf("reply to WILL BINARY/LOGOUT then empty line: %q", again)
 	}
 }

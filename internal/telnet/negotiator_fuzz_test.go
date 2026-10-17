@@ -7,7 +7,11 @@ func FuzzFeed(f *testing.F) {
 	f.Add([]byte{IAC, SB, OptTTYPE, ttypeIs, 'x', IAC, SE}, 3)
 	f.Add([]byte{IAC, WILL, OptTTYPE, IAC, DO, 34, IAC, IAC, '\r', 0}, 1)
 	f.Fuzz(func(t *testing.T, in []byte, split int) {
+		// Both styles share the parser; odd splits exercise the BusyBox one.
 		n := NewNegotiator()
+		if split%2 != 0 {
+			n = NewBusyBoxNegotiator()
+		}
 		n.Initial()
 		if split < 0 || split > len(in) {
 			split = len(in) / 2
@@ -19,6 +23,9 @@ func FuzzFeed(f *testing.F) {
 		}
 		if len(r1)+len(r2) > 3*len(in)+9 {
 			t.Fatalf("reply %d bytes for %d input bytes", len(r1)+len(r2), len(in))
+		}
+		if n.silent && len(r1)+len(r2) != 0 {
+			t.Fatalf("BusyBox style replied %x", append(r1, r2...))
 		}
 		if len(n.sb) > maxSubnegotiation {
 			t.Fatalf("sb buffer %d > cap %d", len(n.sb), maxSubnegotiation)

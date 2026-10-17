@@ -188,7 +188,8 @@ func handleTelnet(conn net.Conn, cfg telnetConfig, guard *sessionGuard) {
 		sess.Network.ServerPort = a.Port
 	}
 
-	ts := &telnetStream{conn: conn, neg: telnet.NewNegotiator()}
+	// The device persona runs BusyBox, so its telnetd negotiates as BusyBox's.
+	ts := &telnetStream{conn: conn, neg: telnet.NewBusyBoxNegotiator()}
 	defer func() {
 		// Resolved at the end, not the start: the header is only detected on
 		// the first read, and the server speaks first (IAC negotiation, then
@@ -220,6 +221,8 @@ func handleTelnet(conn net.Conn, cfg telnetConfig, guard *sessionGuard) {
 
 	conn.SetDeadline(time.Now().Add(cfg.loginTimeout))
 	ts.writeRaw(ts.neg.Initial())
+	// BusyBox login starts with an empty issue line; later prompts don't.
+	ts.write("\r\r\n")
 
 	// The DVR's telnetd prints no issue banner and login prints no motd.
 	hostname := shell.NewInterpreterFor("", shell.DVR).Hostname

@@ -225,3 +225,23 @@ func TestDONTEchoTurnsOffAndIsAcknowledgedOnce(t *testing.T) {
 		t.Errorf("reply = %v, want %v (acknowledged once)", reply, want)
 	}
 }
+
+// BusyBox telnetd (measured against busybox's telnetd -F): one fixed
+// opening, then every option command is consumed without a reply. What the
+// client offers and its window size are still recorded.
+func TestBusyBoxStyleOpensFixedAndNeverReplies(t *testing.T) {
+	n := NewBusyBoxNegotiator()
+	if got := n.Initial(); !bytes.Equal(got, []byte{IAC, DO, OptEcho, IAC, DO, OptNAWS, IAC, WILL, OptEcho, IAC, WILL, OptSGA}) {
+		t.Fatalf("initial = %x", got)
+	}
+	in := []byte{IAC, WILL, 0, IAC, WILL, 0x12, IAC, WILL, OptTTYPE, IAC, DO, OptEcho, IAC, DO, OptSGA, IAC, DONT, OptEcho,
+		IAC, WILL, OptNAWS, IAC, SB, OptNAWS, 0, 80, 0, 24, IAC, SE, 'h', 'i'}
+	data, reply := n.Feed(in)
+	if len(reply) != 0 || string(data) != "hi" {
+		t.Errorf("reply %x, data %q", reply, data)
+	}
+	m := n.Meta()
+	if !bytes.Equal(m.ClientWill, []byte{0, 0x12, OptTTYPE, OptNAWS}) || m.WindowWidth != 80 || m.WindowHeight != 24 {
+		t.Errorf("meta %+v", m)
+	}
+}

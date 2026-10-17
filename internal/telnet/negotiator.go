@@ -58,8 +58,14 @@ type Negotiator struct {
 
 	ttypeRequested bool
 	meta           Meta
+
+	// silent is BusyBox telnetd's style: a fixed opening and no reply to
+	// any option command (it only strips them, and reads NAWS).
+	silent bool
 }
 
+// NewNegotiator answers options as RFC 854 asks and requests the
+// terminal type.
 func NewNegotiator() *Negotiator {
 	return &Negotiator{
 		weWill: map[byte]bool{},
@@ -67,7 +73,21 @@ func NewNegotiator() *Negotiator {
 	}
 }
 
+// NewBusyBoxNegotiator speaks like BusyBox telnetd, which the embedded
+// device persona claims to run. It never asks for the terminal type, so
+// Meta.TerminalType stays empty; ClientWill and the window size are still
+// recorded.
+func NewBusyBoxNegotiator() *Negotiator {
+	n := NewNegotiator()
+	n.silent = true
+	return n
+}
+
 func (n *Negotiator) Initial() []byte {
+	if n.silent {
+		// networking/telnetd.c: DO ECHO, DO NAWS, WILL ECHO, WILL SGA.
+		return []byte{IAC, DO, OptEcho, IAC, DO, OptNAWS, IAC, WILL, OptEcho, IAC, WILL, OptSGA}
+	}
 	n.weWill[OptEcho] = true
 	n.weWill[OptSGA] = true
 	n.weDo[OptTTYPE] = true
@@ -120,7 +140,13 @@ func (n *Negotiator) Feed(in []byte) (data, reply []byte) {
 			}
 
 		case stateOption:
-			reply = append(reply, n.negotiate(n.verb, b)...)
+			if n.silent {
+				if n.verb == WILL {
+					n.recordWill(b)
+				}
+			} else {
+				reply = append(reply, n.negotiate(n.verb, b)...)
+			}
 			n.st = stateData
 
 		case stateSB:
