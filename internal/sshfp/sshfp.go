@@ -33,15 +33,32 @@ type Result struct {
 	Algorithms string // "kex;enc_c2s;mac_c2s;comp_c2s"
 }
 
+// Lists are the eight algorithm name-lists of a KEXINIT, in wire order.
+type Lists struct {
+	Kex, HostKey, CiphersC2S, CiphersS2C, MACsC2S, MACsS2C, CompC2S, CompS2C string
+}
+
 // Parse extracts the HASSH inputs from the first bytes a client sent: its
 // version line, then its KEXINIT packet. ok is false until the whole packet
 // is present, and for anything that is not a well-formed KEXINIT.
 func Parse(data []byte) (Result, bool) {
+	l, ok := ParseLists(data)
+	if !ok {
+		return Result{}, false
+	}
+	algos := strings.Join([]string{l.Kex, l.CiphersC2S, l.MACsC2S, l.CompC2S}, ";")
+	sum := md5.Sum([]byte(algos))
+	return Result{HASSH: hex.EncodeToString(sum[:]), Algorithms: algos}, true
+}
+
+// ParseLists returns every name-list of the KEXINIT that follows the
+// version line in data. It works on either side's stream.
+func ParseLists(data []byte) (Lists, bool) {
 	rest := data
 	for i := 0; ; i++ {
 		idx := bytes.IndexByte(rest, '\n')
 		if idx < 0 || i >= maxPreambleLines {
-			return Result{}, false
+			return Lists{}, false
 		}
 		line := rest[:idx]
 		rest = rest[idx+1:]
@@ -51,38 +68,35 @@ func Parse(data []byte) (Result, bool) {
 	}
 
 	if len(rest) < 5 {
-		return Result{}, false
+		return Lists{}, false
 	}
 	packetLen := binary.BigEndian.Uint32(rest)
 	if packetLen < 1+1+16 || packetLen > maxPacket || uint64(len(rest)) < 4+uint64(packetLen) {
-		return Result{}, false
+		return Lists{}, false
 	}
 	padLen := uint32(rest[4])
 	if padLen+1 >= packetLen {
-		return Result{}, false
+		return Lists{}, false
 	}
 	payload := rest[5 : 5+packetLen-padLen-1]
 	if len(payload) < 17 || payload[0] != msgKexInit {
-		return Result{}, false
+		return Lists{}, false
 	}
 
 	p := payload[17:] // skip message type and 16-byte cookie
 	var lists [8]string
 	for i := range lists {
 		if len(p) < 4 {
-			return Result{}, false
+			return Lists{}, false
 		}
 		n := binary.BigEndian.Uint32(p)
 		if uint64(len(p)-4) < uint64(n) {
-			return Result{}, false
+			return Lists{}, false
 		}
 		lists[i] = string(p[4 : 4+n])
 		p = p[4+n:]
 	}
-
-	algos := strings.Join([]string{lists[0], lists[2], lists[4], lists[6]}, ";")
-	sum := md5.Sum([]byte(algos))
-	return Result{HASSH: hex.EncodeToString(sum[:]), Algorithms: algos}, true
+	return Lists{lists[0], lists[1], lists[2], lists[3], lists[4], lists[5], lists[6], lists[7]}, true
 }
 
 // Capture tees the bytes a client sends until its KEXINIT has been parsed,

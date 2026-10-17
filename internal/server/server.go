@@ -529,6 +529,34 @@ func resolveRemoteAddr(pp *proxyproto.Conn, fallback net.Addr) (addr *net.TCPAdd
 	return nil, session.IngressSourceDirect, ""
 }
 
+// The banner claims OpenSSH 8.9, so the KEXINIT must not offer what 8.9
+// does not: x/crypto's defaults lead with mlkem768x25519-sha256 (OpenSSH
+// 9.9+) and include group14-sha1 and hmac-sha1-96, visible to any scanner
+// before login. These are 8.9's lists in 8.9's order, minus what x/crypto
+// lacks: sntrup761x25519-sha512@openssh.com, diffie-hellman-group18-sha512,
+// the umac MACs and hmac-sha1-etm@openssh.com. Those absences remain a
+// tell; algorithms_test.go pins the lists.
+var (
+	opensshKeyExchanges = []string{
+		"curve25519-sha256", // x/crypto adds the @libssh.org alias after it
+		"ecdh-sha2-nistp256",
+		"ecdh-sha2-nistp384",
+		"ecdh-sha2-nistp521",
+		"diffie-hellman-group-exchange-sha256",
+		"diffie-hellman-group16-sha512",
+		"diffie-hellman-group14-sha256",
+	}
+	opensshCiphers = []string{
+		"chacha20-poly1305@openssh.com",
+		"aes128-ctr", "aes192-ctr", "aes256-ctr",
+		"aes128-gcm@openssh.com", "aes256-gcm@openssh.com",
+	}
+	opensshMACs = []string{
+		"hmac-sha2-256-etm@openssh.com", "hmac-sha2-512-etm@openssh.com",
+		"hmac-sha2-256", "hmac-sha2-512", "hmac-sha1",
+	}
+)
+
 type sshAuthConfig struct {
 	weakCreds map[string]struct{}
 	// authDelay runs after every password attempt; a real sshd's PAM
@@ -579,6 +607,11 @@ func newSSHServerConfig(sess *session.Session, pp *proxyproto.Conn, auth sshAuth
 	}
 
 	config := &ssh.ServerConfig{
+		Config: ssh.Config{
+			KeyExchanges: opensshKeyExchanges,
+			Ciphers:      opensshCiphers,
+			MACs:         opensshMACs,
+		},
 		ServerVersion: "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6",
 		MaxAuthTries:  6,
 		PasswordCallback: func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
