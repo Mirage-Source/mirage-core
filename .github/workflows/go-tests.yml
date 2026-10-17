@@ -21,6 +21,12 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./...
+      # go test only replays the seed corpus; these actually mutate input for
+      # a short while. Both parsers read raw bytes from untrusted clients.
+      - name: Fuzz telnet negotiator
+        run: go test ./internal/telnet -run '^$' -fuzz '^FuzzFeed$' -fuzztime 30s
+      - name: Fuzz KEXINIT parser
+        run: go test ./internal/sshfp -run '^$' -fuzz '^FuzzParse$' -fuzztime 30s
 
   # Drives the real thing: a real TCP listener (server.Start, the exact
   # function cmd/mirage/main.go calls), a real ssh client dialing it, a real
