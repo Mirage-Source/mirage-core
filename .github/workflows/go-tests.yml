@@ -21,6 +21,10 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./...
+      # The patched x/crypto is its own module, so go test ./... skips it.
+      - name: Test patched x/crypto
+        working-directory: third_party/golang.org/x/crypto
+        run: go test ./ssh/
       # go test only replays the seed corpus; these actually mutate input for
       # a short while. All three parse raw bytes from untrusted clients.
       - name: Fuzz telnet negotiator

@@ -26,10 +26,10 @@ func TestAllHostKeysAdvertisedInOpenSSHOrder(t *testing.T) {
 
 	keys := loadHostKeys(filepath.Join(dir, "hostkey"))
 	l := serverKexInitWith(t, keys)
-	// OpenSSH 8.9: rsa-sha2-512,rsa-sha2-256,ecdsa-sha2-nistp256,ssh-ed25519.
-	// x/crypto always lists rsa-sha2-256 first; ssh-rsa (SHA-1) is dropped
-	// because 8.9 no longer offers it.
-	if want := "rsa-sha2-256,rsa-sha2-512,ecdsa-sha2-nistp256,ssh-ed25519"; l.HostKey != want {
+	// Exactly OpenSSH 8.9's list. The patched x/crypto (third_party/)
+	// puts rsa-sha2-512 first; ssh-rsa (SHA-1) is dropped because 8.9 no
+	// longer offers it.
+	if want := "rsa-sha2-512,rsa-sha2-256,ecdsa-sha2-nistp256,ssh-ed25519"; l.HostKey != want {
 		t.Errorf("host keys = %s, want %s", l.HostKey, want)
 	}
 }

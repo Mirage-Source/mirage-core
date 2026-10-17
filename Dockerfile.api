@@ -1,6 +1,9 @@
 FROM golang:1.25-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
+# The patched golang.org/x/crypto (see third_party/README.md) is a local
+# replace, so it must be present before modules are downloaded.
+COPY third_party ./third_party
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build \

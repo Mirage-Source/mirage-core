@@ -10,3 +10,5 @@ require (
 )
 
 require golang.org/x/sys v0.47.0 // indirect
+
+replace golang.org/x/crypto => ./third_party/golang.org/x/crypto
