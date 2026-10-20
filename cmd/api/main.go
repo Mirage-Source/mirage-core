@@ -61,7 +61,14 @@ func main() {
 		log.Fatal("API_KEY environment variable is required")
 	}
 
-	db, err := store.Connect()
+	// A runaway read query holds locks on sessions for as long as it runs,
+	// and a schema migration queued behind it stalls the sensors' startup; so
+	// the API cancels any statement past this bound.
+	stmtTimeout := 30 * time.Second
+	if n, err := strconv.Atoi(os.Getenv("API_STATEMENT_TIMEOUT_SECONDS")); err == nil && n > 0 {
+		stmtTimeout = time.Duration(n) * time.Second
+	}
+	db, err := store.ConnectWithStatementTimeout(stmtTimeout)
 	if err != nil {
 		log.Fatalf("connecting to database: %v", err)
 	}

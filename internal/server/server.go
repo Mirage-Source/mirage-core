@@ -327,17 +327,22 @@ func Start(addr string) {
 	// overloaded sshd would.
 	connSlots := make(chan struct{}, maxConnections)
 
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		log.Fatal("Error listening:", err)
-	}
-	defer listener.Close()
-
+	// Connect (and migrate) before listening. A listening socket completes TCP
+	// handshakes into the kernel backlog whether or not anything calls
+	// Accept, so listening first turned a migration stalled on a table lock
+	// into 2.5h of open-but-silent port; connecting first leaves the port
+	// refusing connections until the sensor can actually serve them.
 	db, err := store.Connect()
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
+
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatal("Error listening:", err)
+	}
+	defer listener.Close()
 
 	// Deliberately independent of session traffic and NOT keyed by
 	// sess.NodeID below (that field is hardcoded "Ubuntu", the emulated-OS

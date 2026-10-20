@@ -15,7 +15,41 @@ import (
 )
 
 func Connect() (*sql.DB, error) {
-	db, err := sql.Open("postgres", connString(os.Getenv("DB_NAME")))
+	return connect(0)
+}
+
+// ConnectWithStatementTimeout is Connect for read-heavy callers (the API and
+// its validity loop): the returned pool cancels any statement running longer
+// than d. Migrations still run without the limit, on a pool that is closed
+// before the bounded one is opened, since an index build may legitimately run
+// long.
+func ConnectWithStatementTimeout(d time.Duration) (*sql.DB, error) {
+	return connect(d)
+}
+
+func connect(statementTimeout time.Duration) (*sql.DB, error) {
+	db, err := openPool(connString(os.Getenv("DB_NAME")))
+	if err != nil {
+		return nil, err
+	}
+
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("pinging database: %w", err)
+	}
+	if err := Migrate(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrating database: %w", err)
+	}
+	if statementTimeout <= 0 {
+		return db, nil
+	}
+	db.Close()
+	return openPool(fmt.Sprintf("%s statement_timeout=%d", connString(os.Getenv("DB_NAME")), statementTimeout.Milliseconds()))
+}
+
+func openPool(dsn string) (*sql.DB, error) {
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
@@ -29,14 +63,6 @@ func Connect() (*sql.DB, error) {
 	db.SetMaxOpenConns(envInt("DB_MAX_OPEN_CONNS", 20))
 	db.SetMaxIdleConns(envInt("DB_MAX_IDLE_CONNS", 10))
 	db.SetConnMaxLifetime(time.Duration(envInt("DB_CONN_MAX_LIFETIME_MINUTES", 30)) * time.Minute)
-
-	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("pinging database: %w", err)
-	}
-	if err := Migrate(db); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrating database: %w", err)
-	}
 	return db, nil
 }
 

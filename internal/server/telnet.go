@@ -88,17 +88,18 @@ func StartTelnet(addr string) {
 	proxyTrust := loadProxyTrust("TELNET_TRUST_PROXY_PROTOCOL")
 	connSlots := make(chan struct{}, maxConnections)
 
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		log.Fatal("Error listening:", err)
-	}
-	defer listener.Close()
-
+	// Connect (and migrate) before listening; see Start in server.go.
 	db, err := store.Connect()
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
+
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatal("Error listening:", err)
+	}
+	defer listener.Close()
 
 	sensorID := os.Getenv("SENSOR_ID")
 	if sensorID == "" {
