@@ -34,9 +34,14 @@ func checkProtocol(p session.Protocol) error {
 	return nil
 }
 
-func childProtocolFilter(p session.Protocol) string {
+// childProtocolFilter restricts a child table (outer) to one protocol's
+// sessions. SSH is "everything that isn't another protocol" so legacy rows
+// without a sessions row stay SSH. That is NOT EXISTS, not NOT IN: with
+// hundreds of thousands of non-SSH sessions the NOT IN list overflows
+// work_mem, can't be hashed, and is rescanned per child row (hours per query).
+func childProtocolFilter(outer string, p session.Protocol) string {
 	if p == session.ProtocolSSH {
-		return "session_id NOT IN (SELECT session_id FROM sessions WHERE protocol <> $1)"
+		return "NOT EXISTS (SELECT 1 FROM sessions s WHERE s.session_id = " + outer + ".session_id AND s.protocol <> $1)"
 	}
 	return "session_id IN (SELECT session_id FROM sessions WHERE protocol = $1)"
 }
@@ -137,7 +142,7 @@ func GetStats(db *sql.DB, protocol session.Protocol) (*api.HoneypotStats, error)
 			username,
 			COUNT(*) AS count
 		FROM auth_attempts
-		WHERE `+childProtocolFilter(protocol)+`
+		WHERE `+childProtocolFilter("auth_attempts", protocol)+`
 		GROUP BY username
 		ORDER BY count DESC
 		LIMIT 10
@@ -169,7 +174,7 @@ func GetStats(db *sql.DB, protocol session.Protocol) (*api.HoneypotStats, error)
 			credential,
 			COUNT(*) AS count
 		FROM auth_attempts
-		WHERE method IN ('password', 'keyboard-interactive') AND `+childProtocolFilter(protocol)+`
+		WHERE method IN ('password', 'keyboard-interactive') AND `+childProtocolFilter("auth_attempts", protocol)+`
 		GROUP BY credential
 		ORDER BY count DESC
 		LIMIT 10
@@ -202,7 +207,7 @@ func GetStats(db *sql.DB, protocol session.Protocol) (*api.HoneypotStats, error)
 			credential,
 			COUNT(*) AS count
 		FROM auth_attempts
-		WHERE method IN ('password', 'keyboard-interactive') AND `+childProtocolFilter(protocol)+`
+		WHERE method IN ('password', 'keyboard-interactive') AND `+childProtocolFilter("auth_attempts", protocol)+`
 		GROUP BY username, credential
 		ORDER BY count DESC
 		LIMIT 10

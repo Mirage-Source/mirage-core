@@ -72,7 +72,8 @@ func FetchFieldCounts(db *sql.DB, spec FieldSpec, windowStart, windowEnd time.Ti
 
 	sshOnly := "protocol = 'ssh'"
 	if spec.Table != "sessions" {
-		sshOnly = "session_id NOT IN (SELECT session_id FROM sessions WHERE protocol <> 'ssh')"
+		// NOT EXISTS, not NOT IN: see store.childProtocolFilter.
+		sshOnly = "NOT EXISTS (SELECT 1 FROM sessions s WHERE s.session_id = " + spec.Table + ".session_id AND s.protocol <> 'ssh')"
 	}
 	query := fmt.Sprintf(
 		`SELECT COALESCE(%[1]s::text, '(null)') AS value, COUNT(*)
@@ -113,7 +114,7 @@ func FetchDailyAuthSuccessRate(db *sql.DB, days int) ([]DailyRate, error) {
 			COUNT(*) FILTER (WHERE success) AS n_success
 		FROM auth_attempts
 		WHERE timestamp_ms >= $1
-		  AND session_id NOT IN (SELECT session_id FROM sessions WHERE protocol <> 'ssh')
+		  AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.session_id = auth_attempts.session_id AND s.protocol <> 'ssh')
 		GROUP BY day
 		ORDER BY day ASC`,
 		time.Now().AddDate(0, 0, -days).UnixMilli(),
