@@ -14,11 +14,11 @@ as dataset versions `v1`-`v6` and is not continuous with the current series. As
 of the latest snapshot:
 
 <!-- STATS:START -->
-- **318,298 sessions** captured from **3,865 unique source IPs** (4,230 in the last 24h)
-- Most repeated credential pair: `support` / `support` (1,306 attempts)
+- **323,527 sessions** captured from **3,921 unique source IPs** (5,231 in the last 24h)
+- Most repeated credential pair: `support` / `support` (1,329 attempts)
 - **10 coordinated credential-stuffing windows** identified, across 148 distinct IPs sharing the same credential and SSH client banner within a 5-minute window
 
-_Last updated automatically: 2026-10-23T02:33:36Z_
+_Last updated automatically: 2026-10-24T02:32:09Z_
 <!-- STATS:END -->
 
 The block above is regenerated automatically from the live dataset (see [Keeping this README current](#keeping-this-readme-current)). Sessions that authenticate against the seeded weak-credential list go on to interact with a stateful fake shell; the rest are rejected like a real, minimally hardened `sshd` would reject them.
