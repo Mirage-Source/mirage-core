@@ -41,6 +41,15 @@ the geo-enriched fields must preserve DB-IP attribution.
 
 ## Note on anonymization
 
-Client IP addresses in `commands.jsonl` are anonymized by default (salted hash).
+Client IP addresses in the commands files (`commands.jsonl`, and the
+`commands/` Parquet files on data.vtyagi.dev) are anonymized (salted hash).
+The sessions files carry the real `client_ip`, by decision: every connection
+to an SSH or telnet honeypot is unsolicited, nearly all of it from bots, and
+the source address is the attack infrastructure researchers need for
+blocklists and attribution. Many of those addresses are compromised devices
+on residential networks, so they identify a hijacked device, not its owner's
+intent. The mirage-crawl HTTP dataset hashes every IP with the same salt,
+because its documentation site is also browsed by people.
+
 Users of the dataset must not attempt to re-identify individuals or deanonymize
 source addresses beyond what the project already publishes.
