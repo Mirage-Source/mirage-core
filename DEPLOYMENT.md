@@ -331,6 +331,18 @@ One-time setup:
    earlier versions. mirage-crawl's `.env.export` gets the same five values,
    because its exporter hashes IPs with the same salt so the two datasets
    join.
+   Also give the exporter its own read-only database login, and put
+   `DB_USER=mirage_export` and `DB_PASSWORD=<it>` in mirage-core's
+   `.env.export`. `dataset-export` loads only `.env.export`, so it never sees
+   the main database password:
+
+   ```sql
+   CREATE ROLE mirage_export LOGIN PASSWORD '<generated>';
+   ALTER ROLE mirage_export SET default_transaction_read_only = on;
+   GRANT CONNECT ON DATABASE mirage TO mirage_export;
+   GRANT USAGE ON SCHEMA public TO mirage_export;
+   GRANT SELECT ON sessions, commands, auth_attempts, bait_interactions TO mirage_export;
+   ```
 3. Install and start the timer:
 
    ```bash

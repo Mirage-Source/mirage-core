@@ -1,6 +1,9 @@
 services:
   postgres:
     image: postgres:16-alpine
+    # The default 128MB is small for a ~9GB database. Keep it at about a
+    # quarter of the memory limit below, or the container gets OOM-killed.
+    command: ["postgres", "-c", "shared_buffers=512MB"]
     ports:
       - "127.0.0.1:5432:5432"
     env_file: .env
@@ -18,7 +21,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1024M
+          memory: 2048M
 
   mirage-core:
     build:
@@ -225,14 +228,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # Only this service may load .env.export (the R2 write token).
-    env_file:
-      - .env
-      - .env.export
+    # Only this service may load .env.export: the R2 write token and its own
+    # read-only DB login (DB_USER/DB_PASSWORD). It never sees the main .env.
+    env_file: .env.export
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: ${DB_USER:-mirage}
       DB_NAME: ${DB_NAME:-mirage}
     cpu_shares: 128
     deploy:
