@@ -15,6 +15,8 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
+from dataset_io import SESSIONS_CSV, open_text
+
 
 def load_summary(dataset_dir: Path) -> dict:
     with open(dataset_dir / "stats_summary.json", encoding="utf-8") as f:
@@ -22,7 +24,11 @@ def load_summary(dataset_dir: Path) -> dict:
 
 
 def load_sessions(dataset_dir: Path) -> list[dict]:
-    with open(dataset_dir / "sessions.csv", newline="", encoding="utf-8") as f:
+    # Versions published before compression only have the plain sessions.csv.
+    path = dataset_dir / SESSIONS_CSV
+    if not path.exists():
+        path = dataset_dir / "sessions.csv"
+    with open_text(path, "r", newline="") as f:
         return list(csv.DictReader(f))
 
 

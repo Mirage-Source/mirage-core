@@ -1,0 +1,20 @@
+# Weekly Parquet dataset export (scripts/export_parquet.py). Run on demand by
+# deploy/dataset-export/mirage-dataset-export.timer, never as a long-lived
+# service: see the `dataset-export` service in docker-compose.yml.
+FROM python:3.13-slim
+
+RUN groupadd --system mirage && \
+    useradd --system --gid mirage --no-create-home --shell /usr/sbin/nologin mirage
+
+WORKDIR /app
+COPY scripts/requirements-export.txt .
+RUN pip install --no-cache-dir -r requirements-export.txt
+
+COPY data/geo/dbip-asn-lite.csv data/geo/dbip-country-lite.csv data/geo/SOURCE.md ./data/geo/
+COPY scripts/export_parquet.py scripts/anonymize.py scripts/geo_lookup.py ./
+
+USER mirage
+ENV PYTHONUNBUFFERED=1
+ENTRYPOINT ["python", "export_parquet.py", \
+    "--geo-asn-csv", "data/geo/dbip-asn-lite.csv", \
+    "--geo-country-csv", "data/geo/dbip-country-lite.csv"]

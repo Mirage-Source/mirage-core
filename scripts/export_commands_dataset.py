@@ -21,39 +21,15 @@ Usage:
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
 import requests
 
-from anonymize import anonymize_ip
+from anonymize import anonymize_ip, scrub_secrets
+from dataset_io import COMMANDS_JSONL, open_text
 
 PAGE_LIMIT = 5000
-
-# Best-effort redaction of secret-shaped substrings that might appear in
-# attacker-typed command text or an echoed response (e.g. `echo` args, or a
-# command copy-pasting the attacker's own tooling). This is NOT a guarantee
-# -- free-text scrubbing can't be perfect -- it's a defense-in-depth pass on
-# top of the fact that almost all sensitive-looking content in this dataset
-# is MIRAGE's own clearly-fake planted bait (see internal/shell/fs.go),
-# which is intentionally left untouched since it isn't real.
-_SECRET_PATTERNS = [
-    (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.DOTALL), "[REDACTED_PRIVATE_KEY]"),
-    (re.compile(r"AKIA[0-9A-Z]{16}"), "[REDACTED_AWS_ACCESS_KEY]"),
-    (re.compile(r"(?i)aws_secret_access_key\s*=\s*\S+"), "aws_secret_access_key=[REDACTED]"),
-    (re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"), "[REDACTED_EMAIL]"),
-    (re.compile(r"\b[a-f0-9]{32,64}\b", re.IGNORECASE), "[REDACTED_TOKEN]"),
-]
-
-
-def scrub_secrets(text: str | None) -> str | None:
-    if not text:
-        return text
-    for pattern, replacement in _SECRET_PATTERNS:
-        text = pattern.sub(replacement, text)
-    return text
-
 
 def fetch_all_commands(api_url: str, api_key: str) -> list[dict]:
     commands = []
@@ -99,7 +75,7 @@ def anonymize_and_scrub(commands: list[dict], ip_salt: str | None) -> list[dict]
 
 
 def write_jsonl(rows: list[dict], path: Path):
-    with open(path, "w", encoding="utf-8") as f:
+    with open_text(path, "w") as f:
         for row in rows:
             f.write(json.dumps(row) + "\n")
 
@@ -134,7 +110,7 @@ def main():
     out_dir = Path(args.out_dir) / args.version
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    out_path = out_dir / "commands.jsonl"
+    out_path = out_dir / COMMANDS_JSONL
     write_jsonl(rows, out_path)
 
     print(f"Wrote {len(rows)} commands to {out_path}", file=sys.stderr)

@@ -25,6 +25,7 @@ from pathlib import Path
 import requests
 
 from anonymize import anonymize_ip
+from dataset_io import SESSIONS_CSV, SESSIONS_JSON, open_text
 from geo_lookup import GeoLookup
 
 
@@ -100,7 +101,7 @@ def enrich_sessions(
 
 
 def write_csv(rows: list[dict], path: Path):
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open_text(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
@@ -125,7 +126,7 @@ def write_json(sessions_raw: list[dict], enriched_rows: list[dict], path: Path):
             }
         )
 
-    with open(path, "w", encoding="utf-8") as f:
+    with open_text(path, "w") as f:
         json.dump(out, f, indent=2)
 
 
@@ -218,8 +219,8 @@ def main():
     out_dir = Path(args.out_dir) / args.version
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    write_csv(enriched_rows, out_dir / "sessions.csv")
-    write_json(sessions, enriched_rows, out_dir / "sessions.json")
+    write_csv(enriched_rows, out_dir / SESSIONS_CSV)
+    write_json(sessions, enriched_rows, out_dir / SESSIONS_JSON)
 
     summary = compute_summary(enriched_rows, unmatched_count, coordinated_ip_groups)
     summary["generated_at"] = export["generated_at"]

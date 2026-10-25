@@ -302,3 +302,59 @@ Left on `workflow_dispatch` deliberately. The script targets
 first if the checkout ever moves. The remaining gap is that the migration
 catch-up in section 3 is still manual — the deploy script does not run it, so a
 rebuild onto a fresh volume can come up schema-behind.
+
+## 8. Dataset export to R2 (`dataset-export`, `deploy/dataset-export/`)
+
+The dataset is published from the sensor itself: a daily systemd timer runs
+`scripts/export_parquet.py` in the `dataset-export` container, which reads
+Postgres directly (read-only) and uploads each complete ISO week as
+`sessions/protocol=<p>/week=<YYYY-Www>.parquet` and
+`commands/protocol=<p>/week=<YYYY-Www>.parquet`, plus `manifest.json`, to a
+Cloudflare R2 bucket. Only weeks missing from the manifest are read, so the
+load per run is one week, not the whole history. GitHub Actions is not
+involved.
+
+One-time setup:
+
+1. In Cloudflare: R2 → create bucket `mirage-dataset`. Under the bucket's
+   Settings, enable public access (the `r2.dev` URL, or a custom domain such
+   as `data.<your domain>`). Then R2 → Manage API tokens → create a token with
+   **Object Read & Write** scoped to that bucket only. Note the account ID,
+   access key ID and secret.
+2. On the sensor, put `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+   `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` and `IP_SALT` in
+   `/opt/mirage/mirage-core/.env.export`, **not** `.env` (`chmod 600`). Every
+   service loads `.env`, including the internet-facing SSH and telnet
+   sensors; only `dataset-export` loads `.env.export`. A compromised sensor
+   must never hold a key that can overwrite the public dataset. Copy the
+   value of the `IP_SALT` GitHub secret, so command-file IP hashes match
+   earlier versions. mirage-crawl's `.env.export` gets the same five values,
+   because its exporter hashes IPs with the same salt so the two datasets
+   join.
+3. Install and start the timer:
+
+   ```bash
+   sudo cp deploy/dataset-export/mirage-dataset-export.{service,timer} /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now mirage-dataset-export.timer
+   # First run backfills all history. Measured on the Nuremberg sensor, Oct 2026:
+   # ~4.5 min through 2026-W42 (69 MB); a 5.6M-command telnet week adds ~7 min.
+   sudo systemctl start mirage-dataset-export.service
+   journalctl -u mirage-dataset-export.service -f
+   ```
+
+A week is published one day after it ends, once the ML bridge has classified
+every finished SSH session in it (or after 7 days regardless; the manifest
+records how many were still unclassified). Re-running is always safe: a week
+already in the manifest is skipped, and a run that died mid-upload simply
+redoes that week next time.
+
+Reading it, e.g. with DuckDB, after `INSTALL httpfs; LOAD httpfs;`:
+
+```sql
+-- the file list comes from manifest.json, since HTTP can't glob
+SELECT country, count(*) FROM read_parquet([
+  'https://<public bucket URL>/sessions/protocol=ssh/week=2026-W42.parquet',
+  'https://<public bucket URL>/sessions/protocol=ssh/week=2026-W43.parquet'
+]) GROUP BY 1 ORDER BY 2 DESC;
+```

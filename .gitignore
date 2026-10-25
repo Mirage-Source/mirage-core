@@ -52,3 +52,4 @@ data/labels/labeling_queue.jsonl
 ml/data/
 
 DECISIONS.md
+.env.export

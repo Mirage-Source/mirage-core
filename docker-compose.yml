@@ -216,6 +216,31 @@ services:
         limits:
           memory: 512M
 
+  # Run only by the systemd timer in deploy/dataset-export/.
+  dataset-export:
+    profiles: ["export"]
+    build:
+      context: .
+      dockerfile: Dockerfile.export
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Only this service may load .env.export (the R2 write token).
+    env_file:
+      - .env
+      - .env.export
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-mirage}
+      DB_NAME: ${DB_NAME:-mirage}
+    cpu_shares: 128
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1536M
+
 volumes:
   postgres_data:
   fleet_queue:

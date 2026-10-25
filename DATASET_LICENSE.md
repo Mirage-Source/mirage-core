@@ -1,7 +1,8 @@
 # MIRAGE Dataset License
 
 The **MIRAGE dataset** — the published session-level export and all files derived
-from it, including `sessions.csv` / `sessions.json`, `commands.jsonl`,
+from it, including `sessions.csv` / `sessions.json`, `commands.jsonl` (and their `.gz`
+compressed forms),
 `stats_summary.json`, `REPORT.md`, and the archived OSF snapshot — is licensed
 under the **Creative Commons Attribution 4.0 International License (CC BY 4.0)**.
 

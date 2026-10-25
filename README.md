@@ -85,15 +85,17 @@ A dual-channel Transformer encoder (token sequence + log-scaled inter-command ti
 
 A versioned public dataset is published weekly from the live sensor. Each release includes:
 
-- `sessions.csv` / `sessions.json` — full session export with ASN/country attribution
-- `commands.jsonl` — every captured command/response pair, one JSON object per line, with session context (attacker class, MITRE techniques) and bait-hit flags inlined on each row. Suited for training/fine-tuning on real attacker command sequences. Client IPs are anonymized (salted hash) by default in this file.
+- `sessions.csv.gz` / `sessions.json.gz` — full session export with ASN/country attribution
+- `commands.jsonl.gz` — every captured command/response pair, one JSON object per line, with session context (attacker class, MITRE techniques) and bait-hit flags inlined on each row. Suited for training/fine-tuning on real attacker command sequences. Client IPs are anonymized (salted hash) by default in this file.
 - `stats_summary.json` — aggregate statistics
 - `REPORT.md` — findings narrative
 
+Data files are gzip-compressed (`zcat`, or `pandas.read_csv` reads `.gz` directly). Versions before `g2-v5` have uncompressed `sessions.csv`, `sessions.json` and `commands.jsonl` instead.
+
 **Latest release:** https://github.com/Mirage-Source/mirage-core/blob/gh-pages/dataset/latest/REPORT.md
 
-Raw data: https://mirage-source.github.io/mirage-core/dataset/latest/sessions.csv
-Commands: https://mirage-source.github.io/mirage-core/dataset/latest/commands.jsonl
+Raw data: https://mirage-source.github.io/mirage-core/dataset/latest/sessions.csv.gz
+Commands: https://mirage-source.github.io/mirage-core/dataset/latest/commands.jsonl.gz
 
 Geo attribution: [DB-IP](https://db-ip.com), CC BY 4.0.
 

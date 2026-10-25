@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily MIRAGE dataset export (publishes only weeks not yet in R2)
+
+[Timer]
+# Daily rather than weekly: a run publishes nothing until a week is complete
+# and classified, and a missed or failed run is picked up the next day.
+OnCalendar=*-*-* 04:30:00 UTC
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

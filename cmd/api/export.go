@@ -10,8 +10,8 @@ import (
 )
 
 // exportPageSize is what the full-dump path pulls per query. Small enough that
-// one page's rows are cheap to hold, large enough that 54k sessions is ~27
-// queries rather than hundreds.
+// one page's rows are cheap to hold; 329k SSH sessions (October 2026) is ~165
+// queries, each a fixed cost because the cursor is an index bound.
 const exportPageSize = 2000
 
 // maxExportPages bounds the full dump so a cursor bug cannot loop forever.

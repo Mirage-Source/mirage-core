@@ -297,12 +297,61 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 	return nil
 }
 
+// exportPageSQL takes $1 afterStart, $2 afterID, $3 limit, $4 protocol.
+//
+// "start_ms <= $1" is implied by the OR after it, and is there for the planner:
+// Postgres cannot turn that OR into an index bound, so without it the scan
+// starts at the newest session on every page and filters its way down to the
+// cursor. TestExportPageCursorIsAnIndexCondition pins this.
+const exportPageSQL = `
+	SELECT
+		s.session_id,
+		s.node_id,
+		s.client_ip,
+		s.ssh_client_banner,
+		s.start_ms,
+		s.end_ms,
+		s.duration_ms,
+		s.outcome,
+		s.command_count,
+		s.bait_hit_count,
+		s.attacker_class,
+		s.classifier_confidence,
+		s.cluster_id,
+		s.mitre_techniques,
+		COALESCE(a.attempt_count, 0),
+		COALESCE(a.unique_usernames, 0),
+		a.top_username
+	FROM sessions s
+	LEFT JOIN LATERAL (
+		SELECT
+			COUNT(*) AS attempt_count,
+			COUNT(DISTINCT username) AS unique_usernames,
+			(
+				SELECT username
+				FROM auth_attempts aa2
+				WHERE aa2.session_id = s.session_id
+				GROUP BY username
+				ORDER BY COUNT(*) DESC
+				LIMIT 1
+			) AS top_username
+		FROM auth_attempts aa
+		WHERE aa.session_id = s.session_id
+	) a ON true
+	WHERE s.protocol = $4
+		AND s.start_ms <= $1
+		AND (s.start_ms < $1 OR (s.start_ms = $1 AND s.session_id < $2))
+	ORDER BY s.start_ms DESC, s.session_id DESC
+	LIMIT $3
+	`
+
 // GetExportPage returns one page of the session-level export, newest first,
 // ordered by (start_ms DESC, session_id DESC). after is an opaque cursor from
 // a previous page's NextCursor ("" for the first page).
 //
 // Keyset rather than OFFSET, for the same reason GetCommandExport uses it:
-// each page's query cost stays independent of how deep the caller already is.
+// each page's query cost stays independent of how deep the caller already is
+// -- provided the cursor is an index bound (see exportPageSQL).
 // This export was unpaginated and fully materialized until the corpus passed
 // 54k sessions, at which point the LATERAL-per-row scan plus a whole-response
 // encode began racing cmd/api's 15s WriteTimeout -- which truncates the body
@@ -325,46 +374,7 @@ func GetExportPage(db *sql.DB, protocol session.Protocol, after string, limit in
 		afterStart, afterID = start, id
 	}
 
-	rows, err := db.Query(`
-		SELECT
-			s.session_id,
-			s.node_id,
-			s.client_ip,
-			s.ssh_client_banner,
-			s.start_ms,
-			s.end_ms,
-			s.duration_ms,
-			s.outcome,
-			s.command_count,
-			s.bait_hit_count,
-			s.attacker_class,
-			s.classifier_confidence,
-			s.cluster_id,
-			s.mitre_techniques,
-			COALESCE(a.attempt_count, 0),
-			COALESCE(a.unique_usernames, 0),
-			a.top_username
-		FROM sessions s
-		LEFT JOIN LATERAL (
-			SELECT
-				COUNT(*) AS attempt_count,
-				COUNT(DISTINCT username) AS unique_usernames,
-				(
-					SELECT username
-					FROM auth_attempts aa2
-					WHERE aa2.session_id = s.session_id
-					GROUP BY username
-					ORDER BY COUNT(*) DESC
-					LIMIT 1
-				) AS top_username
-			FROM auth_attempts aa
-			WHERE aa.session_id = s.session_id
-		) a ON true
-		WHERE s.protocol = $4
-			AND (s.start_ms < $1 OR (s.start_ms = $1 AND s.session_id < $2))
-		ORDER BY s.start_ms DESC, s.session_id DESC
-		LIMIT $3
-	`, afterStart, afterID, limit, protocol)
+	rows, err := db.Query(exportPageSQL, afterStart, afterID, limit, protocol)
 	if err != nil {
 		return nil, err
 	}

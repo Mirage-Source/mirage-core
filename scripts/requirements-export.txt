@@ -1,0 +1,5 @@
+# export_parquet.py only (Dockerfile.export). The older gh-pages scripts use
+# requirements.txt.
+pyarrow==26.0.0
+psycopg[binary]==3.3.6
+boto3==1.43.118

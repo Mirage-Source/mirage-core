@@ -1,0 +1,13 @@
+[Unit]
+Description=Publish complete weeks of the MIRAGE dataset to R2 as Parquet
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/mirage/mirage-core
+# Builds from the current checkout, so a deploy's script changes apply on the
+# next run without a separate image push.
+ExecStart=/usr/bin/docker compose --profile export run --rm --build dataset-export
+# The first run backfills every week since the sensor started.
+TimeoutStartSec=6h
