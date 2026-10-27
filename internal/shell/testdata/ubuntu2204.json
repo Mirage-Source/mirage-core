@@ -1,0 +1,879 @@
+{
+ "bash": "GNU bash, version 5.1.16(1)-release (x86_64-pc-linux-gnu)",
+ "cases": [
+  {
+   "cmd": "printf 'a\\n'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\n"
+  },
+  {
+   "cmd": "x=$(printf 'a\\n'); echo \"[$x]\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[a]\n"
+  },
+  {
+   "cmd": "printf '%s' abc | head -c 2",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ab"
+  },
+  {
+   "cmd": "./xxxxxx",
+   "code": 127,
+   "stderr": "bash: line 1: ./xxxxxx: No such file or directory\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "xxxxxx",
+   "code": 127,
+   "stderr": "bash: line 1: xxxxxx: command not found\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "./xxxxxx 2>&1",
+   "code": 127,
+   "stderr": "",
+   "stdout": "bash: line 1: ./xxxxxx: No such file or directory\n"
+  },
+  {
+   "cmd": "( ./xxxxxx 2>&1 || true ) | ( head -c 250 2>/dev/null || cat ) | ( tr -d '\\n' 2>/dev/null || cat )",
+   "code": 0,
+   "stderr": "",
+   "stdout": "bash: line 1: ./xxxxxx: No such file or directory"
+  },
+  {
+   "cmd": "r=$( ( ./xxxxxx 2>&1 || true ) | tr -d '\\n' ); echo \"[$r]\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[bash: line 1: ./xxxxxx: No such file or directory]\n"
+  },
+  {
+   "cmd": "r=$( ( xxxxxx 2>&1 || true ) | tr -d '\\n' ); echo \"[$r]\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[bash: line 1: xxxxxx: command not found]\n"
+  },
+  {
+   "cmd": "out=$(bash -c 'printf \"#!/bin/bash\\necho \\\"xxxxxx\\\"\\n\" > filter && chmod +x filter && ./filter && rm -rf filter' 2>&1); echo \"[$out]\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[xxxxxx]\n"
+  },
+  {
+   "cmd": "printf '#!/bin/bash\\necho hi\\n' > f1 && chmod +x f1 && ./f1; rm -f f1",
+   "code": 0,
+   "stderr": "",
+   "stdout": "hi\n"
+  },
+  {
+   "cmd": "echo abc:def:ghi | cut -d: -f1",
+   "code": 0,
+   "stderr": "",
+   "stdout": "abc\n"
+  },
+  {
+   "cmd": "echo abc:def:ghi | cut -d: -f2,3",
+   "code": 0,
+   "stderr": "",
+   "stdout": "def:ghi\n"
+  },
+  {
+   "cmd": "echo abcdef | cut -c2-4",
+   "code": 0,
+   "stderr": "",
+   "stdout": "bcd\n"
+  },
+  {
+   "cmd": "echo hello | tr a-z A-Z",
+   "code": 0,
+   "stderr": "",
+   "stdout": "HELLO\n"
+  },
+  {
+   "cmd": "echo 'a b c' | tr -d ' '",
+   "code": 0,
+   "stderr": "",
+   "stdout": "abc\n"
+  },
+  {
+   "cmd": "printf 'a\\nb\\n' | tr -d '\\n'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ab"
+  },
+  {
+   "cmd": "printf 'aab\\n' | tr -s a",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ab\n"
+  },
+  {
+   "cmd": "printf 'b\\na\\nc\\n' | sort",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\nb\nc\n"
+  },
+  {
+   "cmd": "printf 'b\\na\\nc\\n' | sort -r",
+   "code": 0,
+   "stderr": "",
+   "stdout": "c\nb\na\n"
+  },
+  {
+   "cmd": "printf '10\\n9\\n100\\n' | sort -n",
+   "code": 0,
+   "stderr": "",
+   "stdout": "9\n10\n100\n"
+  },
+  {
+   "cmd": "printf 'a\\nb\\na\\n' | sort -u",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\nb\n"
+  },
+  {
+   "cmd": "echo 'a,b,c' | sed 's/,//g'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "abc\n"
+  },
+  {
+   "cmd": "echo hello | sed 's/l/L/'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "heLlo\n"
+  },
+  {
+   "cmd": "echo hello | sed 's/l/L/g'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "heLLo\n"
+  },
+  {
+   "cmd": "printf 'a\\n\\nb\\n' | sed '/^$/d'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\nb\n"
+  },
+  {
+   "cmd": "printf 'a\\nb\\nc\\n' | sed -n '2p'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "b\n"
+  },
+  {
+   "cmd": "echo '  lead' | sed 's/^[[:space:]]*//'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "lead\n"
+  },
+  {
+   "cmd": "echo 'trail  ' | sed 's/[[:space:]]*$//'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "trail\n"
+  },
+  {
+   "cmd": "echo 'x AArch64 Processor' | sed 's/ AArch64 Processor$//'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "x\n"
+  },
+  {
+   "cmd": "echo abc | egrep 'a|z'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "abc\n"
+  },
+  {
+   "cmd": "echo abc | grep -m1 -E 'b|z'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "abc\n"
+  },
+  {
+   "cmd": "echo abc | grep -q b && echo yes",
+   "code": 0,
+   "stderr": "",
+   "stdout": "yes\n"
+  },
+  {
+   "cmd": "printf 'a\\nb\\n' | head -n 1",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\n"
+  },
+  {
+   "cmd": "printf 'a\\nb\\n' | tail -n 1",
+   "code": 0,
+   "stderr": "",
+   "stdout": "b\n"
+  },
+  {
+   "cmd": "printf 'x\\n' | wc -l",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n"
+  },
+  {
+   "cmd": "echo \"a b\" | awk '{print $2}'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "b\n"
+  },
+  {
+   "cmd": "echo \"Model name:  Foo CPU\" | awk -F: '/Model name/ {print $2}'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "  Foo CPU\n"
+  },
+  {
+   "cmd": "echo \"  v  \" | awk '{gsub(/^[ \\t]+/,\"\",$0); print}'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "v  \n"
+  },
+  {
+   "cmd": "true && echo t || echo f",
+   "code": 0,
+   "stderr": "",
+   "stdout": "t\n"
+  },
+  {
+   "cmd": "false || echo f2",
+   "code": 0,
+   "stderr": "",
+   "stdout": "f2\n"
+  },
+  {
+   "cmd": "[ -f /nonexistent ] && echo yes || echo no",
+   "code": 0,
+   "stderr": "",
+   "stdout": "no\n"
+  },
+  {
+   "cmd": "cat /nonexistent",
+   "code": 1,
+   "stderr": "cat: /nonexistent: No such file or directory\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "ls /nonexistent",
+   "code": 2,
+   "stderr": "ls: cannot access '/nonexistent': No such file or directory\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "echo \"up 3 days, 2 hours\" | grep -ohe 'up .*' | sed 's/,//g' | awk '{ print $2\" \"$3 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3 days\n"
+  },
+  {
+   "cmd": "echo x86_64 | tr -d '\\n'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "x86_64"
+  },
+  {
+   "cmd": "printf 'a b\\n' | cut -d' ' -f2",
+   "code": 0,
+   "stderr": "",
+   "stdout": "b\n"
+  },
+  {
+   "cmd": "echo 'Intel(R) Xeon(R) CPU' | sed 's/ CPU$//'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "Intel(R) Xeon(R)\n"
+  },
+  {
+   "cmd": "echo abc | grep -c b",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n"
+  },
+  {
+   "cmd": "echo abc | grep -o 'b.'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "bc\n"
+  },
+  {
+   "cmd": "echo ABC | grep -i abc",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ABC\n"
+  },
+  {
+   "cmd": "printf 'a\\nb\\n' | grep -v a",
+   "code": 0,
+   "stderr": "",
+   "stdout": "b\n"
+  },
+  {
+   "cmd": "echo abc | grep -w abc",
+   "code": 0,
+   "stderr": "",
+   "stdout": "abc\n"
+  },
+  {
+   "cmd": "echo 'abc def' | grep -w abc",
+   "code": 0,
+   "stderr": "",
+   "stdout": "abc def\n"
+  },
+  {
+   "cmd": "echo abc | grep -x abc",
+   "code": 0,
+   "stderr": "",
+   "stdout": "abc\n"
+  },
+  {
+   "cmd": "printf '3\\n1\\n2\\n' | sort -n | head -n1",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n"
+  },
+  {
+   "cmd": "echo \"a=1;b=2\" | tr ';' '\\n' | cut -d= -f2",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n2\n"
+  },
+  {
+   "cmd": "echo ' x ' | sed -e 's/^ *//' -e 's/ *$//'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "x\n"
+  },
+  {
+   "cmd": "echo hello | sed 's/\\(h\\)\\(e\\)/\\2\\1/'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ehllo\n"
+  },
+  {
+   "cmd": "echo aaa | sed 's/a/b/2'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "aba\n"
+  },
+  {
+   "cmd": "printf 'one\\ntwo\\nthree\\n' | sed -n '2,3p'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "two\nthree\n"
+  },
+  {
+   "cmd": "printf 'one\\ntwo\\nthree\\n' | sed '$d'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "one\ntwo\n"
+  },
+  {
+   "cmd": "printf 'one\\ntwo\\nthree\\n' | sed '1d'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "two\nthree\n"
+  },
+  {
+   "cmd": "printf 'k=v\\n' | sed 's/=/ -> /'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "k -> v\n"
+  },
+  {
+   "cmd": "echo path/to/file | sed 's#/#:#g'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "path:to:file\n"
+  },
+  {
+   "cmd": "echo hi # a comment",
+   "code": 0,
+   "stderr": "",
+   "stdout": "hi\n"
+  },
+  {
+   "cmd": "# only a comment",
+   "code": 0,
+   "stderr": "",
+   "stdout": ""
+  },
+  {
+   "cmd": "echo a#b",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a#b\n"
+  },
+  {
+   "cmd": "x=5; echo ${#x}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n"
+  },
+  {
+   "cmd": "echo \"$(echo \"nested $(echo deep)\")\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "nested deep\n"
+  },
+  {
+   "cmd": "[ -z \"\" ] && echo empty",
+   "code": 0,
+   "stderr": "",
+   "stdout": "empty\n"
+  },
+  {
+   "cmd": "[ 1 -lt 2 ] && echo lt",
+   "code": 0,
+   "stderr": "",
+   "stdout": "lt\n"
+  },
+  {
+   "cmd": "for i in 1 2 3; do printf \"$i,\"; done; echo",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1,2,3,\n"
+  },
+  {
+   "cmd": "x=$(echo a; echo b); echo \"$x\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\nb\n"
+  },
+  {
+   "cmd": "command -v nosuchcmd || echo missing",
+   "code": 0,
+   "stderr": "",
+   "stdout": "missing\n"
+  },
+  {
+   "cmd": "nosuchcmd; echo $?",
+   "code": 0,
+   "stderr": "bash: line 1: nosuchcmd: command not found\n",
+   "stdout": "127\n"
+  },
+  {
+   "cmd": "ls /nonexistent 2>/dev/null; echo $?",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2\n"
+  },
+  {
+   "cmd": "cd /tmp && pwd",
+   "code": 0,
+   "stderr": "",
+   "stdout": "/tmp\n"
+  },
+  {
+   "cmd": "mkdir -p /tmp/x1 && ls /tmp/x1; echo $?",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0\n"
+  },
+  {
+   "cmd": "touch f2 && ls f2",
+   "code": 0,
+   "stderr": "",
+   "stdout": "f2\n"
+  },
+  {
+   "cmd": "echo hi > f3 && cat f3",
+   "code": 0,
+   "stderr": "",
+   "stdout": "hi\n"
+  },
+  {
+   "cmd": "echo hi >> f4; echo yo >> f4; cat f4",
+   "code": 0,
+   "stderr": "",
+   "stdout": "hi\nyo\n"
+  },
+  {
+   "cmd": "echo a | head -c 1",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a"
+  },
+  {
+   "cmd": "printf 'abcdef' | head -c 3",
+   "code": 0,
+   "stderr": "",
+   "stdout": "abc"
+  },
+  {
+   "cmd": "printf 'abcdef' | tail -c 2",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ef"
+  },
+  {
+   "cmd": "echo abcdef | head -c 3; echo",
+   "code": 0,
+   "stderr": "",
+   "stdout": "abc\n"
+  },
+  {
+   "cmd": "echo one two | awk '{print $2}'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "two\n"
+  },
+  {
+   "cmd": "echo one two | awk '{print NF}'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2\n"
+  },
+  {
+   "cmd": "echo \"a:b\" | awk -F: '{print $2}'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "b\n"
+  },
+  {
+   "cmd": "echo 5 | awk '{print $1*2}'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "10\n"
+  },
+  {
+   "cmd": "uname -s",
+   "code": 0,
+   "stderr": "",
+   "stdout": "Linux\n"
+  },
+  {
+   "cmd": "uname -m",
+   "code": 0,
+   "stderr": "",
+   "stdout": "x86_64\n"
+  },
+  {
+   "cmd": "id -u",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0\n"
+  },
+  {
+   "cmd": "whoami",
+   "code": 0,
+   "stderr": "",
+   "stdout": "root\n"
+  },
+  {
+   "cmd": "pwd",
+   "code": 0,
+   "stderr": "",
+   "stdout": "/root\n"
+  },
+  {
+   "cmd": "echo $((1+2))",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3\n"
+  },
+  {
+   "cmd": "echo hello | wc -c",
+   "code": 0,
+   "stderr": "",
+   "stdout": "6\n"
+  },
+  {
+   "cmd": "printf 'a\\nb\\nc\\n' | wc -l",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3\n"
+  },
+  {
+   "cmd": "printf 'x y z\\n' | awk '{print $NF}'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "z\n"
+  },
+  {
+   "cmd": "true; echo $?",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0\n"
+  },
+  {
+   "cmd": "false; echo $?",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n"
+  },
+  {
+   "cmd": "echo \"$(printf 'a\\n')b\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ab\n"
+  },
+  {
+   "cmd": "echo 'single $HOME' \"double $HOME\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "single $HOME double /root\n"
+  },
+  {
+   "cmd": "printf '%s\\n' a b c",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\nb\nc\n"
+  },
+  {
+   "cmd": "printf '%d %s\\n' 5 x",
+   "code": 0,
+   "stderr": "",
+   "stdout": "5 x\n"
+  },
+  {
+   "cmd": "printf 'a\\tb\\n'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\tb\n"
+  },
+  {
+   "cmd": "echo -e 'a\\tb'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\tb\n"
+  },
+  {
+   "cmd": "echo -n hi; echo",
+   "code": 0,
+   "stderr": "",
+   "stdout": "hi\n"
+  },
+  {
+   "cmd": "cat /nonexistent 2>&1",
+   "code": 1,
+   "stderr": "",
+   "stdout": "cat: /nonexistent: No such file or directory\n"
+  },
+  {
+   "cmd": "cat /nonexistent 2>/dev/null; echo \"rc=$?\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "rc=1\n"
+  },
+  {
+   "cmd": "ls /nope 2>&1 | head -n1",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ls: cannot access '/nope': No such file or directory\n"
+  },
+  {
+   "cmd": "for i in 1 2 3; do [ $i = 2 ] && break; echo $i; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n"
+  },
+  {
+   "cmd": "for i in 1 2 3; do [ $i = 2 ] && continue; echo $i; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n3\n"
+  },
+  {
+   "cmd": "i=0; while true; do i=$((i+1)); [ $i -ge 3 ] && break; done; echo $i",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3\n"
+  },
+  {
+   "cmd": "for a in x y; do for b in 1 2; do [ $b = 2 ] && break; echo $a$b; done; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "x1\ny1\n"
+  },
+  {
+   "cmd": "sh -c 'for d in /nonexistent /tmp; do cd \"$d\" 2>/dev/null && break; done; pwd'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "/tmp\n"
+  },
+  {
+   "cmd": "readlink -f /bin/sh",
+   "code": 0,
+   "stderr": "",
+   "stdout": "/usr/bin/dash\n"
+  },
+  {
+   "cmd": "readlink -f /bin",
+   "code": 0,
+   "stderr": "",
+   "stdout": "/usr/bin\n"
+  },
+  {
+   "cmd": "readlink /bin",
+   "code": 0,
+   "stderr": "",
+   "stdout": "usr/bin\n"
+  },
+  {
+   "cmd": "readlink /etc/passwd; echo $?",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n"
+  },
+  {
+   "cmd": "chattr +i /nonexistent_file; echo $?",
+   "code": 0,
+   "stderr": "chattr: No such file or directory while trying to stat /nonexistent_file\n",
+   "stdout": "1\n"
+  },
+  {
+   "cmd": "chattr -ia /root; echo $?",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0\n"
+  },
+  {
+   "cmd": "uptime | grep -c 'load average'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n"
+  },
+  {
+   "cmd": "uptime -p | grep -c '^up '",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n"
+  },
+  {
+   "cmd": "echo; echo a; echo",
+   "code": 0,
+   "stderr": "",
+   "stdout": "\na\n\n"
+  },
+  {
+   "cmd": "echo $((2*3+1))",
+   "code": 0,
+   "stderr": "",
+   "stdout": "7\n"
+  },
+  {
+   "cmd": "echo $(( (1+2)*3 ))",
+   "code": 0,
+   "stderr": "",
+   "stdout": "9\n"
+  },
+  {
+   "cmd": "echo $((10/3))",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3\n"
+  },
+  {
+   "cmd": "echo $((10%3))",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n"
+  },
+  {
+   "cmd": "echo $((-5+2))",
+   "code": 0,
+   "stderr": "",
+   "stdout": "-3\n"
+  },
+  {
+   "cmd": "x=4; echo $((x*2))",
+   "code": 0,
+   "stderr": "",
+   "stdout": "8\n"
+  },
+  {
+   "cmd": "echo $((1<2))",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n"
+  },
+  {
+   "cmd": "command -v echo >/dev/null && echo has",
+   "code": 0,
+   "stderr": "",
+   "stdout": "has\n"
+  },
+  {
+   "cmd": "command -v nosuchcmd; echo $?",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n"
+  },
+  {
+   "cmd": "echo \"a  b   c\" | awk '{gsub(/ +/,\" \"); print}'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a b c\n"
+  },
+  {
+   "cmd": "echo \"foo bar\" | awk '{sub(/o+/,\"0\"); print}'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "f0 bar\n"
+  },
+  {
+   "cmd": "echo \"foo\" | awk '{n=gsub(/o/,\"0\"); print n, $0}'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2 f00\n"
+  },
+  {
+   "cmd": "echo \"x y\" | awk '{gsub(/x/,\"[&]\",$1); print}'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[x] y\n"
+  },
+  {
+   "cmd": "uname -m | awk '{printf $1}'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "x86_64"
+  },
+  {
+   "cmd": "echo abc | tr a-c A-C | cat",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ABC\n"
+  },
+  {
+   "cmd": "printf 'a\\nb\\n' | cat | wc -l",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2\n"
+  },
+  {
+   "cmd": "echo hi | more",
+   "code": 0,
+   "stderr": "",
+   "stdout": "hi\n"
+  },
+  {
+   "cmd": "x=$(echo); echo \"[$x]\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[]\n"
+  },
+  {
+   "cmd": "x=$(echo hi; echo); echo \"[$x]\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[hi]\n"
+  }
+ ],
+ "image": "ubuntu:22.04",
+ "image_id": "sha256:e0f80c829509ef4df9e76bd8944eb7b8ec25cbb379b112a7f9448b2c77a77c9b",
+ "known_gaps": [
+  {
+   "cmd": "echo \"a b\" | while read x y; do echo \"$y $x\"; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "b a\n"
+  }
+ ]
+}
