@@ -2,7 +2,7 @@
 
 ## Reporting
 
-This is a research/portfolio honeypot project. If you find a vulnerability that
+This is a research honeypot project. If you find a vulnerability that
 affects the safety of the deployed sensor (e.g. a real container escape, not a
 honeypot-detection issue), open an issue or contact the maintainer directly
 rather than filing a public exploit walkthrough.
