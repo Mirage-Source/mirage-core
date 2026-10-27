@@ -765,6 +765,9 @@ func (p *awkParser) primary() (awkExpr, error) {
 		return func(*awkState) awkVal { return num(n) }, nil
 	case isIdentStart(t[0]) && !awkReserved[t]:
 		p.pos += len(t)
+		if (t == "sub" || t == "gsub") && p.peek() == "(" {
+			return p.subCall(t == "gsub")
+		}
 		if fn, ok := awkFuncs[t]; ok {
 			var args []awkExpr
 			if p.accept("(") {
@@ -840,4 +843,122 @@ func arg(a []awkVal, i int) awkVal {
 		return a[i]
 	}
 	return str("")
+}
+
+// subCall parses sub(re, repl [, target]) and gsub(re, repl [, target]).
+// target is $0, $N or a variable and is assigned the result; the call's value
+// is the number of replacements made.
+func (p *awkParser) subCall(global bool) (awkExpr, error) {
+	if !p.accept("(") {
+		return nil, p.fail("sub")
+	}
+	var reOf func(*awkState) *regexp.Regexp
+	if p.peek() == "/" {
+		re, err := p.regexLiteral()
+		if err != nil {
+			return nil, err
+		}
+		reOf = func(*awkState) *regexp.Regexp { return re }
+	} else {
+		e, err := p.expr()
+		if err != nil {
+			return nil, err
+		}
+		reOf = func(st *awkState) *regexp.Regexp {
+			re, err := regexp.Compile(e(st).str())
+			if err != nil {
+				return nil
+			}
+			return re
+		}
+	}
+	if !p.accept(",") {
+		return nil, p.fail(p.peek())
+	}
+	repl, err := p.expr()
+	if err != nil {
+		return nil, err
+	}
+	get := func(st *awkState) string { return st.field(0) }
+	set := func(st *awkState, v string) { st.setRecord(v) }
+	if p.accept(",") {
+		switch t := p.peek(); {
+		case t == "$":
+			p.pos++
+			idx, err := p.primary()
+			if err != nil {
+				return nil, err
+			}
+			get = func(st *awkState) string { return st.field(int(idx(st).num())) }
+			set = func(st *awkState, v string) {
+				n := int(idx(st).num())
+				if n == 0 {
+					st.setRecord(v)
+					return
+				}
+				for len(st.fields) <= n {
+					st.fields = append(st.fields, "")
+				}
+				st.fields[n] = v
+				st.fields[0] = strings.Join(st.fields[1:], " ")
+			}
+		case t != "" && isIdentStart(t[0]):
+			p.pos += len(t)
+			get = func(st *awkState) string { return st.vars[t].str() }
+			set = func(st *awkState, v string) { st.vars[t] = str(v) }
+		default:
+			return nil, p.fail(t)
+		}
+	}
+	if !p.accept(")") {
+		return nil, awkErr(fmt.Sprintf("line %d: missing ) near %s", p.line, p.peek()))
+	}
+	return func(st *awkState) awkVal {
+		re := reOf(st)
+		if re == nil {
+			return num(0)
+		}
+		src, r := get(st), repl(st).str()
+		count := 0
+		var out strings.Builder
+		pos := 0
+		for pos <= len(src) {
+			m := re.FindStringIndex(src[pos:])
+			if m == nil {
+				break
+			}
+			lo, hi := pos+m[0], pos+m[1]
+			out.WriteString(src[pos:lo])
+			for i := 0; i < len(r); i++ {
+				switch {
+				case r[i] == '\\' && i+1 < len(r) && r[i+1] == '&':
+					out.WriteByte('&')
+					i++
+				case r[i] == '&':
+					out.WriteString(src[lo:hi])
+				default:
+					out.WriteByte(r[i])
+				}
+			}
+			count++
+			if hi == lo { // empty match: step over one byte
+				if lo < len(src) {
+					out.WriteByte(src[lo])
+				}
+				pos = hi + 1
+			} else {
+				pos = hi
+			}
+			if !global {
+				break
+			}
+		}
+		if pos <= len(src) {
+			out.WriteString(src[pos:])
+		}
+		if count > 0 {
+			set(st, out.String())
+		}
+		return num(float64(count))
+	}, nil
 }

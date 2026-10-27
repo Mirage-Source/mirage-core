@@ -193,7 +193,23 @@ func (p *parser) nonEmpty(stops map[string]bool, stopAtDoubleSemi bool) ([]item,
 	return items, nil
 }
 
+// item parses one item. A compound command (`{ }`, if, for, while, case)
+// followed by `| cmd` keeps that pipe as its text, so its output can be fed on.
 func (p *parser) item() (item, error) {
+	it, err := p.itemInner()
+	if err != nil || it.kind == kindSimple || it.kind == kindSubshell {
+		return it, err
+	}
+	if st, ok := p.cur(); ok {
+		if t := strings.TrimSpace(st.Text); strings.HasPrefix(t, "|") && !strings.HasPrefix(t, "||") {
+			it.text = t
+			p.pos++
+		}
+	}
+	return it, nil
+}
+
+func (p *parser) itemInner() (item, error) {
 	st, _ := p.cur()
 	if strings.HasPrefix(st.Text, "(") && !strings.HasPrefix(st.Text, "((") {
 		return p.subshellItem(st)
@@ -337,7 +353,7 @@ func (p *parser) subshellItem(st statement) (item, error) {
 		return item{}, syntaxError(")")
 	}
 	p.pos++
-	return item{kind: kindSubshell, sep: st.Sep, body: body, text: strings.TrimSpace(st.Text[end+1:])}, nil
+	return item{kind: kindSubshell, sep: st.Sep, body: body, line: st.Line, text: strings.TrimSpace(st.Text[end+1:])}, nil
 }
 
 // closingParen returns the index of the paren closing text[0], or -1.
@@ -374,12 +390,16 @@ func closingParen(text string) int {
 func (s *Interpreter) runSubshell(it item, depth int, bait *[]BaitHit, action string, outputs *[]outChunk) int {
 	cwd, env := s.Cwd, maps.Clone(s.Env)
 	var inner []outChunk
+	savedBase := s.lineBase
+	s.lineBase += it.line - 1 // the group's text was split again: keep script line numbers
 	code := s.runItems(it.body, depth, bait, action, &inner)
+	s.lineBase = savedBase
 	s.Cwd, s.Env = cwd, env
 
-	// `( ... ) | cmd` hands the output to a reader this shell doesn't run.
+	// `( ... ) | cmd`: the group's stdout is the stdin of the rest of the
+	// pipeline, which is run here (it may be more groups, or plain commands).
 	if strings.HasPrefix(it.text, "|") {
-		return code
+		return s.pipeInto(inner, it.text, depth, bait, action, outputs, code)
 	}
 	var words []string
 	for _, w := range tokenizeWords(it.text) {
@@ -461,12 +481,19 @@ func (s *Interpreter) runWhile(it item, depth int, bait *[]BaitHit, action strin
 	}
 
 	last := 0
+	s.loopDepth++
+	defer func() { s.loopDepth-- }()
 	for n := 0; n < maxLoopIterations; n++ {
 		ok := s.runItems(it.conds[0], depth, bait, action, outputs) == 0
 		if ok == (it.kind == kindUntil) {
 			break
 		}
 		last = s.runItems(it.body, depth, bait, action, outputs)
+		if s.loopCtl == "break" {
+			s.loopCtl = ""
+			break
+		}
+		s.loopCtl = ""
 	}
 	return last
 }
@@ -514,12 +541,24 @@ func (s *Interpreter) expandWord(raw string, depth int, bait *[]BaitHit, action 
 func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action string, outputs *[]outChunk) int {
 	last := 0
 	for i, it := range items {
+		if s.loopCtl != "" {
+			return last
+		}
 		if i > 0 && ((it.sep == "&&" && last != 0) || (it.sep == "||" && last == 0)) {
+			continue
+		}
+		if it.kind != kindSimple && it.kind != kindSubshell && strings.HasPrefix(it.text, "|") {
+			head := it
+			head.text, head.sep = "", ""
+			var inner []outChunk
+			last = s.runItems([]item{head}, depth, bait, action, &inner)
+			last = s.pipeInto(inner, it.text, depth, bait, action, outputs, last)
 			continue
 		}
 		switch it.kind {
 		case kindSimple:
-			s.line = it.line
+			s.line = s.lineBase + it.line
+			s.blankEcho = false
 			s.direct = &items[i] == s.lastTop
 			s.pendingErr = nil
 			out, code, ran, isErr := s.execStatement(it.text, depth, bait, action)
@@ -527,6 +566,9 @@ func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action 
 				c := s.chunk(out, isErr)
 				c.noNewline = s.noTrailingNewline && !isErr
 				*outputs = append(*outputs, c)
+			}
+			if out == "" && s.blankEcho && ran {
+				*outputs = append(*outputs, outChunk{}) // a bare echo prints an empty line
 			}
 			if len(s.pendingErr) > 0 {
 				*outputs = append(*outputs, s.chunk(strings.Join(s.pendingErr, "\r\n"), true))
@@ -563,13 +605,20 @@ func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action 
 					values = append(values, v)
 				}
 			}
+			s.loopDepth++
 			for n, v := range values {
 				if n == maxLoopIterations {
 					break
 				}
 				s.Env[it.word] = v
 				last = s.runItems(it.body, depth, bait, action, outputs)
+				if s.loopCtl == "break" {
+					s.loopCtl = ""
+					break
+				}
+				s.loopCtl = ""
 			}
+			s.loopDepth--
 		case kindWhile, kindUntil:
 			last = s.runWhile(it, depth, bait, action, outputs)
 		case kindSubshell:
@@ -589,4 +638,27 @@ func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action 
 		}
 	}
 	return last
+}
+
+// pipeInto feeds the stdout of a finished compound command (inner) to the
+// rest of its pipeline, written "| cmd | cmd ...". stderr passes through.
+func (s *Interpreter) pipeInto(inner []outChunk, tail string, depth int, bait *[]BaitHit, action string, outputs *[]outChunk, code int) int {
+	var stdout []outChunk
+	for _, c := range inner {
+		if c.stderr {
+			*outputs = append(*outputs, c)
+		} else {
+			stdout = append(stdout, c)
+		}
+	}
+	fwd := strings.ReplaceAll(joinChunks(stdout, "\r\n"), "\r\n", "\n")
+	if fwd != "" && (len(stdout) == 0 || !stdout[len(stdout)-1].noNewline) {
+		fwd += "\n"
+	}
+	saved := s.pipeStdin
+	s.pipeStdin = &fwd
+	chunks, c2 := s.evalChunks(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(tail), "|")), depth, bait, action)
+	s.pipeStdin = saved
+	*outputs = append(*outputs, chunks...)
+	return c2
 }

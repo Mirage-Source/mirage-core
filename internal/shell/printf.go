@@ -87,6 +87,9 @@ func (s *Interpreter) printfBuiltin(args []string) (string, int) {
 	if strings.HasSuffix(text, "\n") {
 		// Terminal display adds the final newline back.
 		text = strings.TrimSuffix(text, "\n")
+		if text == "" {
+			s.blankEcho = true // printf '\n' prints an empty line, as a bare echo does
+		}
 	} else {
 		s.noTrailingNewline = true
 	}

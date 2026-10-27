@@ -90,3 +90,17 @@ func atCommandStart(s string, i int) bool {
 	}
 	return false
 }
+
+// atWordStart reports whether s[i] begins a word: first on the line or after
+// blank space or a separator. A `#` there starts a comment; `a#b`, `$#` and
+// `${#x}` do not.
+func atWordStart(s string, i int) bool {
+	if i == 0 {
+		return true
+	}
+	switch s[i-1] {
+	case ' ', '\t', '\n', '\r', ';', '&', '|', '(', ')':
+		return true
+	}
+	return false
+}

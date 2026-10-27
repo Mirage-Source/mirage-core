@@ -97,5 +97,5 @@ func (s *Interpreter) moreBuiltin(args []string, stdin *string) (string, int) {
 	if !ok {
 		return "more: cannot open " + fileArg + ": No such file or directory", 1
 	}
-	return strings.ReplaceAll(text, "\n", "\r\n"), 0
+	return s.textOut(norm(text))
 }

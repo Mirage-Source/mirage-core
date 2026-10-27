@@ -6,7 +6,7 @@ func TestShouldAttemptCompletionAcceptsUnhandledSimpleCommands(t *testing.T) {
 	// Commands the preprint observed in real sessions that the interpreter
 	// has no builtin for -- exactly what this fallback exists to serve.
 	// (nproc and free became builtins; they must agree with /proc.)
-	for _, line := range []string{"uptime", "lspci", "nvidia-smi -L", "df -h", "lscpu"} {
+	for _, line := range []string{"lsblk", "lspci", "nvidia-smi -L", "df -h", "lscpu"} {
 		name, ok := ShouldAttemptCompletion(line)
 		if !ok {
 			t.Errorf("ShouldAttemptCompletion(%q) = (_, false), want true", line)
@@ -132,7 +132,7 @@ func TestShouldAttemptCompletionLeavesFilePathsToTheInterpreter(t *testing.T) {
 			t.Errorf("ShouldAttemptCompletion(%q) = true, want false", line)
 		}
 	}
-	for _, line := range []string{"/usr/bin/uptime", "/sbin/lspci"} {
+	for _, line := range []string{"/usr/bin/lsblk", "/sbin/lspci"} {
 		if _, ok := ShouldAttemptCompletion(line); !ok {
 			t.Errorf("ShouldAttemptCompletion(%q) = false, want true", line)
 		}

@@ -56,6 +56,11 @@ func splitStatements(line string) []statement {
 
 		skip := cs.step(line, i)
 		switch {
+		case c == '#' && atWordStart(line, i):
+			// A comment runs to the end of the line; the newline stays.
+			for i+1 < len(runes) && runes[i+1] != '\n' {
+				i++
+			}
 		case c == '\'' || c == '"':
 			quote = c
 			cur.WriteByte(c)
@@ -245,6 +250,7 @@ func tokenizeWords(text string) []string {
 	hasCur := false
 
 	var quote byte
+	verbatim := false // quote opened inside $( ): the inner text is parsed again later
 	parenDepth := 0
 	var cs caseScope
 
@@ -261,9 +267,31 @@ func tokenizeWords(text string) []string {
 		c := runes[i]
 
 		if quote != 0 {
+			if verbatim {
+				// Inside $( ) the whole span is evaluated again by evalLine,
+				// which does its own quote handling; stripping the quotes
+				// here turned `printf '\n'` into `printf n`.
+				cur.WriteByte(c)
+				if quote == '"' && c == '\\' && i+1 < len(runes) {
+					i++
+					cur.WriteByte(runes[i])
+				} else if c == quote {
+					quote = 0
+				}
+				hasCur = true
+				continue
+			}
 			switch {
 			case c == quote:
 				quote = 0
+			case c == '$' && quote == '"' && i+1 < len(runes) && runes[i+1] == '(':
+				// "...$(cmd "quoted")...": the whole substitution is one unit.
+				if e := matchingParen(text, i+2); e >= 0 {
+					cur.WriteString(text[i : e+1])
+					i = e
+				} else {
+					cur.WriteByte(c)
+				}
 			case c == '$' && quote == '\'':
 				cur.WriteString(litDollar) // '...' never expands
 			case c == '\\' && quote == '"' && i+1 < len(runes) && strings.IndexByte("$`\"\\", runes[i+1]) >= 0:
@@ -293,6 +321,9 @@ func tokenizeWords(text string) []string {
 		case c == '\'' || c == '"':
 			quote = c
 			hasCur = true
+			if verbatim = parenDepth > 0; verbatim {
+				cur.WriteByte(c)
+			}
 		case c == '$' && i+1 < len(runes) && runes[i+1] == '(':
 			cur.WriteByte(c)
 			cur.WriteByte('(')

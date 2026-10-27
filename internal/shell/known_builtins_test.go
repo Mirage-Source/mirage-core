@@ -11,7 +11,7 @@ import "testing"
 // output silently replaced by an LLM's invention.
 var wantBuiltins = []string{
 	"", "echo", "whoami", "pwd", "hostname", "id", "uname", "export",
-	"test", "[", "cat", "ls", "cd", "grep", "head", "tail", "wc",
+	"test", "[", "cat", "ls", "cd", "grep", "egrep", "command", "sudo", "uptime", "readlink", "chattr", "break", "continue", "fgrep", "tr", "cut", "sort", "sed", "head", "tail", "wc",
 	"which", "find", "ps", "netstat", "crontab", "exit",
 	"chmod", "chown", "chgrp", "rm", "mkdir", "touch", "cp", "mv", "wget", "curl",
 	"sh", "bash", "nohup", "sleep", "kill", "pkill", "killall",
@@ -43,7 +43,7 @@ func TestIsKnownBuiltinRejectsUnhandledCommands(t *testing.T) {
 	// Commands the preprint observed in real sessions that this shell does
 	// NOT implement -- these are exactly the ones the completion fallback
 	// exists to serve.
-	for _, name := range []string{"uptime", "lspci", "nvidia-smi", "df", "lscpu", "last"} {
+	for _, name := range []string{"lsblk", "lspci", "nvidia-smi", "df", "lscpu", "last"} {
 		if IsKnownBuiltin(name) {
 			t.Errorf("IsKnownBuiltin(%q) = true, want false -- execBuiltin has no case for it", name)
 		}
