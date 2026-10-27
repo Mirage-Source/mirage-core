@@ -12,6 +12,7 @@ import (
 	"net/netip"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -469,11 +470,7 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 	// NAME=value assignment only applies to a lone, non-piped statement --
 	// real bash treats `FOO=bar | baz` as a pipeline, not an assignment.
 	if len(stages) == 1 {
-		words := tokenizeWords(stages[0])
-		resolved := make([]string, 0, len(words))
-		for _, w := range words {
-			resolved = append(resolved, s.substitute(w, depth, bait, action))
-		}
+		resolved := s.expandCommandWords(stages[0], depth, bait, action)
 		if s.halted { // ${v:?msg} failed while expanding the words: the statement does not run
 			return "", s.haltCode, false, false
 		}
@@ -572,11 +569,7 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 			pipedIn = &fwd
 			continue
 		}
-		words := tokenizeWords(stageText)
-		resolved := make([]string, 0, len(words))
-		for _, w := range words {
-			resolved = append(resolved, s.substitute(w, depth, bait, action))
-		}
+		resolved := s.expandCommandWords(stageText, depth, bait, action)
 		cmdWords, red := extractRedirects(resolved)
 		cmdWords = stripAssignments(cmdWords)
 		if len(cmdWords) == 0 {
@@ -752,15 +745,33 @@ func (s *Interpreter) readStdinFile(target string) (string, bool) {
 // erroring, same as a real shell running out of patience would look like
 // from the outside. Unset variables interpolate to "", matching bash.
 func (s *Interpreter) substitute(word string, depth int, bait *[]BaitHit, action string) string {
-	var out strings.Builder
+	e := s.newExpansion(false)
+	s.expandInto(word, depth, bait, action, e)
+	return e.result()[0]
+}
+
+// expandInto does the work of substitute, writing literal text and expansion results to e separately so
+// that word splitting can tell them apart (see expansion).
+func (s *Interpreter) expandInto(word string, depth int, bait *[]BaitHit, action string, e *expansion) {
 	i := 0
 	for i < len(word) {
 		c := word[i]
 
+		if strings.HasPrefix(word[i:], qOpen) {
+			e.quoted, e.has = true, true // a quoted "" is still one (empty) word
+			i += len(qOpen)
+			continue
+		}
+		if strings.HasPrefix(word[i:], qClose) {
+			e.quoted = false
+			i += len(qClose)
+			continue
+		}
+
 		if c == '$' && i+2 < len(word) && word[i+1] == '(' && word[i+2] == '(' {
 			if end := matchingParen(word, i+2); end > i+3 && word[end-1] == ')' {
 				if v, ok := s.evalArith(word[i+3 : end-1]); ok {
-					out.WriteString(strconv.FormatInt(v, 10))
+					e.exp(strconv.FormatInt(v, 10))
 					i = end + 1
 					continue
 				}
@@ -770,7 +781,7 @@ func (s *Interpreter) substitute(word string, depth int, bait *[]BaitHit, action
 		if c == '$' && i+1 < len(word) && word[i+1] == '(' {
 			end := matchingParen(word, i+2)
 			if end == -1 {
-				out.WriteString(word[i:])
+				e.lit(word[i:])
 				break
 			}
 			inner := word[i+2 : end]
@@ -785,9 +796,9 @@ func (s *Interpreter) substitute(word string, depth int, bait *[]BaitHit, action
 					return c
 				}), true
 				s.lineBase, s.line, s.blankEcho = savedBase, savedLine, savedBlank
-				resolved = strings.TrimRight(o, "\r\n")
+				resolved = strings.TrimRight(strings.ReplaceAll(o, "\r\n", "\n"), "\r\n")
 			}
-			out.WriteString(resolved)
+			e.exp(resolved)
 			i = end + 1
 			continue
 		}
@@ -795,15 +806,15 @@ func (s *Interpreter) substitute(word string, depth int, bait *[]BaitHit, action
 		if c == '$' && i+1 < len(word) && word[i+1] == '{' {
 			end := matchingBrace(word, i+2)
 			if end == -1 {
-				out.WriteByte(c)
+				e.lit("$")
 				i++
 				continue
 			}
 			inner := word[i+2 : end]
 			if v, ok := s.expandBrace(inner, depth, bait, action); ok {
-				out.WriteString(v)
+				e.exp(v)
 			} else {
-				out.WriteString(s.param(inner)) // a form not implemented: what it always did
+				e.exp(s.param(inner)) // a form not implemented: what it always did
 			}
 			i = end + 1
 			continue
@@ -811,7 +822,7 @@ func (s *Interpreter) substitute(word string, depth int, bait *[]BaitHit, action
 
 		if c == '$' && i+1 < len(word) {
 			if v, ok := s.specialParam(word[i+1]); ok {
-				out.WriteString(v)
+				e.exp(v)
 				i += 2
 				continue
 			}
@@ -822,15 +833,14 @@ func (s *Interpreter) substitute(word string, depth int, bait *[]BaitHit, action
 			for j < len(word) && isIdentPart(word[j]) {
 				j++
 			}
-			out.WriteString(s.Env[word[i+1:j]])
+			e.exp(s.Env[word[i+1:j]])
 			i = j
 			continue
 		}
 
-		out.WriteByte(c)
+		e.lit(word[i : i+1])
 		i++
 	}
-	return strings.ReplaceAll(out.String(), litDollar, "$")
 }
 
 func isAssignmentOnly(words []string) bool {
@@ -989,7 +999,7 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 		return s.aptBuiltin(cmd, args)
 
 	case "test", "[":
-		return "", s.testBuiltin(cmd, args)
+		return s.testBuiltin(cmd, args)
 
 	case "cat":
 		return s.catBuiltin(args, bait, action, stdin)
@@ -1239,26 +1249,35 @@ func (s *Interpreter) unameOutput(args []string) string {
 
 // testBuiltin implements the handful of `test`/`[` checks attacker recon
 // scripts actually use: -f (regular file), -d (directory), -e (exists).
-func (s *Interpreter) testBuiltin(cmd string, args []string) int {
+func (s *Interpreter) testBuiltin(cmd string, args []string) (string, int) {
 	if cmd == "[" && len(args) > 0 && args[len(args)-1] == "]" {
 		args = args[:len(args)-1]
 	}
+	return s.testArgs(cmd, args)
+}
+
+// testArgs evaluates the arguments of test, with the closing "]" of `[` already removed. cmd names the
+// command in error messages.
+func (s *Interpreter) testArgs(cmd string, args []string) (string, int) {
 	if len(args) > 0 && args[0] == "!" {
-		code := s.testBuiltin("test", args[1:])
+		msg, code := s.testArgs(cmd, args[1:])
 		if code == 2 {
-			return 2
+			return msg, 2
 		}
-		return 1 - code
+		return "", 1 - code
 	}
-	result := func(b bool) int {
+	fail := func(format string, a ...any) (string, int) {
+		return "bash: " + cmd + ": " + fmt.Sprintf(format, a...), 2
+	}
+	result := func(b bool) (string, int) {
 		if b {
-			return 0
+			return "", 0
 		}
-		return 1
+		return "", 1
 	}
 	switch len(args) {
 	case 0:
-		return 1
+		return "", 1
 	case 1:
 		return result(args[0] != "")
 	case 2:
@@ -1282,7 +1301,7 @@ func (s *Interpreter) testBuiltin(cmd string, args []string) int {
 		case "-n":
 			return result(target != "")
 		}
-		return 2
+		return fail("%s: unary operator expected", flag)
 	case 3:
 		a, op, b := args[0], args[1], args[2]
 		switch op {
@@ -1293,8 +1312,14 @@ func (s *Interpreter) testBuiltin(cmd string, args []string) int {
 		}
 		x, errA := strconv.Atoi(a)
 		y, errB := strconv.Atoi(b)
-		if errA != nil || errB != nil {
-			return 2
+		if !slices.Contains([]string{"-eq", "-ne", "-lt", "-le", "-gt", "-ge"}, op) {
+			return fail("%s: binary operator expected", op)
+		}
+		if errA != nil {
+			return fail("%s: integer expression expected", a)
+		}
+		if errB != nil {
+			return fail("%s: integer expression expected", b)
 		}
 		switch op {
 		case "-eq":
@@ -1310,8 +1335,12 @@ func (s *Interpreter) testBuiltin(cmd string, args []string) int {
 		case "-ge":
 			return result(x >= y)
 		}
+	default:
+		if !strings.ContainsAny(strings.Join(args, " "), "()") && !slices.Contains(args, "-a") && !slices.Contains(args, "-o") {
+			return fail("too many arguments")
+		}
 	}
-	return 2
+	return "", 2
 }
 
 func (s *Interpreter) catBuiltin(args []string, bait *[]BaitHit, action string, stdin *string) (string, int) {

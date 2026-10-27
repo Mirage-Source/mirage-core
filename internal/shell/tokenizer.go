@@ -272,7 +272,20 @@ func extractRedirects(words []string) ([]string, redirects) {
 // "$". A private-use rune, so it does not occur in typed commands.
 const litDollar = "\uE000"
 
-func tokenizeWords(text string) []string {
+// qOpen and qClose bracket text that was quoted, when tokenizeWordsMarked asks for it. Word splitting
+// needs them: it applies to the result of an unquoted expansion only, and the quotes are gone by then.
+const (
+	qOpen  = "\uE001"
+	qClose = "\uE002"
+)
+
+func tokenizeWords(text string) []string { return tokenize(text, false) }
+
+// tokenizeWordsMarked is tokenizeWords with every quoted span wrapped in qOpen and qClose. Only
+// substituteFields understands them.
+func tokenizeWordsMarked(text string) []string { return tokenize(text, true) }
+
+func tokenize(text string, mark bool) []string {
 	var words []string
 	var cur strings.Builder
 	hasCur := false
@@ -312,6 +325,9 @@ func tokenizeWords(text string) []string {
 			switch {
 			case c == quote:
 				quote = 0
+				if mark {
+					cur.WriteString(qClose)
+				}
 			case c == '$' && quote == '"' && i+1 < len(runes) && runes[i+1] == '(':
 				// "...$(cmd "quoted")...": the whole substitution is one unit.
 				if e := matchingParen(text, i+2); e >= 0 {
@@ -351,6 +367,8 @@ func tokenizeWords(text string) []string {
 			hasCur = true
 			if verbatim = parenDepth > 0; verbatim {
 				cur.WriteByte(c)
+			} else if mark {
+				cur.WriteString(qOpen)
 			}
 		case c == '$' && parenDepth == 0 && i+1 < len(runes) && runes[i+1] == '{':
 			// ${...} is one word even when it holds spaces (${y:-a b}, ${y: -2}). It is expanded later,

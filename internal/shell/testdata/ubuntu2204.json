@@ -1464,6 +1464,138 @@
    "code": 0,
    "stderr": "",
    "stdout": "12\n"
+  },
+  {
+   "cmd": "a=\"x y  z\"; printf '[%s]\\n' $a",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[x]\n[y]\n[z]\n"
+  },
+  {
+   "cmd": "a=\"x y  z\"; printf '[%s]\\n' \"$a\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[x y  z]\n"
+  },
+  {
+   "cmd": "a=\"  x  \"; printf '[%s]\\n' $a",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[x]\n"
+  },
+  {
+   "cmd": "e=; printf '[%s]\\n' $e x",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[x]\n"
+  },
+  {
+   "cmd": "c=\"echo hi   there\"; $c",
+   "code": 0,
+   "stderr": "",
+   "stdout": "hi there\n"
+  },
+  {
+   "cmd": "c=\"printf [%s]\\n a b\"; $c",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[a]\n[b]\n"
+  },
+  {
+   "cmd": "IFS=:; a=\"x:y::z\"; printf '[%s]\\n' $a",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[x]\n[y]\n[]\n[z]\n"
+  },
+  {
+   "cmd": "IFS=,; a=\",x,\"; printf '[%s]\\n' $a",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[]\n[x]\n"
+  },
+  {
+   "cmd": "printf '[%s]\\n' $(echo a b   c)",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[a]\n[b]\n[c]\n"
+  },
+  {
+   "cmd": "printf '[%s]\\n' \"$(echo a b   c)\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[a b c]\n"
+  },
+  {
+   "cmd": "a=\"x y\"; b=$a; printf '[%s]\\n' \"$b\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[x y]\n"
+  },
+  {
+   "cmd": "a=\"x y\"; printf '[%s]\\n' ${a}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[x]\n[y]\n"
+  },
+  {
+   "cmd": "printf '[%s]\\n' ${unset_v:-p q}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[p]\n[q]\n"
+  },
+  {
+   "cmd": "a=\"x y\"; printf '[%s]\\n' pre$a post",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[prex]\n[y]\n[post]\n"
+  },
+  {
+   "cmd": "a=$(printf 'a\\nb\\tc'); printf '[%s]\\n' $a",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[a]\n[b]\n[c]\n"
+  },
+  {
+   "cmd": "a='\"x y\"'; printf '[%s]\\n' $a",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[\"x]\n[y\"]\n"
+  },
+  {
+   "cmd": "a=\"x y\"; [ -n $a ]; echo $?",
+   "code": 0,
+   "stderr": "bash: line 1: [: x: binary operator expected\n",
+   "stdout": "2\n"
+  },
+  {
+   "cmd": "a=\"1 2 3\"; for i in $a; do echo \"[$i]\"; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[1]\n[2]\n[3]\n"
+  },
+  {
+   "cmd": "[ x = y z ]; echo $?",
+   "code": 0,
+   "stderr": "bash: line 1: [: too many arguments\n",
+   "stdout": "2\n"
+  },
+  {
+   "cmd": "test -n x y; echo $?",
+   "code": 0,
+   "stderr": "bash: line 1: test: x: binary operator expected\n",
+   "stdout": "2\n"
+  },
+  {
+   "cmd": "[ a -eq 1 ]; echo $?",
+   "code": 0,
+   "stderr": "bash: line 1: [: a: integer expression expected\n",
+   "stdout": "2\n"
+  },
+  {
+   "cmd": "a=\"x y\"; [ \"$a\" = \"x y\" ]; echo $?",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0\n"
   }
  ],
  "image": "ubuntu:22.04",
@@ -1492,6 +1624,12 @@
    "code": 0,
    "stderr": "+ echo hi\n",
    "stdout": "hi\n"
+  },
+  {
+   "cmd": "echo \"<a>\"; echo \"2>\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "<a>\n2>\n"
   }
  ]
 }

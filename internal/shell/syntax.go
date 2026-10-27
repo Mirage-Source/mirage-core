@@ -720,12 +720,7 @@ func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action 
 			last = 0
 			var values []string
 			for _, raw := range it.words {
-				v := s.expandWord(raw, depth, bait, action)
-				if strings.Contains(raw, "$") && raw[0] != '"' && raw[0] != '\'' {
-					values = append(values, strings.Fields(v)...)
-				} else {
-					values = append(values, v)
-				}
+				values = append(values, s.expandCommandWords(raw, depth, bait, action)...)
 			}
 			s.loopDepth++
 			for n, v := range values {
