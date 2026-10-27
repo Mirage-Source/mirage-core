@@ -772,6 +772,14 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGua
 
 	log.Printf("New connection from %v", conn.RemoteAddr())
 
+	// Recorded before the handshake so every session has it. It used to be set only after a
+	// successful handshake, which made server_port 0 on exactly the auth_failed sessions.
+	// It is this listener's own port (2222 in the container), not the port the client dialed;
+	// that is Network.TargetPort, known only behind a PROXY-protocol relay.
+	if tcpAddr, ok := conn.LocalAddr().(*net.TCPAddr); ok {
+		guard.sess.Network.ServerPort = tcpAddr.Port
+	}
+
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	// The client's KEXINIT is read inside NewServerConn, before any auth
 	// callback, so the fingerprint is known on every path below.
@@ -804,9 +812,6 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGua
 
 	applyRemoteAddr(&guard.sess.Network, pp, remoteAddr)
 
-	if tcpAddr, ok := conn.LocalAddr().(*net.TCPAddr); ok {
-		guard.sess.Network.ServerPort = tcpAddr.Port
-	}
 	log.Printf("Client Version: %s", sshConn.ClientVersion())
 	go ssh.DiscardRequests(reqs)
 	handleChannels(conn, idleTimeout, chans, guard, db, deceptionRuntime, fleetClient)

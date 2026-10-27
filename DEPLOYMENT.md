@@ -147,6 +147,12 @@ from HEAD in any way (untracked files count, because `COPY . .` copies them).
 If `BUILD_SHA` is not set the image builds, runs, and writes `unknown`; the
 sensor logs `build=...` on startup, so `docker compose logs mirage-core | head`
 shows what is running. Rows written before this change keep `build_sha = ''`.
+
+Also from schema 1.2: `server_port` is recorded before the handshake, so it is the
+same on every SSH session (2222). Before, it was 0 on exactly the `auth_failed`
+sessions, which leaked the outcome into a feature. It is the listener's own port, the
+container's internal one, not the port the client dialed; that is `target_port`, set
+only behind a PROXY-protocol relay and NULL otherwise.
 Start a sensor (which applies migration 019) before running `dataset-export`,
 which now selects the column.
 
