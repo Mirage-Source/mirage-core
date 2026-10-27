@@ -27,5 +27,6 @@ jobs:
             cd /opt/mirage/mirage-core
             git fetch origin main
             git reset --hard origin/main
-            docker compose up --build -d
+            # the stamp on every session says which build handled it (scripts/build_sha.sh)
+            BUILD_SHA=$(sh scripts/build_sha.sh) docker compose up --build -d
             docker compose ps
