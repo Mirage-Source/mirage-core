@@ -1236,6 +1236,234 @@
    "code": 0,
    "stderr": "",
    "stdout": "[]\n"
+  },
+  {
+   "cmd": "cat </dev/null; echo ok",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ok\n"
+  },
+  {
+   "cmd": "echo x </dev/null",
+   "code": 0,
+   "stderr": "",
+   "stdout": "x\n"
+  },
+  {
+   "cmd": "cat /dev/null; echo ok",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ok\n"
+  },
+  {
+   "cmd": "[ -e /dev/null ] && echo yes",
+   "code": 0,
+   "stderr": "",
+   "stdout": "yes\n"
+  },
+  {
+   "cmd": "[ -c /dev/null ] && echo chardev",
+   "code": 0,
+   "stderr": "",
+   "stdout": "chardev\n"
+  },
+  {
+   "cmd": "echo ${y:-def}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "def\n"
+  },
+  {
+   "cmd": "y=set; echo ${y:-def}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "set\n"
+  },
+  {
+   "cmd": "echo ${y:=assigned} $y",
+   "code": 0,
+   "stderr": "",
+   "stdout": "assigned assigned\n"
+  },
+  {
+   "cmd": "echo [${y:+alt}]",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[]\n"
+  },
+  {
+   "cmd": "y=v; echo ${y:+alt}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "alt\n"
+  },
+  {
+   "cmd": "y=; echo [${y-def}] [${y:-def}] [${y+alt}] [${y:+alt}]",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[] [def] [alt] []\n"
+  },
+  {
+   "cmd": "echo ${a:-${b:-deep}}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "deep\n"
+  },
+  {
+   "cmd": "b=B; echo ${a:-${b:-deep}}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "B\n"
+  },
+  {
+   "cmd": "echo ${1:-none}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "none\n"
+  },
+  {
+   "cmd": "echo \"${y:-a b}\" | wc -w",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2\n"
+  },
+  {
+   "cmd": "echo ${y:?must be set}; echo after",
+   "code": 127,
+   "stderr": "bash: line 1: y: must be set\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "y=ok; echo ${y:?must be set}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ok\n"
+  },
+  {
+   "cmd": "y=hello; echo ${#y}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "5\n"
+  },
+  {
+   "cmd": "echo ${#nosuch}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0\n"
+  },
+  {
+   "cmd": "y=file.tar.gz; echo ${y%.gz} ${y%%.*} ${y#*.} ${y##*.}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "file.tar file tar.gz gz\n"
+  },
+  {
+   "cmd": "y=a/b/c; echo ${y##*/} ${y%/*} ${y#*/} ${y%%/*}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "c a/b b/c a\n"
+  },
+  {
+   "cmd": "y=aXbXc; echo ${y#*X} ${y##*X} ${y%X*} ${y%%X*}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "bXc c aXb a\n"
+  },
+  {
+   "cmd": "y=abc123; echo ${y%%[0-9]*} ${y##*[a-z]}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "abc 123\n"
+  },
+  {
+   "cmd": "y=hello; echo ${y#h?l} ${y%l?}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "lo hel\n"
+  },
+  {
+   "cmd": "y=banana; echo ${y/a/X} ${y//a/X} ${y/#b/Z} ${y/%a/Z} ${y//an/-}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "bXnana bXnXnX Zanana bananZ b--a\n"
+  },
+  {
+   "cmd": "y='hello world'; echo \"${y// /_}\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "hello_world\n"
+  },
+  {
+   "cmd": "y=abcdef; echo ${y:1:3} ${y:2} ${y: -2} ${y:1:-1}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "bcd cdef ef bcde\n"
+  },
+  {
+   "cmd": "y=abc; echo ${y^^} ${y^} ${y//b/}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ABC Abc ac\n"
+  },
+  {
+   "cmd": "Y=ABC; echo ${Y,,} ${Y,}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "abc aBC\n"
+  },
+  {
+   "cmd": "for f in a.txt b.txt; do echo ${f%.txt}; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\nb\n"
+  },
+  {
+   "cmd": "export PATH=/x:${PATH:-}; echo ${PATH%%:*}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "/x\n"
+  },
+  {
+   "cmd": "echo ${HOME:-nohome} ${NOSUCH_Q:-nohome}",
+   "code": 0,
+   "stderr": "",
+   "stdout": "/root nohome\n"
+  },
+  {
+   "cmd": "printf '  a b  \\n' | while IFS= read -r l; do echo \"[$l]\"; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[  a b  ]\n"
+  },
+  {
+   "cmd": "printf 'x:y:z\\n' | while IFS=: read a b; do echo \"$b|$a\"; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "y:z|x\n"
+  },
+  {
+   "cmd": "printf 'a,,b\\n' | while IFS=, read a b c; do echo \"[$a][$b][$c]\"; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[a][][b]\n"
+  },
+  {
+   "cmd": "FOO=bar sh -c 'echo $FOO'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "bar\n"
+  },
+  {
+   "cmd": "FOO=bar; FOO=baz sh -c 'echo $FOO'; echo $FOO",
+   "code": 0,
+   "stderr": "",
+   "stdout": "baz\nbar\n"
+  },
+  {
+   "cmd": "X=1 Y=2 sh -c 'echo $X$Y'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "12\n"
   }
  ],
  "image": "ubuntu:22.04",

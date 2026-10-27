@@ -474,6 +474,9 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 		for _, w := range words {
 			resolved = append(resolved, s.substitute(w, depth, bait, action))
 		}
+		if s.halted { // ${v:?msg} failed while expanding the words: the statement does not run
+			return "", s.haltCode, false, false
+		}
 		if len(resolved) == 0 {
 			return "", 0, false, false
 		}
@@ -489,6 +492,7 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 		}
 
 		cmdWords, red := extractRedirects(resolved)
+		prefix := leadingAssignments(cmdWords)
 		cmdWords = stripAssignments(cmdWords)
 		if len(cmdWords) == 0 {
 			// `> FILE` alone creates or truncates FILE.
@@ -510,7 +514,9 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 		} else if s.pipeStdin != nil {
 			stdin = s.pipeStdin
 		}
+		restore := s.applyPrefix(prefix)
 		out, code := s.execBuiltin(cmdWords[0], cmdWords[1:], bait, action, stdin)
+		restore()
 		if red.mergeStderrToStdout && isErrorChannel(cmdWords[0], code) {
 			out = s.addLine(out)
 		}
@@ -787,15 +793,19 @@ func (s *Interpreter) substitute(word string, depth int, bait *[]BaitHit, action
 		}
 
 		if c == '$' && i+1 < len(word) && word[i+1] == '{' {
-			closeIdx := strings.IndexByte(word[i+2:], '}')
-			if closeIdx == -1 {
+			end := matchingBrace(word, i+2)
+			if end == -1 {
 				out.WriteByte(c)
 				i++
 				continue
 			}
-			name := word[i+2 : i+2+closeIdx]
-			out.WriteString(s.param(name))
-			i = i + 2 + closeIdx + 1
+			inner := word[i+2 : end]
+			if v, ok := s.expandBrace(inner, depth, bait, action); ok {
+				out.WriteString(v)
+			} else {
+				out.WriteString(s.param(inner)) // a form not implemented: what it always did
+			}
+			i = end + 1
 			continue
 		}
 
@@ -1256,7 +1266,9 @@ func (s *Interpreter) testBuiltin(cmd string, args []string) int {
 		_, n := s.lookup(target)
 		switch flag {
 		case "-f":
-			return result(n != nil && n.Type == NodeFile)
+			return result(n != nil && n.Type == NodeFile && !strings.HasPrefix(n.Mode, "c"))
+		case "-c":
+			return result(n != nil && strings.HasPrefix(n.Mode, "c"))
 		case "-d":
 			return result(n != nil && n.Type == NodeDir)
 		case "-e", "-r", "-w":
@@ -2130,4 +2142,34 @@ func (s *Interpreter) setBuiltin(args []string) (string, int) {
 		}
 	}
 	return "", 0
+}
+
+// applyPrefix sets the NAME=value words that precede a command for the length of that command and returns
+// the function that puts the old values back, as bash does for `IFS= read x` and `FOO=1 cmd`.
+func (s *Interpreter) applyPrefix(assigns []string) func() {
+	if len(assigns) == 0 {
+		return func() {}
+	}
+	type prev struct {
+		v   string
+		had bool
+	}
+	saved := map[string]prev{}
+	for _, w := range assigns {
+		k, v, _ := strings.Cut(w, "=")
+		if _, seen := saved[k]; !seen {
+			old, had := s.Env[k]
+			saved[k] = prev{old, had}
+		}
+		s.Env[k] = v
+	}
+	return func() {
+		for k, p := range saved {
+			if p.had {
+				s.Env[k] = p.v
+			} else {
+				delete(s.Env, k)
+			}
+		}
+	}
 }

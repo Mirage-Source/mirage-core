@@ -89,12 +89,13 @@ var fs = map[string]*Node{
 	"/boot":     emptySystemDir(),
 	"/dev": {
 		Type: NodeDir, Mode: "drwxr-xr-x", Owner: "root", Group: "root", MTime: "Jul 11 09:11", Total: 0,
-		Children: []string{"shm"},
+		Children: []string{"null", "shm"},
 	},
-	"/dev/shm": {Type: NodeDir, Mode: "drwxrwxrwt", Owner: "root", Group: "root", MTime: "Jul 11 09:11", Total: 0},
-	"/lib":     emptySystemDir(),
-	"/lib64":   emptySystemDir(),
-	"/opt":     emptySystemDir(),
+	"/dev/null": {Type: NodeFile, Mode: "crw-rw-rw-", Owner: "root", Group: "root", MTime: "Jul 11 09:11"},
+	"/dev/shm":  {Type: NodeDir, Mode: "drwxrwxrwt", Owner: "root", Group: "root", MTime: "Jul 11 09:11", Total: 0},
+	"/lib":      emptySystemDir(),
+	"/lib64":    emptySystemDir(),
+	"/opt":      emptySystemDir(),
 	"/proc": {
 		Type: NodeDir, Mode: "dr-xr-xr-x", Owner: "root", Group: "root", MTime: "Jul 11 09:11", Total: 0,
 		Children: []string{"version", "cpuinfo", "meminfo", "uptime", "self"},
@@ -401,6 +402,9 @@ func (s *Interpreter) lookupNoFollow(target string) (string, *Node) {
 // already exist.
 func (s *Interpreter) writeFile(target, content string, appendMode bool) (string, int) {
 	clean := s.resolvePath(target)
+	if _, dev := s.lookup(clean); dev != nil && strings.HasPrefix(dev.Mode, "c") {
+		return "", 0 // a character device (/dev/null) discards what is written to it, by any route
+	}
 	parentPath := path.Dir(clean)
 	_, parent := s.lookup(parentPath)
 	if parent == nil || parent.Type != NodeDir {

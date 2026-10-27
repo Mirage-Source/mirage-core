@@ -352,6 +352,16 @@ func tokenizeWords(text string) []string {
 			if verbatim = parenDepth > 0; verbatim {
 				cur.WriteByte(c)
 			}
+		case c == '$' && parenDepth == 0 && i+1 < len(runes) && runes[i+1] == '{':
+			// ${...} is one word even when it holds spaces (${y:-a b}, ${y: -2}). It is expanded later,
+			// and the quotes inside its operands are removed then.
+			if end := matchingBrace(text, i+2); end >= 0 {
+				cur.WriteString(text[i : end+1])
+				i = end
+			} else {
+				cur.WriteByte(c)
+			}
+			hasCur = true
 		case c == '$' && i+1 < len(runes) && runes[i+1] == '(':
 			cur.WriteByte(c)
 			cur.WriteByte('(')

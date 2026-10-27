@@ -561,19 +561,12 @@ func (s *Interpreter) readBuiltin(args []string) (string, int) {
 	if len(names) == 0 {
 		s.Env["REPLY"] = line // no names: the whole line, untrimmed
 	} else {
-		// IFS is space and tab: leading ones are dropped, each name takes one field, and the last name
-		// takes the rest of the line as it is, minus trailing blanks.
-		rest := strings.TrimLeft(line, " \t")
-		for i, name := range names {
-			if i == len(names)-1 {
-				s.Env[name] = strings.TrimRight(rest, " \t")
-				break
-			}
-			if j := strings.IndexAny(rest, " \t"); j >= 0 {
-				s.Env[name], rest = rest[:j], strings.TrimLeft(rest[j:], " \t")
-			} else {
-				s.Env[name], rest = rest, ""
-			}
+		ifs, set := s.Env["IFS"]
+		if !set {
+			ifs = " \t\n"
+		}
+		for i, v := range splitReadFields(line, len(names), ifs) {
+			s.Env[names[i]] = v
 		}
 	}
 	if partial {
@@ -817,4 +810,43 @@ func (s *Interpreter) errexitCheck(items []item, i, code int) {
 		return
 	}
 	s.halted, s.haltCode = true, code
+}
+
+// splitReadFields splits line into n fields the way `read` does with IFS. Whitespace in IFS is dropped at
+// the ends and runs of it count as one separator; any other IFS character separates exactly (a,,b has an
+// empty middle field). The last field takes the rest of the line. An empty IFS does not split at all.
+func splitReadFields(line string, n int, ifs string) []string {
+	isSep := func(c byte) bool { return strings.IndexByte(ifs, c) >= 0 }
+	isWS := func(c byte) bool { return (c == ' ' || c == '\t' || c == '\n') && isSep(c) }
+	fields := make([]string, n)
+	i := 0
+	for i < len(line) && isWS(line[i]) {
+		i++
+	}
+	for f := 0; f < n; f++ {
+		if f == n-1 {
+			rest := line[i:]
+			for len(rest) > 0 && isWS(rest[len(rest)-1]) {
+				rest = rest[:len(rest)-1]
+			}
+			fields[f] = rest
+			break
+		}
+		j := i
+		for j < len(line) && !isSep(line[j]) {
+			j++
+		}
+		fields[f] = line[i:j]
+		i = j
+		for i < len(line) && isWS(line[i]) {
+			i++
+		}
+		if i < len(line) && isSep(line[i]) && !isWS(line[i]) {
+			i++
+			for i < len(line) && isWS(line[i]) {
+				i++
+			}
+		}
+	}
+	return fields
 }

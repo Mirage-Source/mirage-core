@@ -34,10 +34,17 @@ func TestUnknownCommandStderrToDevNullIsSilentAndCreatesNoFile(t *testing.T) {
 	if out != "" || code != 127 {
 		t.Fatalf("nmap ... 2>/dev/null = %q (code %d), want empty output, code 127", out, code)
 	}
-	// /dev/null must not become a real (empty) file node in the sim fs.
-	_, lsCode, _ := s.Run("cat /dev/null")
-	if lsCode == 0 {
-		t.Fatalf("/dev/null should not have been materialized as a real file")
+	// /dev/null is a device node, not a file the redirect can create or fill: after writing to it, it is
+	// still the empty character device, and reading it succeeds with nothing, as on a real host.
+	s.Run("echo junk > /dev/null")
+	if out, code, _ := s.Run("cat /dev/null"); code != 0 || out != "" {
+		t.Fatalf("cat /dev/null = %q (code %d), want nothing and success", out, code)
+	}
+	if _, code, _ := s.Run("[ -c /dev/null ]"); code != 0 {
+		t.Fatalf("/dev/null should still be a character device")
+	}
+	if _, code, _ := s.Run("[ -f /dev/null ]"); code == 0 {
+		t.Fatalf("/dev/null must not have become a regular file")
 	}
 }
 
