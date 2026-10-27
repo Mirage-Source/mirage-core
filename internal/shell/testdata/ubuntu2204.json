@@ -948,16 +948,99 @@
    "code": 0,
    "stderr": "",
    "stdout": "x\ny\n"
-  }
- ],
- "image": "ubuntu:22.04",
- "image_id": "sha256:e0f80c829509ef4df9e76bd8944eb7b8ec25cbb379b112a7f9448b2c77a77c9b",
- "known_gaps": [
+  },
+  {
+   "cmd": "echo hi | while read -r l; do echo got $l; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "got hi\n"
+  },
+  {
+   "cmd": "printf 'a b\\nc d\\n' | while read x y; do echo $y $x; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "b a\nd c\n"
+  },
+  {
+   "cmd": "printf '1\\n2\\n3\\n' | while read n; do echo n=$n; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "n=1\nn=2\nn=3\n"
+  },
+  {
+   "cmd": "printf 'a   b  c\\n' | while read x y; do echo \"[$x][$y]\"; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[a][b  c]\n"
+  },
+  {
+   "cmd": "printf 'a   b  \\n' | while read l; do echo \"[$l]\"; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[a   b]\n"
+  },
+  {
+   "cmd": "printf 'a\\\\\\\\b\\n' | while read x; do echo $x; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\\b\n"
+  },
+  {
+   "cmd": "printf 'a\\\\\\\\b\\n' | while read -r x; do echo $x; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\\\\b\n"
+  },
+  {
+   "cmd": "printf 'x\\n' | while read v; do y=1; done; echo \"[$y]\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[]\n"
+  },
+  {
+   "cmd": "printf 'a\\nb\\n' | while read l; do echo $l; done | sort -r",
+   "code": 0,
+   "stderr": "",
+   "stdout": "b\na\n"
+  },
+  {
+   "cmd": "printf 'a' | while read x; do echo got $x; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": ""
+  },
+  {
+   "cmd": "printf 'a\\n\\nb\\n' | while read l; do echo \"[$l]\"; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[a]\n[]\n[b]\n"
+  },
+  {
+   "cmd": "printf 'a b\\n' | while read x y; do for z in 1 2; do echo $x$z; done; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a1\na2\n"
+  },
+  {
+   "cmd": "printf 'one\\n' | while read l; do echo \"$l\" | tr a-z A-Z; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ONE\n"
+  },
+  {
+   "cmd": "printf 'a\\nb\\n' | while read l\n do echo $l\n done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\nb\n"
+  },
   {
    "cmd": "echo \"a b\" | while read x y; do echo \"$y $x\"; done",
    "code": 0,
    "stderr": "",
    "stdout": "b a\n"
   }
- ]
+ ],
+ "image": "ubuntu:22.04",
+ "image_id": "sha256:e0f80c829509ef4df9e76bd8944eb7b8ec25cbb379b112a7f9448b2c77a77c9b",
+ "known_gaps": []
 }

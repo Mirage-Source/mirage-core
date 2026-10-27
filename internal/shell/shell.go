@@ -129,8 +129,9 @@ type Interpreter struct {
 	Username string
 	HomeDir  string
 
-	nesting   int
-	loopInput *[]string // lines left for `read` in a `done < file` loop
+	nesting     int
+	loopInput   *[]string // lines left for `read` in a `done < file` or `cmd | while` loop
+	loopPartial bool      // the last of those lines had no trailing newline, so `read` fails on it
 
 	exec     bool // running as sshd's `bash -c <command>` (RunExec), not a login shell
 	tty      bool // stdout is a terminal (interactive shell, or exec with a pty)

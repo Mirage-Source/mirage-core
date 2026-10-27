@@ -40,6 +40,7 @@ type item struct {
 	arms     []caseArm
 	words    []string
 	input    string // while/until: file from `done < file`, read by `read`
+	feed     string // while/until: the producer of `producer | while ...`; its output is what `read` consumes
 	line     int    // simple: see statement.Line
 }
 
@@ -211,6 +212,14 @@ func (p *parser) item() (item, error) {
 
 func (p *parser) itemInner() (item, error) {
 	st, _ := p.cur()
+	// `producer | while read ...; do ...; done`: the loop is the last stage of the pipeline and reads the
+	// producer's output. Parse it as the loop and remember the producer.
+	if feed, loop, ok := splitFeed(st.Text); ok {
+		p.stmts[p.pos].Text = loop
+		it, err := p.itemInner()
+		it.feed = feed
+		return it, err
+	}
 	if strings.HasPrefix(st.Text, "(") && !strings.HasPrefix(st.Text, "((") {
 		return p.subshellItem(st)
 	}
@@ -465,18 +474,39 @@ func (p *parser) whileItem(sep string, until bool) (item, error) {
 // runWhile runs a while/until loop, capped like for at maxLoopIterations.
 // A `done < file` redirect becomes the lines `read` consumes.
 func (s *Interpreter) runWhile(it item, depth int, bait *[]BaitHit, action string, outputs *[]outChunk) int {
-	saved := s.loopInput
-	defer func() { s.loopInput = saved }()
-	if it.input != "" {
+	saved, savedPartial := s.loopInput, s.loopPartial
+	defer func() { s.loopInput, s.loopPartial = saved, savedPartial }()
+	s.loopPartial = false
+	switch {
+	case it.feed != "":
+		// A pipeline stage runs in a subshell: nothing the loop assigns or `cd`s into outlives it.
+		cwd, env := s.Cwd, maps.Clone(s.Env)
+		defer func() { s.Cwd, s.Env = cwd, env }()
+		chunks, _ := s.evalChunks(it.feed, depth, bait, action)
+		var stdout []outChunk
+		for _, c := range chunks {
+			if c.stderr {
+				*outputs = append(*outputs, c)
+			} else {
+				stdout = append(stdout, c)
+			}
+		}
+		text := strings.ReplaceAll(joinChunks(stdout, "\r\n"), "\r\n", "\n")
+		if text != "" && (len(stdout) == 0 || !stdout[len(stdout)-1].noNewline) {
+			text += "\n"
+		}
+		lines, partial := readLines(text)
+		s.loopInput, s.loopPartial = &lines, partial
+	case it.input != "":
 		file := s.expandWord(it.input, depth, bait, action)
 		text, ok := s.builtinInput(file, nil)
 		if !ok || file == "" {
 			*outputs = append(*outputs, s.chunk(s.shellMsg(s.profile.msgs.openMissing, file), true))
 			return 1
 		}
-		lines := splitLines(text)
-		s.loopInput = &lines
-	} else {
+		lines, partial := readLines(text)
+		s.loopInput, s.loopPartial = &lines, partial
+	default:
 		s.loopInput = nil
 	}
 
@@ -507,27 +537,117 @@ func (s *Interpreter) readBuiltin(args []string) (string, int) {
 	}
 	line := (*s.loopInput)[0]
 	*s.loopInput = (*s.loopInput)[1:]
+	partial := s.loopPartial && len(*s.loopInput) == 0 // an unterminated last line is assigned, but read fails
+
 	var names []string
+	raw := false
 	for _, a := range args {
-		if !strings.HasPrefix(a, "-") {
+		switch {
+		case a == "--":
+		case strings.HasPrefix(a, "-"):
+			raw = raw || strings.Contains(a, "r")
+		default:
 			names = append(names, a)
 		}
 	}
-	if len(names) == 0 {
-		names = []string{"REPLY"}
+	if !raw {
+		line = unescapeRead(line)
 	}
-	fields := strings.Fields(line)
-	for i, name := range names {
-		switch {
-		case i == len(names)-1 && i < len(fields):
-			s.Env[name] = strings.Join(fields[i:], " ")
-		case i < len(fields):
-			s.Env[name] = fields[i]
-		default:
-			s.Env[name] = ""
+	if len(names) == 0 {
+		s.Env["REPLY"] = line // no names: the whole line, untrimmed
+	} else {
+		// IFS is space and tab: leading ones are dropped, each name takes one field, and the last name
+		// takes the rest of the line as it is, minus trailing blanks.
+		rest := strings.TrimLeft(line, " \t")
+		for i, name := range names {
+			if i == len(names)-1 {
+				s.Env[name] = strings.TrimRight(rest, " \t")
+				break
+			}
+			if j := strings.IndexAny(rest, " \t"); j >= 0 {
+				s.Env[name], rest = rest[:j], strings.TrimLeft(rest[j:], " \t")
+			} else {
+				s.Env[name], rest = rest, ""
+			}
 		}
 	}
+	if partial {
+		return "", 1
+	}
 	return "", 0
+}
+
+// unescapeRead drops the backslash `read` removes without -r, keeping the character after it.
+func unescapeRead(line string) string {
+	if !strings.Contains(line, "\\") {
+		return line
+	}
+	var b strings.Builder
+	for i := 0; i < len(line); i++ {
+		if line[i] == '\\' {
+			i++
+			if i >= len(line) {
+				break
+			}
+		}
+		b.WriteByte(line[i])
+	}
+	return b.String()
+}
+
+// readLines splits text into the lines `read` sees. Blank lines are kept; partial is true when the last
+// line has no newline.
+func readLines(text string) (lines []string, partial bool) {
+	if text == "" {
+		return nil, false
+	}
+	lines = strings.Split(text, "\n")
+	if lines[len(lines)-1] == "" {
+		return lines[:len(lines)-1], false
+	}
+	return lines, true
+}
+
+// splitFeed finds `producer | while ...` (or until): a loop that is the last stage of a pipeline. It
+// returns the producer and the loop's first statement, splitting at the last top-level pipe whose
+// right-hand side starts with while or until.
+func splitFeed(text string) (feed, loop string, ok bool) {
+	var quote byte
+	depth, cut := 0, -1
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		if quote != 0 {
+			switch {
+			case c == '\\' && quote == '"':
+				i++
+			case c == quote:
+				quote = 0
+			}
+			continue
+		}
+		switch {
+		case c == '\\':
+			i++
+		case c == '\'' || c == '"':
+			quote = c
+		case c == '(':
+			depth++
+		case c == ')' && depth > 0:
+			depth--
+		case c == '|' && depth == 0:
+			if i+1 < len(text) && text[i+1] == '|' {
+				i++
+				continue
+			}
+			if kw, _ := splitKeyword(strings.TrimSpace(text[i+1:])); kw == "while" || kw == "until" {
+				cut = i
+			}
+		}
+	}
+	if cut < 0 {
+		return "", "", false
+	}
+	return strings.TrimSpace(text[:cut]), strings.TrimSpace(text[cut+1:]), true
 }
 
 func (s *Interpreter) expandWord(raw string, depth int, bait *[]BaitHit, action string) string {
