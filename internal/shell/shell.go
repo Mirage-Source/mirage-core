@@ -686,7 +686,7 @@ func isErrorChannel(cmd string, code int) bool {
 	// printf reports bad numbers on stderr itself (pendingErr) and still
 	// prints its output.
 	// apt writes its errors to pendingErr; its usage text is stdout.
-	if cmd == "which" || (cmd == "ping" && code == 1) || (cmd == "printf" && code == 1) || cmd == "apt" || cmd == "apt-get" {
+	if cmd == "which" || (cmd == "ping" && code == 1) || (cmd == "printf" && code == 1) || cmd == "apt" || cmd == "apt-get" || cmd == "awk" || cmd == "mawk" {
 		return false
 	}
 	return code != 0

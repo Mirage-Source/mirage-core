@@ -1974,6 +1974,2184 @@
    "code": 0,
    "stderr": "",
    "stdout": "[bash: line 1: nosuchcmd: command not found]\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '{ if ($1 == \"a\") print \"A\"; else if ($1 == 1) print \"ONE\"; else print \"other\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "A\nONE\nother\nother\nother\nother\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '{ if (NF > 3) { print \"long\"; print NF } else print \"short\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "short\nshort\nlong\n4\nshort\nshort\nshort\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { i = 0; while (i < 3) { print i; i++ } }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0\n1\n2\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { i = 5; do { print i; i-- } while (i > 3) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "5\n4\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { for (i = 0; i < 4; i++) print i*i }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0\n1\n4\n9\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { for (i = 0; i < 10; i++) { if (i == 2) continue; if (i == 5) break; print i } }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0\n1\n3\n4\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { for (;;) { n++; if (n > 3) break }; print n }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "4\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  'NR == 2 { next } { print NR\": \"$0 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1: a b c\n3: foo bar baz qux\n4: \n5:   lead  trail  \n6: x:y:z\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '{ print; exit } END { print \"end\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a b c\nend\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { exit 3; print \"no\" }'",
+   "code": 3,
+   "stderr": "",
+   "stdout": ""
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  'END { print NR; exit 4 }'",
+   "code": 4,
+   "stderr": "",
+   "stdout": "6\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { x = 1; if (x) print \"t\"; if (!x) print \"f\"; if (\"\") print \"e\"; if (\"0\") print \"s0\"; if (0) print \"n0\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "t\ns0\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { a[\"x\"] = 1; a[\"y\"] = 2; a[\"x\"] += 5; print a[\"x\"], a[\"y\"], length(a) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "6 2 2\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { a[1]; if (1 in a) print \"in\"; if (!(2 in a)) print \"notin\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "in\nnotin\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { for (i = 1; i <= 3; i++) a[i] = i*10; n = 0; for (k in a) n += a[k]; print n }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "60\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { a[1]=1; a[2]=2; delete a[1]; print length(a), (1 in a), (2 in a) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 0 1\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { a[1]=1; a[2]=2; delete a; print length(a) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { a[1,2] = \"x\"; for (k in a) { split(k, p, SUBSEP); print p[1], p[2] } }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 2\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { a[\"k\"]++; a[\"k\"]++; print a[\"k\"] }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"a:b:c\", p, \":\"); print n, p[1], p[2], p[3] }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3 a b c\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"  a  b  \", p); print n, p[1], p[2] }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2 a b\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"a1b22c\", p, /[0-9]+/); print n, p[1], p[2], p[3] }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3 a b c\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"\", p); print n, length(p) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0 0\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"abc\", p, \"\"); print n, p[1], p[2], p[3] }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3 a b c\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"a.b.c\", p, \".\"); print n, p[2] }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3 b\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { split(\"3 10 9\", p); print (p[1] < p[2]), (p[2] < p[3]) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 0\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print f(3); } function f(n) { return n * 2 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "6\n"
+  },
+  {
+   "cmd": "awk 'function f(n) { return n * 2 } BEGIN { print f(3), f(f(2)) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "6 8\n"
+  },
+  {
+   "cmd": "awk 'function fact(n) { return n <= 1 ? 1 : n * fact(n - 1) } BEGIN { print fact(10) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3628800\n"
+  },
+  {
+   "cmd": "awk 'function g(a, i) { a[1] = 5; i = 9 } BEGIN { g(arr, j); print arr[1], j }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "5 \n"
+  },
+  {
+   "cmd": "awk 'function h(s,   t) { t = s s; return t } BEGIN { print h(\"ab\"), t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "abab \n"
+  },
+  {
+   "cmd": "awk 'function noret(x) { x = 1 } BEGIN { v = noret(2); print \"[\" v \"]\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[]\n"
+  },
+  {
+   "cmd": "awk 'function f(a,  n, i, t) { n = split(a, parts, \",\"); for (i = 1; i <= n; i++) t += parts[i]; return t } BEGIN { print f(\"1,2,3,4\") }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "10\n"
+  },
+  {
+   "cmd": "awk 'function f(x) { x[1] = 1 } BEGIN { f(z); print length(z) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n"
+  },
+  {
+   "cmd": "awk 'function max(a, b) { return a > b ? a : b }\nBEGIN { print max(3, 7), max(\"b\", \"a\") }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "7 b\n"
+  },
+  {
+   "cmd": "awk 'function f(n,   i) { for (i = 0; i < n; i++) s = s i; return s } BEGIN { print f(5) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "01234\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print length(\"hello\"), length(\"\"), length(12345) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "5 0 5\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '{ print length }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "5\n5\n15\n0\n15\n5\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '{ print length() }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "5\n5\n15\n0\n15\n5\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print substr(\"hello\", 2, 3), substr(\"hello\", 2), substr(\"hello\", 0, 2), substr(\"hello\", -1, 3), substr(\"hello\", 4, 100), substr(\"hello\", 1.5, 2.3) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ell ello he hell lo he\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print index(\"hello\", \"ll\"), index(\"hello\", \"z\"), index(\"\", \"a\") }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3 0 0\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print toupper(\"aBc\"), tolower(\"AbC\"), toupper(123) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ABC abc 123\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"hello world\"; n = gsub(/o/, \"0\", s); print n, s }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2 hell0 w0rld\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"hello\"; sub(/l+/, \"[&]\", s); print s }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "he[ll]o\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"a.b.c\"; gsub(\".\", \"-\", s); print s }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "-----\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"a.b.c\"; gsub(/\\./, \"-\", s); print s }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a-b-c\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"aaa\"; gsub(/a/, \"\\\\&\", s); print s }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "&&&\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abc\"; gsub(//, \"-\", s); print s }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "-a-b-c-\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abc\"; gsub(/x*/, \"-\", s); print s }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "-a-b-c-\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"hello\"; print gsub(/z/, \"y\", s), s }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0 hello\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '{ gsub(/[aeiou]/, \"#\"); print }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "# b c\n1 2 3\nf## b#r b#z q#x\n\n  l##d  tr##l  \nx:y:z\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '{ sub(/^ +/, \"\"); print \"[\" $0 \"]\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[a b c]\n[1 2 3]\n[foo bar baz qux]\n[]\n[lead  trail  ]\n[x:y:z]\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '{ n = gsub(/ +/, \" \"); print n \": \" $0 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2: a b c\n2: 1 2 3\n3: foo bar baz qux\n0: \n3:  lead trail \n0: x:y:z\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print match(\"foobar\", /o+/), RSTART, RLENGTH }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2 2 2\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print match(\"foobar\", /z/), RSTART, RLENGTH }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0 0 -1\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { x = sprintf(\"%05.1f|%-5s|%5s|%c|%c|%x|%o|%e|%d%%\", 3.14159, \"ab\", \"cd\", 65, \"hello\", 255, 8, 12345.678, 42); print x }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "003.1|ab   |   cd|A|h|ff|10|1.234568e+04|42%\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { printf \"%s %s %s\\n\", \"a\", \"b\", \"c\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a b c\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { printf \"%d %i\\n\", \"12abc\", 3.9 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "12 3\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { printf \"%5.2f|%-8d|%08d|%+d|% d\\n\", 3.14159, 42, 42, 42, 42 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": " 3.14|42      |00000042|+42| 42\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { printf \"%s\\n\" }'",
+   "code": 2,
+   "stderr": "awk: run time error: not enough arguments passed to printf(\"%s\n\")\n\tFILENAME=\"\" FNR=0 NR=0\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "awk  'BEGIN { printf \"%*d|\\n\", 5, 42 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "   42|\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { printf \"no newline\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "no newline"
+  },
+  {
+   "cmd": "awk  'BEGIN { printf \"%c%c%c\\n\", 72, 105, 33 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "Hi!\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { printf \"%.3s|\\n\", \"abcdef\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "abc|\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print sprintf(\"%d\", 2147483648), sprintf(\"%d\", -2147483649), sprintf(\"%d\", 1e18) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2147483647 -2147483647 2147483647\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print int(3.9), int(-3.9), int(\"4x\"), int(\"\") }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3 -3 4 0\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print 7 % 3, -7 % 3, 7 % -3, 2 ^ 10, 2 ** 3, 10 / 4 }'",
+   "code": 2,
+   "stderr": "awk: line 1: syntax error at or near *\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "awk  'BEGIN { print 1e6, 1e-5, 100000 * 100000, 0.1 + 0.2, 1/3, 123456789, 1234567890123 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1000000 1e-05 1e+10 0.3 0.333333 123456789 1.23457e+12\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print sqrt(16), exp(0), log(1), sin(0), cos(0), atan2(0, -1) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "4 1 0 0 1 3.14159\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print 1 == 1.0, \"a\" < \"b\", \"10\" < \"9\", 10 < 9, \"abc\" < 1 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 1 1 0 0\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print substr(\"abcdef\", 3) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "cdef\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print length(1/3) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "8\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { x = \"3x\"; print x + 1, x * 2, -x, +x, !x }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "4 6 -3 3 0\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print 1 \" \" 2, 1 + 2 \" \" 3, \"a\" 1 + 1 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 2 3 3 a2\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print (1, 2) in a }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print 5 > 3 ? \"gt\" : \"le\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": ""
+  },
+  {
+   "cmd": "awk  'BEGIN { x = 5; x += 2; x -= 1; x *= 3; x /= 2; x %= 5; x ^= 2; print x }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "16\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { x = 3; print x++ + ++x, x, x-- - --x, x }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "8 5 2 3\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print -2 ^ 2, 2 ^ 3 ^ 2, !0 + 1 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "-4 512 2\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print \"a\" > \"/dev/stderr\" }'",
+   "code": 0,
+   "stderr": "a\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "awk  'BEGIN { print \"to stdout\" > \"/dev/stdout\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "to stdout\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '{ print $1, $NF, $(NF-1), NF }'",
+   "code": 2,
+   "stderr": "awk: run time error: negative field index $-1\n\tFILENAME=\"-\" FNR=4 NR=4\n",
+   "stdout": "a c b 3\n1 3 2 3\nfoo qux baz 4\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '{ $2 = \"X\"; print; print NF }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a X c\n3\n1 X 3\n3\nfoo X baz qux\n4\n X\n2\nlead X\n2\nx:y:z X\n2\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '{ $5 = \"five\"; print; print NF }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a b c  five\n5\n1 2 3  five\n5\nfoo bar baz qux five\n5\n    five\n5\nlead trail   five\n5\nx:y:z    five\n5\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '{ NF = 2; print; print NF }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a b\n2\n1 2\n2\nfoo bar\n2\n \n2\nlead trail\n2\nx:y:z \n2\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '{ $0 = \"p q r\"; print $2, NF }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "q 3\nq 3\nq 3\nq 3\nq 3\nq 3\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk -F: '{ print $0 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a b c\n1 2 3\nfoo bar baz qux\n\n  lead  trail  \nx:y:z\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk -F'[: ]' '{ print $2 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "b\n2\nbar\n\n\ny\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  'BEGIN { FS = \":\" } { print $1 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a b c\n1 2 3\nfoo bar baz qux\n\n  lead  trail  \nx\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  'BEGIN { OFS = \"-\" } { $1 = $1; print }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a-b-c\n1-2-3\nfoo-bar-baz-qux\n\nlead-trail\nx:y:z\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  'BEGIN { ORS = \"|\" } { print $1 } END { printf \"\\n\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a|1|foo||lead|x:y:z|\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '{ print NR, FNR, NF }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 1 3\n2 2 3\n3 3 4\n4 4 0\n5 5 2\n6 6 1\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  'END { print $0, NF }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "x:y:z 1\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '/foo/'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "foo bar baz qux\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '/foo/ { print \"m:\" $0 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "m:foo bar baz qux\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '!/foo/ { print \"n:\" $0 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "n:a b c\nn:1 2 3\nn:\nn:  lead  trail  \nn:x:y:z\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '$1 ~ /^[a-z]+$/ { print \"alpha:\" $1 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "alpha:a\nalpha:foo\nalpha:lead\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '$1 !~ /^[a-z]+$/ { print \"nonalpha:\" $1 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "nonalpha:1\nnonalpha:\nnonalpha:x:y:z\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  'NR == 1, NR == 2 { print \"range:\" $0 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "range:a b c\nrange:1 2 3\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  'NR % 2'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a b c\nfoo bar baz qux\n  lead  trail  \n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  'length > 5'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "foo bar baz qux\n  lead  trail  \n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  'NF'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a b c\n1 2 3\nfoo bar baz qux\n  lead  trail  \nx:y:z\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '!NF { print \"blank at \" NR }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "blank at 4\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '$1 > 0'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a b c\n1 2 3\nfoo bar baz qux\n  lead  trail  \nx:y:z\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '$1 == \"foo\"'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "foo bar baz qux\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '{ a[NR] = $0 } END { for (i = NR; i >= 1; i--) print a[i] }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "x:y:z\n  lead  trail  \n\nfoo bar baz qux\n1 2 3\na b c\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '{ s += $1 } END { print s, s / NR }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 0.166667\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '{ for (i = 1; i <= NF; i++) w[$i]++ } END { n = 0; for (k in w) n++; print n }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "13\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n1 2 3\\nfoo bar baz qux\\n\\n  lead  trail  \\nx:y:z\\n' | awk  '{ x = $1; if (x + 0 == x) print x \" numeric\"; else print x \" string\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a string\n1 numeric\nfoo string\n string\nlead string\nx:y:z string\n"
+  },
+  {
+   "cmd": "printf '3\\n10\\n9\\n' | awk '{ if ($1 > m) m = $1 } END { print m }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "10\n"
+  },
+  {
+   "cmd": "printf '3\\n10\\n9\\n' | awk '{ a[NR] = $1 } END { print (a[1] < a[2]), (a[2] < a[3]) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 0\n"
+  },
+  {
+   "cmd": "printf 'a,b;c\\n' | awk -F'[,;]' '{ print $2, NF }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "b 3\n"
+  },
+  {
+   "cmd": "printf 'a\\tb c\\n' | awk -F'\\t' '{ print $2 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "b c\n"
+  },
+  {
+   "cmd": "printf 'aXXbXc\\n' | awk -FX '{ print NF }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "4\n"
+  },
+  {
+   "cmd": "printf 'a b\\n' | awk -v n=5 -v s=hi '{ print n + 1, s, $1 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "6 hi a\n"
+  },
+  {
+   "cmd": "printf 'a b\\n' | awk -v 'n=1 2' '{ print n }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 2\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print ARGC, ARGV[0] }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 awk\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print length(ENVIRON) > 0 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": ""
+  },
+  {
+   "cmd": "printf 'x\\n' > af.txt; awk '{ print FILENAME, $0 }' af.txt",
+   "code": 0,
+   "stderr": "",
+   "stdout": "af.txt x\n"
+  },
+  {
+   "cmd": "printf 'l1\\nl2\\n' > af.txt; awk 'BEGIN { while ((getline line < \"af.txt\") > 0) print \"got \" line; close(\"af.txt\") }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "got l1\ngot l2\n"
+  },
+  {
+   "cmd": "printf 'l1\\nl2\\n' > af.txt; awk 'BEGIN { getline < \"af.txt\"; print $0, NR }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "l1 0\n"
+  },
+  {
+   "cmd": "printf 'l1\\nl2\\n' > af.txt; awk 'BEGIN { r = getline x < \"nofile\"; print r }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "-1\n"
+  },
+  {
+   "cmd": "printf 'l1\\nl2\\n' > af.txt; awk 'BEGIN { getline x < \"af.txt\"; getline y < \"af.txt\"; print x y }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "l1l2\n"
+  },
+  {
+   "cmd": "printf 'l1\\nl2\\nl3\\n' | awk 'NR == 1 { getline; print \"after getline: \" $0, NR }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "after getline: l2 2\n"
+  },
+  {
+   "cmd": "printf 'l1\\nl2\\nl3\\n' | awk 'NR == 1 { getline v; print \"v=\" v, $0, NR }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "v=l2 l1 2\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { \"echo hi\" | getline x; print x }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "hi\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { while ((\"printf \\\"a\\\\nb\\\\n\\\"\" | getline l) > 0) print \"L:\" l }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "L:a\nL:b\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print \"x\" > \"awout.txt\"; print \"y\" >> \"awout.txt\"; close(\"awout.txt\"); while ((getline l < \"awout.txt\") > 0) print l }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "x\ny\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { exit } END { print \"end ran\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "end ran\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print length() }' </dev/null",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { getline; print \"got:\" $0 }' </dev/null",
+   "code": 0,
+   "stderr": "",
+   "stdout": "got:\n"
+  },
+  {
+   "cmd": "awk 'END { print NR }' </dev/null",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { printf \"%s\", substr(\"x\", 1) }'; echo",
+   "code": 0,
+   "stderr": "",
+   "stdout": "x\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print 1 }' nosuchfile; echo \"rc=$?\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\nrc=0\n"
+  },
+  {
+   "cmd": "awk '{ print }' nosuchfile; echo \"rc=$?\"",
+   "code": 0,
+   "stderr": "awk: cannot open nosuchfile (No such file or directory)\n",
+   "stdout": "rc=2\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print 1/0 }'; echo \"rc=$?\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "inf\nrc=0\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print 1 +  }'; echo \"rc=$?\"",
+   "code": 0,
+   "stderr": "awk: line 1: syntax error at or near }\n",
+   "stdout": "rc=2\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { x = ; }'; echo \"rc=$?\"",
+   "code": 0,
+   "stderr": "awk: line 1: syntax error at or near ;\n",
+   "stdout": "rc=2\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print foo(1) }'; echo \"rc=$?\"",
+   "code": 0,
+   "stderr": "awk: line 2: function foo never defined\n",
+   "stdout": "rc=2\n"
+  },
+  {
+   "cmd": "awk '# comment only\n'; echo \"rc=$?\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "rc=0\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { # c\n print \"after comment\" # c2\n }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "after comment\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print \"a\" \\\n \"b\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ab\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { x = \"A\\tB\\\\n\\\"q\\\"\\/\"; print x }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "A\tB\\n\"q\"\\/\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { if (1) { print \"x\" } else { print \"y\" } }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "x\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { if (1)\n print \"nl-if\"\nelse\n print \"no\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "nl-if\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { a = 1; b = 2\nprint a + b }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print (1 < 2) (2 < 1) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "10\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print !x, !!x, -x, x \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 0 0 \n"
+  },
+  {
+   "cmd": "awk 'BEGIN { $0 = \"a b c\"; print NF, $2; $3 = \"\"; print NF \"[\" $0 \"]\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3 b\n3[a b ]\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { x[\"a\"] = 1; for (k in x) delete x[k]; print length(x) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { s = \"x\"; s = s s s; print s, length(s) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "xxx 3\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print substr(\"hello\", 2, -1) \"|\" substr(\"\", 1, 1) \"|\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "||\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print index(\"abc\", \"\") }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { CONVFMT = \"%.2g\"; a = 3.14159; b = a \"\"; print b; print a }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3.1\n3.14159\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { OFMT = \"%.2f\"; print 3.14159, 3.14159 \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3.14 3.14159\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print length(\"a\" \"bc\") }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print 010 + 0, 0x10 + 0, \"0x10\" + 0, \"1e2\" + 0, \".5\" + 0, \"+5\" + 0 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "10 00 16 100 0.5 5\n"
+  },
+  {
+   "cmd": "printf '0x10 010 1e2 +5 .5 5.\\n' | awk '{ for (i = 1; i <= NF; i++) printf \"%s \", ($i == $i + 0) ? \"num\" : \"str\"; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "num num num num num num \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { split(\"0 0.5 1 1.5 2 2.5 3 100 -1\", L); printf \"%s:\", -1; printf \"[%s]\", substr(\"hello\", -1); for (i = 1; i <= 9; i++) printf \"[%s]\", substr(\"hello\", -1, L[i]); print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "-1:[hello][h][h][he][he][hel][hel][hell][hello][]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { split(\"0 0.5 1 1.5 2 2.5 3 100 -1\", L); printf \"%s:\", 0; printf \"[%s]\", substr(\"hello\", 0); for (i = 1; i <= 9; i++) printf \"[%s]\", substr(\"hello\", 0, L[i]); print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0:[hello][][][h][h][he][he][hel][hello][]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { split(\"0 0.5 1 1.5 2 2.5 3 100 -1\", L); printf \"%s:\", 0.5; printf \"[%s]\", substr(\"hello\", 0.5); for (i = 1; i <= 9; i++) printf \"[%s]\", substr(\"hello\", 0.5, L[i]); print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0.5:[hello][][][h][h][he][he][hel][hello][]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { split(\"0 0.5 1 1.5 2 2.5 3 100 -1\", L); printf \"%s:\", 1; printf \"[%s]\", substr(\"hello\", 1); for (i = 1; i <= 9; i++) printf \"[%s]\", substr(\"hello\", 1, L[i]); print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1:[hello][][][h][h][he][he][hel][hello][]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { split(\"0 0.5 1 1.5 2 2.5 3 100 -1\", L); printf \"%s:\", 1.5; printf \"[%s]\", substr(\"hello\", 1.5); for (i = 1; i <= 9; i++) printf \"[%s]\", substr(\"hello\", 1.5, L[i]); print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1.5:[hello][][][h][h][he][he][hel][hello][]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { split(\"0 0.5 1 1.5 2 2.5 3 100 -1\", L); printf \"%s:\", 2; printf \"[%s]\", substr(\"hello\", 2); for (i = 1; i <= 9; i++) printf \"[%s]\", substr(\"hello\", 2, L[i]); print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2:[ello][][][e][e][el][el][ell][ello][]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { split(\"0 0.5 1 1.5 2 2.5 3 100 -1\", L); printf \"%s:\", 2.5; printf \"[%s]\", substr(\"hello\", 2.5); for (i = 1; i <= 9; i++) printf \"[%s]\", substr(\"hello\", 2.5, L[i]); print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2.5:[ello][][][e][e][el][el][ell][ello][]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { split(\"0 0.5 1 1.5 2 2.5 3 100 -1\", L); printf \"%s:\", 3.5; printf \"[%s]\", substr(\"hello\", 3.5); for (i = 1; i <= 9; i++) printf \"[%s]\", substr(\"hello\", 3.5, L[i]); print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3.5:[llo][][][l][l][ll][ll][llo][llo][]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { split(\"0 0.5 1 1.5 2 2.5 3 100 -1\", L); printf \"%s:\", 5; printf \"[%s]\", substr(\"hello\", 5); for (i = 1; i <= 9; i++) printf \"[%s]\", substr(\"hello\", 5, L[i]); print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "5:[o][][][o][o][o][o][o][o][]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { split(\"0 0.5 1 1.5 2 2.5 3 100 -1\", L); printf \"%s:\", 6; printf \"[%s]\", substr(\"hello\", 6); for (i = 1; i <= 9; i++) printf \"[%s]\", substr(\"hello\", 6, L[i]); print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "6:[][][][][][][][][][]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { split(\"0 0.5 1 1.5 2 2.5 3 100 -1\", L); printf \"%s:\", 7; printf \"[%s]\", substr(\"hello\", 7); for (i = 1; i <= 9; i++) printf \"[%s]\", substr(\"hello\", 7, L[i]); print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "7:[][][][][][][][][][]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%d]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0][1][-1][3][-3][255][256][65][97][2147483647][2147483647][2147483647][2147483647][2147483647][-2147483647][0][0][123456][0][2147483647]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%i]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0][1][-1][3][-3][255][256][65][97][2147483647][2147483647][2147483647][2147483647][2147483647][-2147483647][0][0][123456][0][2147483647]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%x]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0][1][0][3][0][ff][100][41][61][7fffffff][80000000][ffffffff][ffffffff][ffffffff][0][0][0][1e240][0][ffffffff]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%X]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0][1][0][3][0][FF][100][41][61][7FFFFFFF][80000000][FFFFFFFF][FFFFFFFF][FFFFFFFF][0][0][0][1E240][0][FFFFFFFF]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%o]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0][1][0][3][0][377][400][101][141][17777777777][20000000000][37777777777][37777777777][37777777777][0][0][0][361100][0][37777777777]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%u]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0][1][0][3][0][255][256][65][97][2147483647][2147483648][4294967295][4294967295][4294967295][0][0][0][123456][0][4294967295]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%e]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0.000000e+00][1.000000e+00][-1.000000e+00][3.700000e+00][-3.700000e+00][2.550000e+02][2.560000e+02][6.500000e+01][9.790000e+01][2.147484e+09][2.147484e+09][4.294967e+09][4.294967e+09][1.000000e+10][-1.000000e+10][5.000000e-01][1.000000e-05][1.234568e+05][0.000000e+00][1.000000e+300]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%E]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0.000000E+00][1.000000E+00][-1.000000E+00][3.700000E+00][-3.700000E+00][2.550000E+02][2.560000E+02][6.500000E+01][9.790000E+01][2.147484E+09][2.147484E+09][4.294967E+09][4.294967E+09][1.000000E+10][-1.000000E+10][5.000000E-01][1.000000E-05][1.234568E+05][0.000000E+00][1.000000E+300]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%f]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0.000000][1.000000][-1.000000][3.700000][-3.700000][255.000000][256.000000][65.000000][97.900000][2147483647.000000][2147483648.000000][4294967295.000000][4294967296.000000][10000000000.000000][-10000000000.000000][0.500000][0.000010][123456.789000][0.000000][1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160.000000]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%g]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0][1][-1][3.7][-3.7][255][256][65][97.9][2.14748e+09][2.14748e+09][4.29497e+09][4.29497e+09][1e+10][-1e+10][0.5][1e-05][123457][0][1e+300]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%G]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0][1][-1][3.7][-3.7][255][256][65][97.9][2.14748E+09][2.14748E+09][4.29497E+09][4.29497E+09][1E+10][-1E+10][0.5][1E-05][123457][0][1E+300]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%5.2f]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[ 0.00][ 1.00][-1.00][ 3.70][-3.70][255.00][256.00][65.00][97.90][2147483647.00][2147483648.00][4294967295.00][4294967296.00][10000000000.00][-10000000000.00][ 0.50][ 0.00][123456.79][ 0.00][1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160.00]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%-8.3e|]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0.000e+00|][1.000e+00|][-1.000e+00|][3.700e+00|][-3.700e+00|][2.550e+02|][2.560e+02|][6.500e+01|][9.790e+01|][2.147e+09|][2.147e+09|][4.295e+09|][4.295e+09|][1.000e+10|][-1.000e+10|][5.000e-01|][1.000e-05|][1.235e+05|][0.000e+00|][1.000e+300|]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%08.3f]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0000.000][0001.000][-001.000][0003.700][-003.700][0255.000][0256.000][0065.000][0097.900][2147483647.000][2147483648.000][4294967295.000][4294967296.000][10000000000.000][-10000000000.000][0000.500][0000.000][123456.789][0000.000][1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160.000]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%+d]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[+0][+1][-1][+3][-3][+255][+256][+65][+97][+2147483647][+2147483647][+2147483647][+2147483647][+2147483647][-2147483647][+0][+0][+123456][+0][+2147483647]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%+.2e]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[+0.00e+00][+1.00e+00][-1.00e+00][+3.70e+00][-3.70e+00][+2.55e+02][+2.56e+02][+6.50e+01][+9.79e+01][+2.15e+09][+2.15e+09][+4.29e+09][+4.29e+09][+1.00e+10][-1.00e+10][+5.00e-01][+1.00e-05][+1.23e+05][+0.00e+00][+1.00e+300]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%#o]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0][01][0][03][0][0377][0400][0101][0141][017777777777][020000000000][037777777777][037777777777][037777777777][0][0][0][0361100][0][037777777777]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%#x]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0][0x1][0][0x3][0][0xff][0x100][0x41][0x61][0x7fffffff][0x80000000][0xffffffff][0xffffffff][0xffffffff][0][0][0][0x1e240][0][0xffffffff]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%.0f]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0][1][-1][4][-4][255][256][65][98][2147483647][2147483648][4294967295][4294967296][10000000000][-10000000000][0][0][123457][0][1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%.10g]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0][1][-1][3.7][-3.7][255][256][65][97.9][2147483647][2147483648][4294967295][4294967296][1e+10][-1e+10][0.5][1e-05][123456.789][0][1e+300]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"0 1 -1 3.7 -3.7 255 256 65 97.9 2147483647 2147483648 4294967295 4294967296 1e10 -1e10 0.5 1e-5 123456.789 -0.0 1e300\", V, \" \"); for (i = 1; i <= n; i++) printf \"[%10.4g|]\", V[i] + 0; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[         0|][         1|][        -1|][       3.7|][      -3.7|][       255|][       256|][        65|][      97.9|][ 2.147e+09|][ 2.147e+09|][ 4.295e+09|][ 4.295e+09|][     1e+10|][    -1e+10|][       0.5|][     1e-05|][ 1.235e+05|][         0|][    1e+300|]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"abc|12abc||  7|0x1f|1e2|-5x|.5\", V, \"|\"); for (i = 1; i <= n; i++) printf \"[%d]\", V[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0][12][0][7][31][100][-5][0]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"abc|12abc||  7|0x1f|1e2|-5x|.5\", V, \"|\"); for (i = 1; i <= n; i++) printf \"[%c]\", V[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[a][1][\u0000][\u0007][0][d][-][\u0000]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"abc|12abc||  7|0x1f|1e2|-5x|.5\", V, \"|\"); for (i = 1; i <= n; i++) printf \"[%s]\", V[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[abc][12abc][][  7][0x1f][1e2][-5x][.5]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"abc|12abc||  7|0x1f|1e2|-5x|.5\", V, \"|\"); for (i = 1; i <= n; i++) printf \"[%5s|]\", V[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[  abc|][12abc|][     |][    7|][ 0x1f|][  1e2|][  -5x|][   .5|]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"abc|12abc||  7|0x1f|1e2|-5x|.5\", V, \"|\"); for (i = 1; i <= n; i++) printf \"[%.2s]\", V[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[ab][12][][  ][0x][1e][-5][.5]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"abc|12abc||  7|0x1f|1e2|-5x|.5\", V, \"|\"); for (i = 1; i <= n; i++) printf \"[%x]\", V[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0][c][0][7][1f][64][0][0]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"abc|12abc||  7|0x1f|1e2|-5x|.5\", V, \"|\"); for (i = 1; i <= n; i++) printf \"[%e]\", V[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0.000000e+00][1.200000e+01][0.000000e+00][7.000000e+00][3.100000e+01][1.000000e+02][-5.000000e+00][5.000000e-01]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"abc|12abc||  7|0x1f|1e2|-5x|.5\", V, \"|\"); for (i = 1; i <= n; i++) printf \"[%f]\", V[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[0.000000][12.000000][0.000000][7.000000][31.000000][100.000000][-5.000000][0.500000]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"1 -1 0.1 100000 1000000 123456 1234567 0.000123456 1e5 1e6 1e7 123456789 2147483647 2147483648 -2147483647 -2147483648 3.0 3.10 1e-10 12345678.9 99999.95 999999.5 0.1234567 100 1e100\", V, \" \"); for (i = 1; i <= n; i++) printf \"%s \", V[i] + 0 \"\"; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 -1 0.1 100000 1000000 123456 1234567 0.000123456 100000 1000000 10000000 123456789 2147483647 2.14748e+09 -2147483647 -2.14748e+09 3 3.1 1e-10 1.23457e+07 99999.9 1e+06 0.123457 100 1e+100 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"1 -1 0.1 100000 1000000 123456 1234567 0.000123456 1e5 1e6 1e7 123456789 2147483647 2147483648 -2147483647 -2147483648 3.0 3.10 1e-10 12345678.9 99999.95 999999.5 0.1234567 100 1e100\", V, \" \"); for (i = 1; i <= n; i++) printf \"%s \", V[i] * 1; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 -1 0.1 100000 1000000 123456 1234567 0.000123456 100000 1000000 10000000 123456789 2147483647 2.14748e+09 -2147483647 -2.14748e+09 3 3.1 1e-10 1.23457e+07 99999.9 1e+06 0.123457 100 1e+100 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print 2^31, 2^31-1, -2^31, 2^32, 2^53, 10^15, 10^9, 3*1e9, 7/2, 1e3, 5e-1, 100/3, 2^0.5, 10%3.5 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2.14748e+09 2147483647 -2.14748e+09 4.29497e+09 9.0072e+15 1e+15 1000000000 3e+09 3.5 1000 0.5 33.3333 1.41421 3\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print 1e6 \"\", 1e5 \"\", 1234567 \"\", 0.1+0.2 \"\", 100/3 \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1000000 100000 1234567 0.3 33.3333\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { x = 0.1 + 0.2; print (x == 0.3), x }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0 0.3\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print int(2147483648), int(-2147483649), int(1e10), int(\"1e3\"), int(\" 12 \"), int(\"0x1f\") }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2.14748e+09 -2.14748e+09 1e+10 1000 12 31\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print length(2147483648), length(0.1 + 0.2), length(1e6), length(1e5) }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "11 3 7 6\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print 1==1, 1==\"1\", \"a\"==\"a\", \"1\"==1.0, 2<10, \"2\"<\"10\", \"abc\"<\"abd\", \"\"<\"a\", x<1, x==\"\", x==0 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 1 1 1 1 0 1 1 1 1 1\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { print \"10\" + 0 < \"9\" + 0, \"10\" < \"9\", 10 < \"9\", \"10\" < 9 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0 1 1 1\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"a\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1,1,1 1,1,1 0,0,-1 6,6,1 1,1,1 1,1,1 0,0,-1 0,0,-1 0,0,-1 1,1,1 1,1,1 0,0,-1 0,0,-1 1,1,1 1,1,1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"a+\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1,1,3 1,1,1 0,0,-1 6,6,1 1,1,1 1,1,1 0,0,-1 0,0,-1 0,0,-1 1,1,1 1,1,1 0,0,-1 0,0,-1 1,1,1 1,1,1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"a*\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1,1,3 1,1,1 1,1,0 1,1,0 1,1,1 1,1,1 1,1,0 1,1,0 1,1,0 1,1,1 1,1,1 1,1,0 1,1,0 1,1,1 1,1,1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"a?\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1,1,1 1,1,1 1,1,0 1,1,0 1,1,1 1,1,1 1,1,0 1,1,0 1,1,0 1,1,1 1,1,1 1,1,0 1,1,0 1,1,1 1,1,1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"ab|cd\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 1,1,2 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 1,1,2 0,0,-1 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"^a\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1,1,1 1,1,1 0,0,-1 0,0,-1 1,1,1 1,1,1 0,0,-1 0,0,-1 0,0,-1 1,1,1 1,1,1 0,0,-1 0,0,-1 1,1,1 1,1,1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"a$\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3,3,1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"^$\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 1,1,0 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \".\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1,1,1 1,1,1 1,1,1 1,1,1 1,1,1 1,1,1 1,1,1 1,1,1 1,1,1 1,1,1 1,1,1 1,1,1 0,0,-1 1,1,1 1,1,1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"..\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1,1,2 1,1,2 1,1,2 1,1,2 1,1,2 1,1,2 1,1,2 1,1,2 1,1,2 1,1,2 1,1,2 1,1,2 0,0,-1 1,1,2 1,1,2 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"a.c\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 1,1,3 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 3,3,3 0,0,-1 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"[abc]\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1,1,1 1,1,1 0,0,-1 5,5,1 1,1,1 1,1,1 2,2,1 0,0,-1 0,0,-1 1,1,1 1,1,1 0,0,-1 0,0,-1 1,1,1 1,1,1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"[^abc]\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 4,4,1 1,1,1 1,1,1 2,2,1 2,2,1 1,1,1 1,1,1 1,1,1 2,2,1 0,0,-1 1,1,1 0,0,-1 2,2,1 2,2,1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"[a-c]+\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1,1,3 1,1,3 0,0,-1 5,5,2 1,1,1 1,1,1 2,2,1 0,0,-1 0,0,-1 1,1,1 1,1,5 0,0,-1 0,0,-1 1,1,1 1,1,1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"[[:digit:]]+\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 1,1,2 2,2,2 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"[[:alpha:]]+\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1,1,3 1,1,4 1,1,3 1,1,3 1,1,1 1,1,1 1,1,3 0,0,-1 0,0,-1 1,1,1 1,1,5 1,1,3 0,0,-1 1,1,1 1,1,1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"[[:space:]]\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 3,3,1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"[[:upper:]][[:lower:]]\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 1,1,2 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"(ab)+\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 1,1,2 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 1,1,4 0,0,-1 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"x*y\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 0,0,-1 1,1,2 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"\\\\.\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 0,0,-1 0,0,-1 4,4,1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"[.]\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 0,0,-1 0,0,-1 4,4,1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"a{2}\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"a{2,3}\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"a{2,}\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"\\\\/\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 0,0,-1 0,0,-1 0,0,-1 2,2,1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"/\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 0,0,-1 0,0,-1 0,0,-1 2,2,1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"[]a]\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1,1,1 1,1,1 0,0,-1 6,6,1 1,1,1 1,1,1 0,0,-1 0,0,-1 0,0,-1 1,1,1 1,1,1 0,0,-1 0,0,-1 1,1,1 1,1,1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"[a\\\\]]\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1,1,1 1,1,1 0,0,-1 6,6,1 1,1,1 1,1,1 0,0,-1 0,0,-1 0,0,-1 1,1,1 1,1,1 0,0,-1 0,0,-1 1,1,1 1,1,1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"\\\\$\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 2,2,1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"^[+-]?[0-9]+$\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 1,1,3 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"(a|b)*c\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 1,1,3 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 1,1,5 0,0,-1 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"o+$\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 2,2,2 0,0,-1 0,0,-1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"^.\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1,1,1 1,1,1 1,1,1 1,1,1 1,1,1 1,1,1 1,1,1 1,1,1 1,1,1 1,1,1 1,1,1 1,1,1 0,0,-1 1,1,1 1,1,1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"z|\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 2,
+   "stderr": "awk: line 1: regular expression compile failed (missing operand)\nz|\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"()\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 2,
+   "stderr": "awk: line 1: regular expression compile failed (missing operand)\n()\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"\\\\(\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 2,2,1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"[(]\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 2,2,1 0,0,-1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"aaa|abcd|xyz|foo.bar|a/b|a]b|AbC|12 34|-45|a$b|ababc|foo||a(b|a\\\\b\", S, \"|\"); for (i = 1; i <= n; i++) { r = match(S[i], \"\\\\\\\\\"); printf \"%d,%d,%d \", r, RSTART, RLENGTH }; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 0,0,-1 2,2,1 \n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/a/, \"X\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/a/, \"X\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "4 XbcXbc 123 XX\n1 Xbcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/a/, \"[&]\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/a/, \"[&]\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "4 [a]bc[a]bc 123 [a][a]\n1 [a]bcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/a/, \"\\\\\\\\&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/a/, \"\\\\\\\\&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "4 \\abc\\abc 123 \\a\\a\n1 \\abcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/a/, \"&&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/a/, \"&&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "4 aabcaabc 123 aaaa\n1 aabcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/a/, \"\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/a/, \"\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "4 bcbc 123 \n1 bcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/a+/, \"X\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/a+/, \"X\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3 XbcXbc 123 X\n1 Xbcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/a+/, \"[&]\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/a+/, \"[&]\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3 [a]bc[a]bc 123 [aa]\n1 [a]bcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/a+/, \"\\\\\\\\&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/a+/, \"\\\\\\\\&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3 \\abc\\abc 123 \\aa\n1 \\abcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/a+/, \"\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/a+/, \"\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3 bcbc 123 \n1 bcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/a*/, \"X\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/a*/, \"X\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "10 XbXcXbXcX X1X2X3X X\n1 Xbcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/a*/, \"[&]\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/a*/, \"[&]\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "10 [a]b[]c[a]b[]c[] []1[]2[]3[] [aa]\n1 [a]bcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/a*/, \"\\\\\\\\&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/a*/, \"\\\\\\\\&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "10 \\ab\\c\\ab\\c\\ \\1\\2\\3\\ \\aa\n1 \\abcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/a*/, \"&&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/a*/, \"&&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "10 aabcaabc 123 aaaa\n1 aabcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/a*/, \"\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/a*/, \"\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "10 bcbc 123 \n1 bcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/[0-9]/, \"X\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/[0-9]/, \"X\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3 abcabc XXX aa\n1 abcabc X23 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/[0-9]/, \"[&]\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/[0-9]/, \"[&]\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3 abcabc [1][2][3] aa\n1 abcabc [1]23 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/[0-9]/, \"\\\\\\\\&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/[0-9]/, \"\\\\\\\\&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3 abcabc \\1\\2\\3 aa\n1 abcabc \\123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/[0-9]/, \"&&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/[0-9]/, \"&&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3 abcabc 112233 aa\n1 abcabc 1123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/[0-9]/, \"\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/[0-9]/, \"\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3 abcabc  aa\n1 abcabc 23 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/x*/, \"X\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/x*/, \"X\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "14 XaXbXcXaXbXcX X1X2X3X XaXaX\n1 Xabcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/x*/, \"[&]\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/x*/, \"[&]\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "14 []a[]b[]c[]a[]b[]c[] []1[]2[]3[] []a[]a[]\n1 []abcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/x*/, \"\\\\\\\\&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/x*/, \"\\\\\\\\&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "14 \\a\\b\\c\\a\\b\\c\\ \\1\\2\\3\\ \\a\\a\\\n1 \\abcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/x*/, \"&&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/x*/, \"&&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "14 abcabc 123 aa\n1 abcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/x*/, \"\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/x*/, \"\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "14 abcabc 123 aa\n1 abcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/^/, \"X\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/^/, \"X\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 Xabcabc 123 aa\n1 Xabcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/^/, \"[&]\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/^/, \"[&]\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 []abcabc 123 aa\n1 []abcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/^/, \"\\\\\\\\&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/^/, \"\\\\\\\\&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 \\abcabc 123 aa\n1 \\abcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/^/, \"&&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/^/, \"&&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 abcabc 123 aa\n1 abcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/^/, \"\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/^/, \"\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 abcabc 123 aa\n1 abcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/$/, \"X\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/$/, \"X\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 abcabc 123 aaX\n1 abcabc 123 aaX\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/$/, \"[&]\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/$/, \"[&]\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 abcabc 123 aa[]\n1 abcabc 123 aa[]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/$/, \"\\\\\\\\&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/$/, \"\\\\\\\\&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 abcabc 123 aa\\\n1 abcabc 123 aa\\\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/$/, \"&&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/$/, \"&&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 abcabc 123 aa\n1 abcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/$/, \"\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/$/, \"\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 abcabc 123 aa\n1 abcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/b|bc/, \"X\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/b|bc/, \"X\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2 aXaX 123 aa\n1 aXabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/b|bc/, \"[&]\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/b|bc/, \"[&]\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2 a[bc]a[bc] 123 aa\n1 a[bc]abc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/b|bc/, \"\\\\\\\\&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/b|bc/, \"\\\\\\\\&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2 a\\bca\\bc 123 aa\n1 a\\bcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/b|bc/, \"&&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/b|bc/, \"&&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2 abcbcabcbc 123 aa\n1 abcbcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/b|bc/, \"\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/b|bc/, \"\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2 aa 123 aa\n1 aabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/(a|ab)(c|bcd)/, \"X\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/(a|ab)(c|bcd)/, \"X\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2 XX 123 aa\n1 Xabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/(a|ab)(c|bcd)/, \"[&]\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/(a|ab)(c|bcd)/, \"[&]\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2 [abc][abc] 123 aa\n1 [abc]abc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/(a|ab)(c|bcd)/, \"\\\\\\\\&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/(a|ab)(c|bcd)/, \"\\\\\\\\&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2 \\abc\\abc 123 aa\n1 \\abcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/(a|ab)(c|bcd)/, \"&&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/(a|ab)(c|bcd)/, \"&&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2 abcabcabcabc 123 aa\n1 abcabcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/(a|ab)(c|bcd)/, \"\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/(a|ab)(c|bcd)/, \"\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2  123 aa\n1 abc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/./, \"X\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/./, \"X\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "13 XXXXXXXXXXXXX\n1 Xbcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/./, \"[&]\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/./, \"[&]\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "13 [a][b][c][a][b][c][ ][1][2][3][ ][a][a]\n1 [a]bcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/./, \"\\\\\\\\&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/./, \"\\\\\\\\&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "13 \\a\\b\\c\\a\\b\\c\\ \\1\\2\\3\\ \\a\\a\n1 \\abcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/./, \"&&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/./, \"&&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "13 aabbccaabbcc  112233  aaaa\n1 aabcabc 123 aa\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/./, \"\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/./, \"\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "13 \n1 bcabc 123 aa\n"
+  },
+  {
+   "cmd": "printf 'a.b\\nacb\\n' | awk '$0 ~ \".\" { n++ } $0 ~ \"\\\\.\" { m++ } END { print n, m }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2 1\n"
+  },
+  {
+   "cmd": "printf 'a+b\\n' | awk '{ s = $0; gsub(\"+\", \"-\", s); print s }'",
+   "code": 2,
+   "stderr": "awk: line 1: regular expression compile failed (missing operand)\n+\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "printf 'a+b\\n' | awk '{ s = $0; gsub(/[+]/, \"-\", s); print s }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a-b\n"
+  },
+  {
+   "cmd": "printf 'tab\\there\\n' | awk '{ print ($0 ~ /\\t/), ($0 ~ \"\\t\"), ($0 ~ \"\\\\t\") }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 1 1\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"a b\\tc  d:e,f|g.h\", P, \" \"); printf \"%d:\", n; for (i = 1; i <= n; i++) printf \"[%s]\", P[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "4:[a][b][c][d:e,f|g.h]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"a b\\tc  d:e,f|g.h\", P, \"\\t\"); printf \"%d:\", n; for (i = 1; i <= n; i++) printf \"[%s]\", P[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2:[a b][c  d:e,f|g.h]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"a b\\tc  d:e,f|g.h\", P, \":\"); printf \"%d:\", n; for (i = 1; i <= n; i++) printf \"[%s]\", P[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2:[a b\tc  d][e,f|g.h]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"a b\\tc  d:e,f|g.h\", P, \",\"); printf \"%d:\", n; for (i = 1; i <= n; i++) printf \"[%s]\", P[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2:[a b\tc  d:e][f|g.h]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"a b\\tc  d:e,f|g.h\", P, \"|\"); printf \"%d:\", n; for (i = 1; i <= n; i++) printf \"[%s]\", P[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2:[a b\tc  d:e,f][g.h]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"a b\\tc  d:e,f|g.h\", P, \".\"); printf \"%d:\", n; for (i = 1; i <= n; i++) printf \"[%s]\", P[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2:[a b\tc  d:e,f|g][h]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"a b\\tc  d:e,f|g.h\", P, \"[ ]\"); printf \"%d:\", n; for (i = 1; i <= n; i++) printf \"[%s]\", P[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "4:[a][b\tc][][d:e,f|g.h]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"a b\\tc  d:e,f|g.h\", P, \"[,:]\"); printf \"%d:\", n; for (i = 1; i <= n; i++) printf \"[%s]\", P[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3:[a b\tc  d][e][f|g.h]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"a b\\tc  d:e,f|g.h\", P, \" +\"); printf \"%d:\", n; for (i = 1; i <= n; i++) printf \"[%s]\", P[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3:[a][b\tc][d:e,f|g.h]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"a b\\tc  d:e,f|g.h\", P, \"\"); printf \"%d:\", n; for (i = 1; i <= n; i++) printf \"[%s]\", P[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "16:[a][ ][b][\t][c][ ][ ][d][:][e][,][f][|][g][.][h]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"a b\\tc  d:e,f|g.h\", P, \"a\"); printf \"%d:\", n; for (i = 1; i <= n; i++) printf \"[%s]\", P[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2:[][ b\tc  d:e,f|g.h]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"a b\\tc  d:e,f|g.h\", P, \"\\\\|\"); printf \"%d:\", n; for (i = 1; i <= n; i++) printf \"[%s]\", P[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2:[a b\tc  d:e,f][g.h]\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { n = split(\"a b\\tc  d:e,f|g.h\", P, \"b\"); printf \"%d:\", n; for (i = 1; i <= n; i++) printf \"[%s]\", P[i]; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2:[a ][\tc  d:e,f|g.h]\n"
+  },
+  {
+   "cmd": "printf 'a b\\tc  d:e,f|g.h\\n  x  y  \\n' | awk  '{ printf \"%d:\", NF; for (i = 1; i <= NF; i++) printf \"[%s]\", $i; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "4:[a][b][c][d:e,f|g.h]\n2:[x][y]\n"
+  },
+  {
+   "cmd": "printf 'a b\\tc  d:e,f|g.h\\n  x  y  \\n' | awk -F: '{ printf \"%d:\", NF; for (i = 1; i <= NF; i++) printf \"[%s]\", $i; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2:[a b\tc  d][e,f|g.h]\n1:[  x  y  ]\n"
+  },
+  {
+   "cmd": "printf 'a b\\tc  d:e,f|g.h\\n  x  y  \\n' | awk -F, '{ printf \"%d:\", NF; for (i = 1; i <= NF; i++) printf \"[%s]\", $i; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2:[a b\tc  d:e][f|g.h]\n1:[  x  y  ]\n"
+  },
+  {
+   "cmd": "printf 'a b\\tc  d:e,f|g.h\\n  x  y  \\n' | awk -F\"|\" '{ printf \"%d:\", NF; for (i = 1; i <= NF; i++) printf \"[%s]\", $i; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2:[a b\tc  d:e,f][g.h]\n1:[  x  y  ]\n"
+  },
+  {
+   "cmd": "printf 'a b\\tc  d:e,f|g.h\\n  x  y  \\n' | awk -F. '{ printf \"%d:\", NF; for (i = 1; i <= NF; i++) printf \"[%s]\", $i; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2:[a b\tc  d:e,f|g][h]\n1:[  x  y  ]\n"
+  },
+  {
+   "cmd": "printf 'a b\\tc  d:e,f|g.h\\n  x  y  \\n' | awk -F\"[ ]\" '{ printf \"%d:\", NF; for (i = 1; i <= NF; i++) printf \"[%s]\", $i; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "4:[a][b\tc][][d:e,f|g.h]\n7:[][][x][][y][][]\n"
+  },
+  {
+   "cmd": "printf 'a b\\tc  d:e,f|g.h\\n  x  y  \\n' | awk -F' +' '{ printf \"%d:\", NF; for (i = 1; i <= NF; i++) printf \"[%s]\", $i; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3:[a][b\tc][d:e,f|g.h]\n4:[][x][y][]\n"
+  },
+  {
+   "cmd": "printf 'a b\\tc  d:e,f|g.h\\n  x  y  \\n' | awk -Ft '{ printf \"%d:\", NF; for (i = 1; i <= NF; i++) printf \"[%s]\", $i; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1:[a b\tc  d:e,f|g.h]\n1:[  x  y  ]\n"
+  },
+  {
+   "cmd": "printf 'a b\\tc  d:e,f|g.h\\n  x  y  \\n' | awk -F'\\t' '{ printf \"%d:\", NF; for (i = 1; i <= NF; i++) printf \"[%s]\", $i; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2:[a b][c  d:e,f|g.h]\n1:[  x  y  ]\n"
+  },
+  {
+   "cmd": "printf 'a b\\tc  d:e,f|g.h\\n  x  y  \\n' | awk -F '' '{ printf \"%d:\", NF; for (i = 1; i <= NF; i++) printf \"[%s]\", $i; print \"\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "16:[a][ ][b][\t][c][ ][ ][d][:][e][,][f][|][g][.][h]\n8:[ ][ ][x][ ][ ][y][ ][ ]\n"
+  },
+  {
+   "cmd": "printf 'a:b\\n' | awk 'BEGIN { FS = \":\" } { print $2 } END { FS = \",\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "b\n"
+  },
+  {
+   "cmd": "printf 'a:b c\\nd:e f\\n' | awk '{ FS = \":\"; print $1 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a:b\nd\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n' | awk '{ $1 = \"\"; print; print NF }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": " b c\n3\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n' | awk '{ $7 = \"z\"; print; print NF }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a b c    z\n7\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n' | awk 'BEGIN { OFS = \"-\" } { $1 = $1 } 1'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a-b-c\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n' | awk 'BEGIN { OFS = \"-\" } { NF = NF } 1'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a-b-c\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n' | awk '{ NF = 5; print; $0 = $0; print NF }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a b c  \n3\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n' | awk '{ print $(1+1), $NF-1, $ NF }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "b -1 c\n"
+  },
+  {
+   "cmd": "printf 'a b c\\n' | awk '{ print $-1 }'; echo rc=$?",
+   "code": 0,
+   "stderr": "awk: run time error: negative field index $-1\n\tFILENAME=\"-\" FNR=1 NR=1\n",
+   "stdout": "rc=2\n"
+  },
+  {
+   "cmd": "printf '1 2\\n3 4\\n' | awk '{ $3 = $1 + $2 } 1'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 2 3\n3 4 7\n"
+  },
+  {
+   "cmd": "printf 'a b\\n' | awk '{ $0 = toupper($0); print $1 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "A\n"
+  },
+  {
+   "cmd": "printf 'a,b\\n' | awk -F, -v OFS=';' '{ print $1, $2; $1 = $1; print }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a;b\na;b\n"
+  },
+  {
+   "cmd": "printf 'a;b;c' | awk 'BEGIN { RS = \";\" } { print NR\":\"$0 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1:a\n2:b\n3:c\n"
+  },
+  {
+   "cmd": "printf 'a\\nb\\n\\nc\\nd\\n\\n\\n\\ne\\n' | awk 'BEGIN { RS = \"\" } { print NR\":\"$1\"/\"NF }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1:a/2\n2:c/2\n3:e/1\n"
+  },
+  {
+   "cmd": "printf 'a1b22c' | awk 'BEGIN { RS = \"[0-9]+\" } { print NR\":\"$0 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1:a\n2:b\n3:c\n"
+  },
+  {
+   "cmd": "printf 'no newline' | awk '{ print NR\":\"$0 }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1:no newline\n"
+  },
+  {
+   "cmd": "printf 'a\\n\\nb\\n' | awk '{ print NR\":[\"$0\"]\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1:[a]\n2:[]\n3:[b]\n"
+  },
+  {
+   "cmd": "printf '1\\n2\\n3\\n4\\n' | awk '{ while ((getline x) > 0) s = s x; print $0, s, NR }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 234 4\n"
+  },
+  {
+   "cmd": "printf '1\\n2\\n' > g1.txt; printf 'a\\nb\\nc\\n' > g2.txt; awk '{ getline l < \"g2.txt\"; print $0, l, NR, FNR }' g1.txt",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1 a 1 1\n2 b 2 2\n"
+  },
+  {
+   "cmd": "printf '1\\n2\\n' > g1.txt; awk '{ print FILENAME, FNR, NR }' g1.txt g1.txt",
+   "code": 0,
+   "stderr": "",
+   "stdout": "g1.txt 1 1\ng1.txt 2 2\ng1.txt 1 3\ng1.txt 2 4\n"
+  },
+  {
+   "cmd": "printf '1\\n' > g1.txt; awk 'BEGIN { print FILENAME } END { print FILENAME }' g1.txt",
+   "code": 0,
+   "stderr": "",
+   "stdout": "\ng1.txt\n"
+  },
+  {
+   "cmd": "printf '1\\n2\\n3\\n' > g1.txt; awk 'NR==1 { nextfile } { print }' g1.txt g1.txt 2>&1; echo rc=$?",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n2\n3\nrc=0\n"
+  },
+  {
+   "cmd": "printf 'x\\n' > g1.txt; awk 'BEGIN { while ((getline l < ARGV[1]) > 0) print \"b:\" l } { print \"m:\" $0 }' g1.txt",
+   "code": 0,
+   "stderr": "",
+   "stdout": "b:x\nm:x\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { \"echo a b c\" | getline; print $2, NF, NR }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "b 3 0\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { cmd = \"echo 5\"; cmd | getline v; close(cmd); cmd | getline w; print v + w }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "10\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print system(\"exit 3\") }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { r = system(\"echo from-system\"); print r }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "from-system\n0\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print \"b\\na\" | \"sort\"; close(\"sort\"); print \"done\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\nb\ndone\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print \"x\" > \"/dev/stderr\"; print \"y\" }' 2>/dev/null",
+   "code": 0,
+   "stderr": "",
+   "stdout": "y\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { printf \"%s\\n\", \"to-stderr\" > \"/dev/stderr\" }' 2>&1",
+   "code": 0,
+   "stderr": "",
+   "stdout": "to-stderr\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print > \"/dev/null\"; print \"ok\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ok\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { printf \"a\" ; printf \"b\\n\" ; print \"c\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ab\nc\n"
+  },
+  {
+   "cmd": "awk 'BEGIN{x=1;y=2;print x+y}'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print length }' </dev/null",
+   "code": 0,
+   "stderr": "",
+   "stdout": "0\n"
+  },
+  {
+   "cmd": "awk 'BEGIN { print substr(\"abc\", 2) > \"/dev/stdout\" }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "bc\n"
+  },
+  {
+   "cmd": "awk -f /nonexistent; echo rc=$?",
+   "code": 0,
+   "stderr": "awk: cannot open /nonexistent (No such file or directory)\n",
+   "stdout": "rc=2\n"
+  },
+  {
+   "cmd": "printf 'BEGIN { print \"from file\" }\\n' > prog.awk; awk -f prog.awk",
+   "code": 0,
+   "stderr": "",
+   "stdout": "from file\n"
+  },
+  {
+   "cmd": "printf 'function f(x) { return x+1 }\\n' > lib.awk; printf 'BEGIN { print f(1) }\\n' > main.awk; awk -f lib.awk -f main.awk",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2\n"
+  },
+  {
+   "cmd": "awk -W version | head -1",
+   "code": 0,
+   "stderr": "random-funcs:       srandom/random\nregex-funcs:        internal\ncompiled limits:\nsprintf buffer      8192\nmaximum-integer     2147483647\n",
+   "stdout": "mawk 1.3.4 20200120\n"
+  },
+  {
+   "cmd": "awk",
+   "code": 0,
+   "stderr": "Usage: mawk [Options] [Program] [file ...]\n\nProgram:\n    The -f option value is the name of a file containing program text.\n    If no -f option is given, a \"--\" ends option processing; the following\n    parameters are the program text.\n\nOptions:\n    -f program-file  Program  text is read from file instead of from the\n                     command-line.  Multiple -f options are accepted.\n    -F value         sets the field separator, FS, to value.\n    -v var=value     assigns value to program variable var.\n    --               unambiguous end of options.\n\n    Implementation-specific options are prefixed with \"-W\".  They can be\n    abbreviated:\n\n    -W version       show version information and exit.\n    -W dump          show assembler-like listing of program and exit.\n    -W help          show this message and exit.\n    -W interactive   set unbuffered output, line-buffered input.\n    -W exec file     use file as program as well as last option.\n    -W random=number set initial random seed.\n    -W sprintf=number adjust size of sprintf buffer.\n    -W posix_space   do not consider \"\\n\" a space.\n    -W usage         show this message and exit.\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "awk -v; echo rc=$?",
+   "code": 0,
+   "stderr": "awk: option -v lacks argument\n",
+   "stdout": "rc=2\n"
   }
  ],
  "image": "ubuntu:22.04",
@@ -2008,6 +4186,24 @@
    "code": 1,
    "stderr": "environment: line 1: 1/0: division by 0 (error token is \"0\")\n",
    "stdout": ""
+  },
+  {
+   "cmd": "awk  'BEGIN { print length(u); u[\"a\"]; print length(u) }'",
+   "code": 2,
+   "stderr": "awk: line 1: illegal reference to variable u\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "awk 'BEGIN { a[1]=1; a = 2 }'; echo \"rc=$?\"",
+   "code": 0,
+   "stderr": "awk: line 1: illegal reference to array a\n",
+   "stdout": "rc=2\n"
+  },
+  {
+   "cmd": "awk  'BEGIN { s = \"abcabc 123 aa\"; n = gsub(/a+/, \"&&\", s); print n, s; t = \"abcabc 123 aa\"; m = sub(/a+/, \"&&\", t); print m, t }'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3 aabcaabc 123 aa\n1 aabcabc 123 aa\n"
   }
  ]
 }

@@ -2,963 +2,275 @@ package shell
 
 import (
 	"fmt"
-	"math"
+	"math/rand"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
-// awkBuiltin is the part of mawk 1.3.4 (Ubuntu 22.04's awk) that shell
-// one-liners use: rules of pattern {action}, BEGIN/END, print/printf,
-// fields, NR/NF/FNR, variables, arithmetic, comparisons, regex matches and
-// length/substr/index/toupper/tolower/int. A program outside that subset
-// gets mawk's syntax-error message, as a typo would.
+// awkBuiltin is mawk 1.3.4 (Ubuntu 22.04's awk): the whole language except what is listed in
+// ubuntu2204.json's known gaps (the order of a for-in loop is sorted, not mawk's hash order). It is
+// split over awk_parse.go (the front end), awk_run.go (statements and expressions), awk_builtins.go
+// (functions and input) and awk_num.go (numbers and printf).
+
+const awkUsage = `Usage: mawk [Options] [Program] [file ...]
+
+Program:
+    The -f option value is the name of a file containing program text.
+    If no -f option is given, a "--" ends option processing; the following
+    parameters are the program text.
+
+Options:
+    -f program-file  Program  text is read from file instead of from the
+                     command-line.  Multiple -f options are accepted.
+    -F value         sets the field separator, FS, to value.
+    -v var=value     assigns value to program variable var.
+    --               unambiguous end of options.
+
+    Implementation-specific options are prefixed with "-W".  They can be
+    abbreviated:
+
+    -W version       show version information and exit.
+    -W dump          show assembler-like listing of program and exit.
+    -W help          show this message and exit.
+    -W interactive   set unbuffered output, line-buffered input.
+    -W exec file     use file as program as well as last option.
+    -W random=number set initial random seed.
+    -W sprintf=number adjust size of sprintf buffer.
+    -W posix_space   do not consider "\n" a space.
+    -W usage         show this message and exit.
+`
+
 func (s *Interpreter) awkBuiltin(args []string, stdin *string) (string, int) {
 	fs := " "
-	var vars []string
+	var assigns, progFiles []string
+	var src string
 	i := 0
+	needArg := func(opt string) bool { return i+1 < len(args) || len(opt) > 2 }
+	fail := func(msg string) (string, int) {
+		s.pendingErr = append(s.pendingErr, "awk: "+msg)
+		return "", 2
+	}
+opts:
 	for ; i < len(args); i++ {
 		a := args[i]
 		switch {
 		case a == "--":
 			i++
-		case a == "-F" && i+1 < len(args):
-			i++
-			fs = args[i]
-			continue
-		case strings.HasPrefix(a, "-F"):
-			fs = a[2:]
-			continue
-		case a == "-v" && i+1 < len(args):
-			i++
-			vars = append(vars, args[i])
-			continue
-		case a == "-W" && i+1 < len(args) && strings.HasPrefix(args[i+1], "v"):
-			return "mawk 1.3.4 20200120\r\nCopyright 2008-2019,2020, Thomas E. Dickey\r\nCopyright 1991-1996,2014, Michael D. Brennan\r\n\r\nrandom-funcs:       srandom/random\r\nregex-funcs:        internal\r\ncompiled limits:\r\nsprintf buffer      8192\r\nmaximum-integer     2147483647", 0
-		}
-		break
-	}
-	if i >= len(args) {
-		return "Usage: mawk [Options] [Program] [file ...]", 2
-	}
-	prog, files := args[i], args[i+1:]
-
-	p := &awkParser{src: prog, line: 1}
-	rules, err := p.program()
-	if err != nil {
-		return "awk: " + err.Error(), 2
-	}
-	st := &awkState{vars: map[string]awkVal{}, fs: unescapeAwk(fs)}
-	for _, v := range vars {
-		if k, val, ok := strings.Cut(v, "="); ok {
-			st.vars[k] = strnum(unescapeAwk(val))
-		}
-	}
-
-	var out strings.Builder
-	st.out = &out
-	run := func(when int) {
-		for _, r := range rules {
-			if r.when == when {
-				r.run(st)
+			break opts
+		case a == "-W" || (strings.HasPrefix(a, "-W") && len(a) > 2):
+			w := a[2:]
+			if a == "-W" {
+				if i+1 >= len(args) {
+					return fail("option -W lacks argument")
+				}
+				i++
+				w = args[i]
 			}
+			switch {
+			case strings.HasPrefix(w, "v"):
+				s.pendingErr = append(s.pendingErr, "random-funcs:       srandom/random", "regex-funcs:        internal", "compiled limits:", "sprintf buffer      8192", "maximum-integer     2147483647")
+				s.noTrailingNewline = false
+				return "mawk 1.3.4 20200120\r\nCopyright 2008-2019,2020, Thomas E. Dickey\r\nCopyright 1991-1996,2014, Michael D. Brennan\r\n", 0
+			case strings.HasPrefix(w, "u"), strings.HasPrefix(w, "h"):
+				return s.awkUsageOut(), 0
+			}
+		case a == "-F" || (strings.HasPrefix(a, "-F") && len(a) > 2):
+			if !needArg(a) {
+				return fail("option -F lacks argument")
+			}
+			if a == "-F" {
+				i++
+				fs = args[i]
+			} else {
+				fs = a[2:]
+			}
+			fs = awkUnescape(fs)
+		case a == "-v" || (strings.HasPrefix(a, "-v") && len(a) > 2):
+			if !needArg(a) {
+				return fail("option -v lacks argument")
+			}
+			if a == "-v" {
+				i++
+				assigns = append(assigns, args[i])
+			} else {
+				assigns = append(assigns, a[2:])
+			}
+		case a == "-f" || (strings.HasPrefix(a, "-f") && len(a) > 2):
+			if !needArg(a) {
+				return fail("option -f lacks argument")
+			}
+			if a == "-f" {
+				i++
+				progFiles = append(progFiles, args[i])
+			} else {
+				progFiles = append(progFiles, a[2:])
+			}
+		case a == "-" || !strings.HasPrefix(a, "-"):
+			break opts
+		default:
+			return fail("not an option: " + a)
 		}
 	}
-	run(awkBegin)
-	inputs := []string{}
-	if len(files) == 0 {
-		if stdin != nil {
-			inputs = append(inputs, *stdin)
-		}
-	} else {
-		for _, f := range files {
+	if len(progFiles) > 0 {
+		var parts []string
+		for _, f := range progFiles {
 			text, ok := s.builtinInput(f, nil)
 			if !ok {
-				s.pendingErr = append(s.pendingErr, "awk: cannot open "+f+" (No such file or directory)")
-				return strings.ReplaceAll(out.String(), "\n", "\r\n"), 2
+				return fail("cannot open " + f + " (No such file or directory)")
 			}
-			inputs = append(inputs, text)
+			parts = append(parts, text)
 		}
-	}
-	for _, text := range inputs {
-		st.fnr = 0
-		for _, line := range strings.SplitAfter(text, "\n") {
-			if line == "" {
-				continue
-			}
-			st.nr++
-			st.fnr++
-			st.setRecord(strings.TrimSuffix(line, "\n"))
-			for _, r := range rules {
-				if r.when == awkMain && (r.pattern == nil || r.pattern(st).truth()) {
-					r.run(st)
-				}
-			}
+		src = strings.Join(parts, "\n")
+	} else {
+		if i >= len(args) {
+			return s.awkUsageOut(), 0
 		}
+		src = args[i]
+		i++
 	}
-	run(awkEnd)
-	text := out.String()
-	if strings.HasSuffix(text, "\n") {
-		text = strings.TrimSuffix(text, "\n")
-	} else if text != "" {
-		s.noTrailingNewline = true
-	}
-	return strings.ReplaceAll(text, "\n", "\r\n"), 0
-}
-
-func unescapeAwk(s string) string {
-	return strings.NewReplacer(`\t`, "\t", `\n`, "\n", `\\`, `\`).Replace(s)
-}
-
-// Values carry awk's dual nature: a number, a string, or a field that is
-// compared as a number when it looks like one.
-type awkVal struct {
-	s     string
-	n     float64
-	isNum bool // a number, or a field/input value that looks like one
-	isStr bool // has a string form
-}
-
-func num(n float64) awkVal   { return awkVal{n: n, isNum: true} }
-func str(s string) awkVal    { return awkVal{s: s, isStr: true} }
-func strnum(s string) awkVal { v := str(s); v.n, v.isNum = looksNumeric(s); return v }
-
-func looksNumeric(s string) (float64, bool) {
-	t := strings.TrimSpace(s)
-	if t == "" {
-		return 0, false
-	}
-	n, err := strconv.ParseFloat(t, 64)
-	return n, err == nil
-}
-
-// leadingNumber is awk's string-to-number: the longest numeric prefix.
-func leadingNumber(s string) float64 {
-	t := strings.TrimLeft(s, " \t\n")
-	end := 0
-	for end < len(t) && strings.IndexByte("+-0123456789.eE", t[end]) >= 0 {
-		end++
-	}
-	for ; end > 0; end-- {
-		if n, err := strconv.ParseFloat(t[:end], 64); err == nil {
-			return n
-		}
-	}
-	return 0
-}
-
-func (v awkVal) num() float64 {
-	if v.isNum {
-		return v.n
-	}
-	return leadingNumber(v.s)
-}
-
-func (v awkVal) str() string {
-	if v.isStr {
-		return v.s
-	}
-	return fmtNum(v.n)
-}
-
-func fmtNum(n float64) string {
-	if n == math.Trunc(n) && math.Abs(n) < 1e16 {
-		return strconv.FormatInt(int64(n), 10)
-	}
-	return strconv.FormatFloat(n, 'g', 6, 64)
-}
-
-func (v awkVal) truth() bool {
-	if v.isStr && !v.isNum {
-		return v.s != ""
-	}
-	if v.isStr && v.isNum {
-		return v.n != 0
-	}
-	return v.n != 0
-}
-
-type awkState struct {
-	vars    map[string]awkVal
-	fields  []string // fields[0] is $0
-	nr, fnr int
-	fs      string
-	out     *strings.Builder
-}
-
-func (st *awkState) setRecord(line string) {
-	var f []string
-	switch {
-	case st.fs == " ":
-		f = strings.Fields(line)
-	case len(st.fs) == 1:
-		f = strings.Split(line, st.fs)
-	default:
-		if re, err := regexp.Compile(st.fs); err == nil {
-			f = re.Split(line, -1)
+	var operands []awkOperand
+	for _, a := range args[i:] {
+		if name, _, ok := strings.Cut(a, "="); ok && name != "" && isIdentStart(name[0]) && strings.IndexFunc(name, func(r rune) bool { return r > 127 || !isIdentPart(byte(r)) }) < 0 {
+			operands = append(operands, awkOperand{assign: a})
 		} else {
-			f = strings.Split(line, st.fs)
+			operands = append(operands, awkOperand{file: a})
 		}
 	}
-	if line == "" {
-		f = nil
+
+	prog, err := parseAwk(src)
+	if err != nil {
+		return fail(err.Error())
 	}
-	st.fields = append([]string{line}, f...)
-}
-
-func (st *awkState) field(i int) string {
-	if i < 0 || i >= len(st.fields) {
-		return ""
+	rt := &awkRT{s: s, prog: prog, operands: operands, stdin: stdin, readers: map[string]*awkReader{},
+		outs: map[string]*awkOutStream{}, re: map[string]*regexp.Regexp{}, seed: 1, rng: rand.New(rand.NewSource(1))}
+	rt.fs, rt.ofs, rt.ors, rt.rs = rt.global("FS", fs), rt.global("OFS", " "), rt.global("ORS", "\n"), rt.global("RS", "\n")
+	rt.subsep, rt.convfmt, rt.ofmt = rt.global("SUBSEP", "\x1c"), rt.global("CONVFMT", "%.6g"), rt.global("OFMT", "%.6g")
+	rt.rstart, rt.rlength, rt.filename = rt.global("RSTART", ""), rt.global("RLENGTH", ""), rt.global("FILENAME", "")
+	rt.rstart.val, rt.rlength.val = num(0), num(-1)
+	rt.global("ENVIRON", "").arr = map[string]awkVal{}
+	for k, v := range s.Env {
+		rt.global("ENVIRON", "").arr[k] = strnum(v)
 	}
-	return st.fields[i]
-}
-
-const (
-	awkMain = iota
-	awkBegin
-	awkEnd
-)
-
-type awkExpr func(*awkState) awkVal
-
-type awkRule struct {
-	when    int
-	pattern awkExpr
-	action  []func(*awkState)
-}
-
-func (r awkRule) run(st *awkState) {
-	if r.action == nil {
-		fmt.Fprintln(st.out, st.field(0))
-		return
+	argv := map[string]awkVal{"0": str("awk")}
+	for n, o := range operands {
+		argv[fmt.Sprint(n+1)] = str(o.file + o.assign)
 	}
-	for _, a := range r.action {
-		a(st)
+	rt.global("ARGV", "").arr = argv
+	rt.global("ARGC", "").val = num(float64(len(operands) + 1))
+	for _, v := range assigns {
+		if k, _, ok := strings.Cut(v, "="); ok && k != "" {
+			rt.assignOperand(v)
+		}
 	}
-}
+	rt.setRecord("")
 
-type awkErr string
+	code := rt.run()
+	rt.closeAll()
 
-func (e awkErr) Error() string { return string(e) }
-
-// awkParser is a recursive-descent parser over the program text.
-type awkParser struct {
-	src  string
-	pos  int
-	line int
-}
-
-func (p *awkParser) fail(near string) error {
-	if near == "" {
-		near = "end of file"
+	for _, l := range strings.Split(strings.TrimSuffix(rt.errs.String(), "\n"), "\n") {
+		if l != "" {
+			s.pendingErr = append(s.pendingErr, l)
+		}
 	}
-	return awkErr(fmt.Sprintf("line %d: syntax error at or near %s", p.line, near))
+	text := rt.out.String()
+	s.noTrailingNewline = text != "" // awk's bytes are exact: no newline is added after them
+	return strings.ReplaceAll(text, "\n", "\r\n"), code
 }
 
-// skip passes spaces and, when nl, newlines and semicolons too.
-func (p *awkParser) skip(nl bool) {
-	for p.pos < len(p.src) {
-		c := p.src[p.pos]
-		switch {
-		case c == ' ' || c == '\t':
-		case c == '\n' && nl:
-			p.line++
-		case c == ';' && nl:
-		case c == '#':
-			for p.pos < len(p.src) && p.src[p.pos] != '\n' {
-				p.pos++
+func (s *Interpreter) awkUsageOut() string {
+	for _, l := range strings.Split(strings.TrimSuffix(awkUsage, "\n"), "\n") {
+		s.pendingErr = append(s.pendingErr, l)
+	}
+	return ""
+}
+
+// run executes the program and returns the exit status. A run-time error ends it with status 2 and
+// mawk's message on stderr.
+func (rt *awkRT) run() (code int) {
+	defer func() {
+		switch e := recover().(type) {
+		case nil:
+		case awkRuntimeErr:
+			name := rt.filename.val.s
+			if name == "" && rt.opened {
+				name = "-"
 			}
-			continue
+			rt.errs.WriteString(fmt.Sprintf("awk: run time error: %s\n\tFILENAME=\"%s\" FNR=%d NR=%d\n", string(e), name, rt.fnr, rt.nr))
+			code = 2
+		case awkFatal:
+			rt.errs.WriteString("awk: " + string(e) + "\n")
+			code = 2
 		default:
+			panic(e)
+		}
+	}()
+	for _, b := range rt.prog.begins {
+		if rt.exec(b) == flowExit {
+			break
+		}
+	}
+	if !rt.exiting && (len(rt.prog.rules) > 0 || len(rt.prog.ends) > 0) {
+		rt.mainLoop()
+	}
+	rt.exiting = false
+	for _, b := range rt.prog.ends {
+		if rt.exec(b) == flowExit {
+			break
+		}
+	}
+	return rt.exitCode
+}
+
+func (rt *awkRT) mainLoop() {
+	for {
+		rec, ok := rt.nextMain()
+		if !ok {
 			return
 		}
-		p.pos++
-	}
-}
-
-func (p *awkParser) peek() string {
-	p.skip(false)
-	if p.pos >= len(p.src) {
-		return ""
-	}
-	for _, op := range []string{"&&", "||", "==", "!=", "<=", ">=", "+=", "-=", "*=", "/=", "++", "--", "!~"} {
-		if strings.HasPrefix(p.src[p.pos:], op) {
-			return op
-		}
-	}
-	c := p.src[p.pos]
-	if isIdentStart(c) {
-		j := p.pos
-		for j < len(p.src) && isIdentPart(p.src[j]) {
-			j++
-		}
-		return p.src[p.pos:j]
-	}
-	return string(c)
-}
-
-func (p *awkParser) accept(tok string) bool {
-	if p.peek() == tok {
-		p.pos += len(tok)
-		return true
-	}
-	return false
-}
-
-func (p *awkParser) program() ([]awkRule, error) {
-	var rules []awkRule
-	for {
-		p.skip(true)
-		if p.pos >= len(p.src) {
-			return rules, nil
-		}
-		r := awkRule{when: awkMain}
-		switch p.peek() {
-		case "BEGIN":
-			p.pos += 5
-			r.when = awkBegin
-		case "END":
-			p.pos += 3
-			r.when = awkEnd
-		case "{":
-		default:
-			pat, err := p.expr()
-			if err != nil {
-				return nil, err
+		rt.nr++
+		rt.fnr++
+		rt.setRecord(rec)
+	rules:
+		for _, r := range rt.prog.rules {
+			if !rt.ruleMatches(r) {
+				continue
 			}
-			r.pattern = pat
-		}
-		if p.peek() == "{" {
-			act, err := p.block()
-			if err != nil {
-				return nil, err
+			if r.body == nil {
+				rt.out.WriteString(rt.record() + rt.ors.val.s)
+				continue
 			}
-			r.action = act
-		} else if r.when != awkMain {
-			return nil, p.fail(p.peek())
-		}
-		rules = append(rules, r)
-	}
-}
-
-func (p *awkParser) block() ([]func(*awkState), error) {
-	p.accept("{")
-	var stmts []func(*awkState)
-	for {
-		p.skip(true)
-		if p.pos >= len(p.src) {
-			return nil, awkErr(fmt.Sprintf("line %d: missing } near end of file", p.line+1))
-		}
-		if p.accept("}") {
-			if stmts == nil {
-				stmts = []func(*awkState){}
-			}
-			return stmts, nil
-		}
-		st, err := p.statement()
-		if err != nil {
-			return nil, err
-		}
-		stmts = append(stmts, st)
-	}
-}
-
-func (p *awkParser) statement() (func(*awkState), error) {
-	switch p.peek() {
-	case "print":
-		p.pos += 5
-		var list []awkExpr
-		for t := p.peek(); t != "" && t != ";" && t != "}" && t != "\n"; t = p.peek() {
-			e, err := p.concat()
-			if err != nil {
-				return nil, err
-			}
-			list = append(list, e)
-			if !p.accept(",") {
-				break
-			}
-		}
-		if t := p.peek(); t != "" && t != ";" && t != "}" && t != "\n" {
-			return nil, p.fail(t) // e.g. print > file: not supported
-		}
-		return func(st *awkState) {
-			if len(list) == 0 {
-				fmt.Fprintln(st.out, st.field(0))
+			switch rt.exec(r.body) {
+			case flowNext:
+				break rules
+			case flowNextFile:
+				rt.cur = nil
+				break rules
+			case flowExit:
 				return
 			}
-			parts := make([]string, len(list))
-			for i, e := range list {
-				parts[i] = e(st).str()
-			}
-			fmt.Fprintln(st.out, strings.Join(parts, " "))
-		}, nil
-	case "printf":
-		p.pos += 6
-		var list []awkExpr
-		for {
-			e, err := p.concat()
-			if err != nil {
-				return nil, err
-			}
-			list = append(list, e)
-			if !p.accept(",") {
-				break
-			}
 		}
-		return func(st *awkState) {
-			args := make([]string, len(list)-1)
-			for i, e := range list[1:] {
-				args[i] = e(st).str()
-			}
-			sh := &Interpreter{}
-			out, _ := sh.printfBuiltin(append([]string{list[0](st).str()}, args...))
-			out = strings.ReplaceAll(out, "\r\n", "\n")
-			if !sh.noTrailingNewline {
-				out += "\n"
-			}
-			st.out.WriteString(out)
-		}, nil
-	}
-	e, err := p.expr()
-	if err != nil {
-		return nil, err
-	}
-	return func(st *awkState) { e(st) }, nil
-}
-
-func (p *awkParser) expr() (awkExpr, error) {
-	// assignment: NAME op= expr
-	save := p.pos
-	if name := p.peek(); name != "" && isIdentStart(name[0]) && !awkReserved[name] {
-		p.pos += len(name)
-		for _, op := range []string{"+=", "-=", "*=", "/=", "="} {
-			if p.peek() == op && !(op == "=" && strings.HasPrefix(p.src[p.pos:], "==")) {
-				p.pos += len(op)
-				rhs, err := p.expr()
-				if err != nil {
-					return nil, err
-				}
-				return func(st *awkState) awkVal {
-					v := rhs(st)
-					if op != "=" {
-						v = num(arith(op[:1], st.vars[name].num(), v.num()))
-					}
-					st.vars[name] = v
-					return v
-				}, nil
-			}
+		if rt.exiting {
+			return
 		}
-		if p.accept("++") || p.accept("--") {
-			inc := 1.0
-			if p.src[p.pos-1] == '-' {
-				inc = -1
-			}
-			return func(st *awkState) awkVal {
-				old := st.vars[name].num()
-				st.vars[name] = num(old + inc)
-				return num(old)
-			}, nil
-		}
-		p.pos = save
-	}
-	return p.or()
-}
-
-var awkReserved = map[string]bool{"print": true, "printf": true, "BEGIN": true, "END": true}
-
-func (p *awkParser) or() (awkExpr, error) {
-	l, err := p.and()
-	for err == nil && p.accept("||") {
-		r, e := p.and()
-		if e != nil {
-			return nil, e
-		}
-		a := l
-		l = func(st *awkState) awkVal { return boolVal(a(st).truth() || r(st).truth()) }
-	}
-	return l, err
-}
-
-func (p *awkParser) and() (awkExpr, error) {
-	l, err := p.match()
-	for err == nil && p.accept("&&") {
-		r, e := p.match()
-		if e != nil {
-			return nil, e
-		}
-		a := l
-		l = func(st *awkState) awkVal { return boolVal(a(st).truth() && r(st).truth()) }
-	}
-	return l, err
-}
-
-func (p *awkParser) match() (awkExpr, error) {
-	l, err := p.compare()
-	if err != nil {
-		return nil, err
-	}
-	for {
-		neg := false
-		switch {
-		case p.accept("!~"):
-			neg = true
-		case p.peek() == "~":
-			p.pos++
-		default:
-			return l, nil
-		}
-		re, err := p.regexOperand()
-		if err != nil {
-			return nil, err
-		}
-		a := l
-		l = func(st *awkState) awkVal { return boolVal(re(st).MatchString(a(st).str()) != neg) }
 	}
 }
 
-// regexOperand is the right side of ~: a /literal/ or any expression.
-func (p *awkParser) regexOperand() (func(*awkState) *regexp.Regexp, error) {
-	if p.peek() == "/" {
-		re, err := p.regexLiteral()
-		if err != nil {
-			return nil, err
-		}
-		return func(*awkState) *regexp.Regexp { return re }, nil
+func (rt *awkRT) ruleMatches(r *awkRuleN) bool {
+	if r.pat == nil {
+		return true
 	}
-	e, err := p.concat()
-	if err != nil {
-		return nil, err
+	if !r.isRange {
+		return rt.eval(r.pat).truth()
 	}
-	return func(st *awkState) *regexp.Regexp {
-		re, err := regexp.Compile(e(st).str())
-		if err != nil {
-			return regexp.MustCompile(regexp.QuoteMeta(e(st).str()))
+	if !r.active {
+		if !rt.eval(r.pat).truth() {
+			return false
 		}
-		return re
-	}, nil
-}
-
-func (p *awkParser) compare() (awkExpr, error) {
-	l, err := p.concat()
-	if err != nil {
-		return nil, err
+		r.active = !rt.eval(r.pat2).truth()
+		return true
 	}
-	for _, op := range []string{"==", "!=", "<=", ">=", "<", ">"} {
-		if p.accept(op) {
-			r, err := p.concat()
-			if err != nil {
-				return nil, err
-			}
-			return func(st *awkState) awkVal {
-				a, b := l(st), r(st)
-				var c int
-				if a.isNum && b.isNum {
-					switch x, y := a.num(), b.num(); {
-					case x < y:
-						c = -1
-					case x > y:
-						c = 1
-					}
-				} else {
-					c = strings.Compare(a.str(), b.str())
-				}
-				return boolVal(map[string]bool{"==": c == 0, "!=": c != 0, "<": c < 0, "<=": c <= 0, ">": c > 0, ">=": c >= 0}[op])
-			}, nil
-		}
+	if rt.eval(r.pat2).truth() {
+		r.active = false
 	}
-	return l, nil
-}
-
-// concat is juxtaposition: `$1 $2` and `NR": "$0`.
-func (p *awkParser) concat() (awkExpr, error) {
-	l, err := p.additive()
-	if err != nil {
-		return nil, err
-	}
-	for p.startsOperand() {
-		r, err := p.additive()
-		if err != nil {
-			return nil, err
-		}
-		a := l
-		l = func(st *awkState) awkVal { return str(a(st).str() + r(st).str()) }
-	}
-	return l, nil
-}
-
-func (p *awkParser) startsOperand() bool {
-	t := p.peek()
-	if t == "" {
-		return false
-	}
-	c := t[0]
-	return c == '$' || c == '"' || c == '(' || (c >= '0' && c <= '9') || c == '.' ||
-		(isIdentStart(c) && !awkReserved[t]) || (c == '!' && t == "!")
-}
-
-func (p *awkParser) additive() (awkExpr, error) {
-	l, err := p.term()
-	for err == nil {
-		t := p.peek()
-		if (t != "+" && t != "-") || strings.HasPrefix(p.src[p.pos:], "++") || strings.HasPrefix(p.src[p.pos:], "--") {
-			return l, nil
-		}
-		p.pos++
-		r, e := p.term()
-		if e != nil {
-			return nil, e
-		}
-		a := l
-		l = func(st *awkState) awkVal { return num(arith(t, a(st).num(), r(st).num())) }
-	}
-	return nil, err
-}
-
-func (p *awkParser) term() (awkExpr, error) {
-	l, err := p.unary()
-	for err == nil {
-		t := p.peek()
-		if t != "*" && t != "/" && t != "%" {
-			return l, nil
-		}
-		p.pos++
-		r, e := p.unary()
-		if e != nil {
-			return nil, e
-		}
-		a := l
-		l = func(st *awkState) awkVal { return num(arith(t, a(st).num(), r(st).num())) }
-	}
-	return nil, err
-}
-
-func arith(op string, a, b float64) float64 {
-	switch op {
-	case "+":
-		return a + b
-	case "-":
-		return a - b
-	case "*":
-		return a * b
-	case "/":
-		if b == 0 {
-			return math.Inf(1)
-		}
-		return a / b
-	case "%":
-		return math.Mod(a, b)
-	}
-	return 0
-}
-
-func (p *awkParser) unary() (awkExpr, error) {
-	switch p.peek() {
-	case "!":
-		p.pos++
-		e, err := p.unary()
-		if err != nil {
-			return nil, err
-		}
-		return func(st *awkState) awkVal { return boolVal(!e(st).truth()) }, nil
-	case "-":
-		p.pos++
-		e, err := p.unary()
-		if err != nil {
-			return nil, err
-		}
-		return func(st *awkState) awkVal { return num(-e(st).num()) }, nil
-	}
-	return p.primary()
-}
-
-func boolVal(b bool) awkVal {
-	if b {
-		return num(1)
-	}
-	return num(0)
-}
-
-func (p *awkParser) regexLiteral() (*regexp.Regexp, error) {
-	p.skip(false)
-	start := p.pos + 1
-	j := start
-	for j < len(p.src) && p.src[j] != '/' {
-		if p.src[j] == '\\' {
-			j++
-		}
-		j++
-	}
-	if j >= len(p.src) {
-		return nil, awkErr(fmt.Sprintf("line %d: runaway regular expression /%s ...", p.line, p.src[start:min(start+10, len(p.src))]))
-	}
-	p.pos = j + 1
-	re, err := regexp.Compile(p.src[start:j])
-	if err != nil {
-		return nil, awkErr(fmt.Sprintf("line %d: regular expression compile failed (%s)", p.line, p.src[start:j]))
-	}
-	return re, nil
-}
-
-func (p *awkParser) primary() (awkExpr, error) {
-	t := p.peek()
-	switch {
-	case t == "":
-		return nil, p.fail("")
-	case t == "/":
-		re, err := p.regexLiteral()
-		if err != nil {
-			return nil, err
-		}
-		return func(st *awkState) awkVal { return boolVal(re.MatchString(st.field(0))) }, nil
-	case t == "$":
-		p.pos++
-		e, err := p.primary()
-		if err != nil {
-			return nil, err
-		}
-		return func(st *awkState) awkVal { return strnum(st.field(int(e(st).num()))) }, nil
-	case t == "(":
-		p.pos++
-		e, err := p.expr()
-		if err != nil {
-			return nil, err
-		}
-		if !p.accept(")") {
-			return nil, awkErr(fmt.Sprintf("line %d: missing ) near %s", p.line, p.peek()))
-		}
-		return e, nil
-	case t == "\"":
-		j := p.pos + 1
-		var b strings.Builder
-		for j < len(p.src) && p.src[j] != '"' {
-			if p.src[j] == '\\' && j+1 < len(p.src) {
-				j++
-				switch p.src[j] {
-				case 'n':
-					b.WriteByte('\n')
-				case 't':
-					b.WriteByte('\t')
-				default:
-					b.WriteByte(p.src[j])
-				}
-			} else {
-				b.WriteByte(p.src[j])
-			}
-			j++
-		}
-		if j >= len(p.src) {
-			return nil, awkErr(fmt.Sprintf("line %d: runaway string constant \"%s ...", p.line, p.src[p.pos+1:min(p.pos+11, len(p.src))]))
-		}
-		p.pos = j + 1
-		v := str(b.String())
-		return func(*awkState) awkVal { return v }, nil
-	case (t[0] >= '0' && t[0] <= '9') || t[0] == '.':
-		j := p.pos
-		for j < len(p.src) && strings.IndexByte("0123456789.eE", p.src[j]) >= 0 {
-			j++
-		}
-		n, err := strconv.ParseFloat(p.src[p.pos:j], 64)
-		if err != nil {
-			return nil, p.fail(p.src[p.pos:j])
-		}
-		p.pos = j
-		return func(*awkState) awkVal { return num(n) }, nil
-	case isIdentStart(t[0]) && !awkReserved[t]:
-		p.pos += len(t)
-		if (t == "sub" || t == "gsub") && p.peek() == "(" {
-			return p.subCall(t == "gsub")
-		}
-		if fn, ok := awkFuncs[t]; ok {
-			var args []awkExpr
-			if p.accept("(") {
-				for p.peek() != ")" {
-					e, err := p.expr()
-					if err != nil {
-						return nil, err
-					}
-					args = append(args, e)
-					if !p.accept(",") {
-						break
-					}
-				}
-				if !p.accept(")") {
-					return nil, awkErr(fmt.Sprintf("line %d: missing ) near %s", p.line, p.peek()))
-				}
-			}
-			return func(st *awkState) awkVal {
-				vals := make([]awkVal, len(args))
-				for i, a := range args {
-					vals[i] = a(st)
-				}
-				return fn(st, vals)
-			}, nil
-		}
-		if p.peek() == "(" {
-			return nil, p.fail(t) // user-defined functions are not supported
-		}
-		switch t {
-		case "NR":
-			return func(st *awkState) awkVal { return num(float64(st.nr)) }, nil
-		case "FNR":
-			return func(st *awkState) awkVal { return num(float64(st.fnr)) }, nil
-		case "NF":
-			return func(st *awkState) awkVal { return num(float64(len(st.fields) - 1)) }, nil
-		}
-		return func(st *awkState) awkVal { return st.vars[t] }, nil
-	}
-	return nil, p.fail(t)
-}
-
-var awkFuncs = map[string]func(*awkState, []awkVal) awkVal{
-	"length": func(st *awkState, a []awkVal) awkVal {
-		if len(a) == 0 {
-			return num(float64(len(st.field(0))))
-		}
-		return num(float64(len(a[0].str())))
-	},
-	"toupper": func(_ *awkState, a []awkVal) awkVal { return str(strings.ToUpper(arg(a, 0).str())) },
-	"tolower": func(_ *awkState, a []awkVal) awkVal { return str(strings.ToLower(arg(a, 0).str())) },
-	"int":     func(_ *awkState, a []awkVal) awkVal { return num(math.Trunc(arg(a, 0).num())) },
-	"index": func(_ *awkState, a []awkVal) awkVal {
-		return num(float64(strings.Index(arg(a, 0).str(), arg(a, 1).str()) + 1))
-	},
-	"substr": func(_ *awkState, a []awkVal) awkVal {
-		s := arg(a, 0).str()
-		start := int(math.Round(arg(a, 1).num()))
-		end := len(s) + 1
-		if len(a) > 2 {
-			end = start + int(math.Round(a[2].num()))
-		}
-		start = max(start, 1)
-		end = min(end, len(s)+1)
-		if start >= end {
-			return str("")
-		}
-		return str(s[start-1 : end-1])
-	},
-}
-
-func arg(a []awkVal, i int) awkVal {
-	if i < len(a) {
-		return a[i]
-	}
-	return str("")
-}
-
-// subCall parses sub(re, repl [, target]) and gsub(re, repl [, target]).
-// target is $0, $N or a variable and is assigned the result; the call's value
-// is the number of replacements made.
-func (p *awkParser) subCall(global bool) (awkExpr, error) {
-	if !p.accept("(") {
-		return nil, p.fail("sub")
-	}
-	var reOf func(*awkState) *regexp.Regexp
-	if p.peek() == "/" {
-		re, err := p.regexLiteral()
-		if err != nil {
-			return nil, err
-		}
-		reOf = func(*awkState) *regexp.Regexp { return re }
-	} else {
-		e, err := p.expr()
-		if err != nil {
-			return nil, err
-		}
-		reOf = func(st *awkState) *regexp.Regexp {
-			re, err := regexp.Compile(e(st).str())
-			if err != nil {
-				return nil
-			}
-			return re
-		}
-	}
-	if !p.accept(",") {
-		return nil, p.fail(p.peek())
-	}
-	repl, err := p.expr()
-	if err != nil {
-		return nil, err
-	}
-	get := func(st *awkState) string { return st.field(0) }
-	set := func(st *awkState, v string) { st.setRecord(v) }
-	if p.accept(",") {
-		switch t := p.peek(); {
-		case t == "$":
-			p.pos++
-			idx, err := p.primary()
-			if err != nil {
-				return nil, err
-			}
-			get = func(st *awkState) string { return st.field(int(idx(st).num())) }
-			set = func(st *awkState, v string) {
-				n := int(idx(st).num())
-				if n == 0 {
-					st.setRecord(v)
-					return
-				}
-				for len(st.fields) <= n {
-					st.fields = append(st.fields, "")
-				}
-				st.fields[n] = v
-				st.fields[0] = strings.Join(st.fields[1:], " ")
-			}
-		case t != "" && isIdentStart(t[0]):
-			p.pos += len(t)
-			get = func(st *awkState) string { return st.vars[t].str() }
-			set = func(st *awkState, v string) { st.vars[t] = str(v) }
-		default:
-			return nil, p.fail(t)
-		}
-	}
-	if !p.accept(")") {
-		return nil, awkErr(fmt.Sprintf("line %d: missing ) near %s", p.line, p.peek()))
-	}
-	return func(st *awkState) awkVal {
-		re := reOf(st)
-		if re == nil {
-			return num(0)
-		}
-		src, r := get(st), repl(st).str()
-		count := 0
-		var out strings.Builder
-		pos := 0
-		for pos <= len(src) {
-			m := re.FindStringIndex(src[pos:])
-			if m == nil {
-				break
-			}
-			lo, hi := pos+m[0], pos+m[1]
-			out.WriteString(src[pos:lo])
-			for i := 0; i < len(r); i++ {
-				switch {
-				case r[i] == '\\' && i+1 < len(r) && r[i+1] == '&':
-					out.WriteByte('&')
-					i++
-				case r[i] == '&':
-					out.WriteString(src[lo:hi])
-				default:
-					out.WriteByte(r[i])
-				}
-			}
-			count++
-			if hi == lo { // empty match: step over one byte
-				if lo < len(src) {
-					out.WriteByte(src[lo])
-				}
-				pos = hi + 1
-			} else {
-				pos = hi
-			}
-			if !global {
-				break
-			}
-		}
-		if pos <= len(src) {
-			out.WriteString(src[pos:])
-		}
-		if count > 0 {
-			set(st, out.String())
-		}
-		return num(float64(count))
-	}, nil
+	return true
 }
