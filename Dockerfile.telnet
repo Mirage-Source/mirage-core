@@ -6,8 +6,12 @@ COPY go.mod go.sum ./
 COPY third_party ./third_party
 RUN go mod download
 COPY . .
+# Stamped into every session row as build_sha (internal/buildinfo). Pass it with
+# BUILD_SHA=$(sh scripts/build_sha.sh) docker compose up -d --build; left unset it
+# is "unknown", which the daily health check treats as a finding.
+ARG BUILD_SHA=unknown
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w" \
+    -ldflags="-s -w -X github.com/mirage-source/mirage-core/internal/buildinfo.Commit=${BUILD_SHA}" \
     -o mirage-telnet \
     ./cmd/telnet
 

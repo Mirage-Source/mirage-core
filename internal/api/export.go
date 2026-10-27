@@ -3,6 +3,7 @@ package api
 type ExportSession struct {
 	SessionID             string   `json:"session_id"`
 	NodeID                string   `json:"node_id"`
+	BuildSHA              string   `json:"build_sha"`
 	ClientIP              string   `json:"client_ip"`
 	SSHClientBanner       string   `json:"ssh_client_banner"`
 	StartMS               int64    `json:"start_ms"`

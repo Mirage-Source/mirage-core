@@ -25,6 +25,7 @@ func splitStatements(line string) []statement {
 
 	var quote byte // 0, '\'', or '"'
 	parenDepth := 0
+	var cs caseScope
 
 	start := 0 // index in line where cur began
 	flush := func() {
@@ -46,6 +47,20 @@ func splitStatements(line string) []statement {
 		}
 
 		if quote != 0 {
+			if quote == '"' && c == '\\' && i+1 < len(runes) {
+				// Inside double quotes backslash-newline vanishes, and backslash keeps a following
+				// $ ` " or \ from acting as syntax. Any other backslash is an ordinary character.
+				if n := continuationLen(runes, i); n > 0 {
+					i += n - 1
+					continue
+				}
+				if strings.IndexByte("$`\"\\", runes[i+1]) >= 0 {
+					cur.WriteByte(c)
+					cur.WriteByte(runes[i+1])
+					i++
+					continue
+				}
+			}
 			cur.WriteByte(c)
 			if c == quote {
 				quote = 0
@@ -53,14 +68,34 @@ func splitStatements(line string) []statement {
 			continue
 		}
 
+		// Outside quotes a backslash either continues the line (backslash-newline is deleted, which
+		// joins `a \` + newline + `b` and even splits of a word) or makes the next character an
+		// ordinary one: an escaped ; & | ( ) quote or space never separates or quotes anything.
+		if c == '\\' && i+1 < len(runes) {
+			if n := continuationLen(runes, i); n > 0 {
+				i += n - 1
+				continue
+			}
+			cur.WriteByte(c)
+			cur.WriteByte(runes[i+1])
+			i++
+			continue
+		}
+
+		skip := cs.step(line, i)
 		switch {
+		case c == '#' && atWordStart(line, i):
+			// A comment runs to the end of the line; the newline stays.
+			for i+1 < len(runes) && runes[i+1] != '\n' {
+				i++
+			}
 		case c == '\'' || c == '"':
 			quote = c
 			cur.WriteByte(c)
-		case c == '(':
+		case c == '(' && !skip:
 			parenDepth++
 			cur.WriteByte(c)
-		case c == ')':
+		case c == ')' && !skip:
 			if parenDepth > 0 {
 				parenDepth--
 			}
@@ -108,6 +143,7 @@ func splitPipeline(text string) []string {
 
 	var quote byte
 	parenDepth := 0
+	var cs caseScope
 
 	runes := []byte(text)
 	for i := 0; i < len(runes); i++ {
@@ -121,14 +157,15 @@ func splitPipeline(text string) []string {
 			continue
 		}
 
+		skip := cs.step(text, i)
 		switch {
 		case c == '\'' || c == '"':
 			quote = c
 			cur.WriteByte(c)
-		case c == '(':
+		case c == '(' && !skip:
 			parenDepth++
 			cur.WriteByte(c)
-		case c == ')':
+		case c == ')' && !skip:
 			if parenDepth > 0 {
 				parenDepth--
 			}
@@ -235,13 +272,44 @@ func extractRedirects(words []string) ([]string, redirects) {
 // "$". A private-use rune, so it does not occur in typed commands.
 const litDollar = "\uE000"
 
-func tokenizeWords(text string) []string {
+// qOpen and qClose bracket text that was quoted, when tokenizeWordsMarked asks for it. Word splitting
+// needs them: it applies to the result of an unquoted expansion only, and the quotes are gone by then.
+const (
+	qOpen  = "\uE001"
+	qClose = "\uE002"
+	// litLT and litGT stand for a quoted or escaped < or >, so that extractRedirects, which looks at words
+	// after their quotes are gone, does not take `"<a>"` or `"2>"` for a redirect.
+	litLT = "\uE003"
+	litGT = "\uE004"
+)
+
+var (
+	maskRedir   = strings.NewReplacer("<", litLT, ">", litGT)
+	unmaskRedir = strings.NewReplacer(litLT, "<", litGT, ">")
+)
+
+func unmaskAll(words []string) []string {
+	for i, w := range words {
+		words[i] = unmaskRedir.Replace(w)
+	}
+	return words
+}
+
+func tokenizeWords(text string) []string { return tokenize(text, false) }
+
+// tokenizeWordsMarked is tokenizeWords with every quoted span wrapped in qOpen and qClose. Only
+// substituteFields understands them.
+func tokenizeWordsMarked(text string) []string { return tokenize(text, true) }
+
+func tokenize(text string, mark bool) []string {
 	var words []string
 	var cur strings.Builder
 	hasCur := false
 
 	var quote byte
+	verbatim := false // quote opened inside $( ): the inner text is parsed again later
 	parenDepth := 0
+	var cs caseScope
 
 	flush := func() {
 		if hasCur {
@@ -256,9 +324,34 @@ func tokenizeWords(text string) []string {
 		c := runes[i]
 
 		if quote != 0 {
+			if verbatim {
+				// Inside $( ) the whole span is evaluated again by evalLine,
+				// which does its own quote handling; stripping the quotes
+				// here turned `printf '\n'` into `printf n`.
+				cur.WriteByte(c)
+				if quote == '"' && c == '\\' && i+1 < len(runes) {
+					i++
+					cur.WriteByte(runes[i])
+				} else if c == quote {
+					quote = 0
+				}
+				hasCur = true
+				continue
+			}
 			switch {
 			case c == quote:
 				quote = 0
+				if mark {
+					cur.WriteString(qClose)
+				}
+			case c == '$' && quote == '"' && i+1 < len(runes) && runes[i+1] == '(':
+				// "...$(cmd "quoted")...": the whole substitution is one unit.
+				if e := matchingParen(text, i+2); e >= 0 {
+					cur.WriteString(text[i : e+1])
+					i = e
+				} else {
+					cur.WriteByte(c)
+				}
 			case c == '$' && quote == '\'':
 				cur.WriteString(litDollar) // '...' never expands
 			case c == '\\' && quote == '"' && i+1 < len(runes) && strings.IndexByte("$`\"\\", runes[i+1]) >= 0:
@@ -275,11 +368,14 @@ func tokenizeWords(text string) []string {
 			continue
 		}
 
+		skip := cs.step(text, i)
 		switch {
 		case c == '\\' && parenDepth == 0 && i+1 < len(runes):
 			i++
 			if runes[i] == '$' {
 				cur.WriteString(litDollar)
+			} else if mark && (runes[i] == '<' || runes[i] == '>') {
+				cur.WriteString(maskRedir.Replace(string(runes[i])))
 			} else {
 				cur.WriteByte(runes[i])
 			}
@@ -287,16 +383,31 @@ func tokenizeWords(text string) []string {
 		case c == '\'' || c == '"':
 			quote = c
 			hasCur = true
+			if verbatim = parenDepth > 0; verbatim {
+				cur.WriteByte(c)
+			} else if mark {
+				cur.WriteString(qOpen)
+			}
+		case c == '$' && parenDepth == 0 && i+1 < len(runes) && runes[i+1] == '{':
+			// ${...} is one word even when it holds spaces (${y:-a b}, ${y: -2}). It is expanded later,
+			// and the quotes inside its operands are removed then.
+			if end := matchingBrace(text, i+2); end >= 0 {
+				cur.WriteString(text[i : end+1])
+				i = end
+			} else {
+				cur.WriteByte(c)
+			}
+			hasCur = true
 		case c == '$' && i+1 < len(runes) && runes[i+1] == '(':
 			cur.WriteByte(c)
 			cur.WriteByte('(')
 			hasCur = true
 			parenDepth++
 			i++
-		case parenDepth > 0 && c == '(':
+		case parenDepth > 0 && c == '(' && !skip:
 			parenDepth++
 			cur.WriteByte(c)
-		case parenDepth > 0 && c == ')':
+		case parenDepth > 0 && c == ')' && !skip:
 			parenDepth--
 			cur.WriteByte(c)
 		case parenDepth == 0 && (c == ' ' || c == '\t'):
@@ -359,7 +470,7 @@ func statementTexts(items []item, out []string) []string {
 		switch it.kind {
 		case kindSimple:
 			out = append(out, it.text)
-		case kindGroup, kindFor, kindSubshell:
+		case kindGroup, kindFor, kindSubshell, kindFunc:
 			out = statementTexts(it.body, out)
 		case kindWhile, kindUntil:
 			out = statementTexts(it.conds[0], out)
@@ -405,4 +516,18 @@ func NeedsContinuation(line string) bool {
 		}
 	}
 	return quote != 0
+}
+
+// continuationLen is the length of a backslash-newline (or backslash-CRLF) starting at runes[i], else 0.
+func continuationLen(runes []byte, i int) int {
+	if runes[i] != '\\' || i+1 >= len(runes) {
+		return 0
+	}
+	if runes[i+1] == '\n' {
+		return 2
+	}
+	if runes[i+1] == '\r' && i+2 < len(runes) && runes[i+2] == '\n' {
+		return 3
+	}
+	return 0
 }

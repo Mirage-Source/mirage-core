@@ -26,6 +26,45 @@ code, sensors, analysis, and documentation are welcome.
 - Match the surrounding style; add tests for new behaviour; keep the two sides of
   any cross-language wire contract (e.g. the deception action names) in sync.
 
+## Checking the simulated shell
+
+Two checks measure how closely the simulated shell (`internal/shell`) matches a real Ubuntu 22.04 host.
+Neither runs anything on your machine except the Go shell, which has no `os/exec`, network or real-file access.
+
+**Ground truth (needs Docker).** `internal/shell/testdata/ubuntu2204.json` lists commands with the stdout,
+stderr and exit status a fresh `ubuntu:22.04` container produced. `go test ./internal/shell` requires the shell to
+reproduce every byte.
+
+```bash
+make ubuntu-check        # compare the file with the container; changes nothing
+make ubuntu-regen        # rewrite every expectation from the container
+```
+
+To add a case, append `{"cmd": "..."}` to `"cases"` and run `make ubuntu-regen`. Never edit an expected value to make a
+test pass; the value is what Ubuntu printed, and the shell is what gets fixed. A case with no recorded expectation
+fails the Go test. The file records the image id and bash version, and `check` warns if yours differs.
+
+**Replay of real commands.** Export the most common commands from a sessions database, then replay them against the
+code before the shell fixes and against your tree:
+
+```bash
+DATABASE_URL=postgresql://... python3 scripts/export_replay_commands.py --protocol ssh --out /somewhere/ssh.jsonl
+make replay-compare REPLAY_FILE=/somewhere/ssh.jsonl        # BASE_REF defaults to ad6b2dc
+```
+
+The corpus is attacker-supplied text; keep it outside version control (`replay/` is ignored). Read the result with care:
+
+- A *tell* is a syntax error, or `X: command not found` for any `X` except `xxxxxx`, the botnet self-test's deliberate
+  probe, which a real host answers the same way. `ok` means no tell appeared, not that the output was right; the ground
+  truth above checks that for the commands it covers.
+- Some missing commands are legitimately missing on Ubuntu (an attacker's own binary, `ssh` in a minimal image), so the
+  tell rate is an upper bound for those.
+- The self-test payload is one command that can dominate the total (12.6% of the Nuremberg corpus, 14.1% of
+  Frankfurt's) and flips from a syntax error to correct at once. The second line of output leaves it out; quote that
+  one next to the first. On Frankfurt's commands the other 86% went from 96.9% to 98.0%.
+- Commands of 4000 bytes or more are left out. That is the 10,972- and 11,956-byte payload variants, 31% of
+  Nuremberg's command sessions, which the shell still cannot run.
+
 ## Submitting changes
 
 1. Fork and branch off `main`.

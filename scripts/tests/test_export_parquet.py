@@ -118,10 +118,11 @@ def test_session_record_adds_geo_and_keeps_real_ip_by_default():
         "outcome": "auth_failed", "command_count": 0, "bait_hit_count": 0,
         "attacker_class": "automated_scanner", "classifier_confidence": 0.8, "cluster_id": None,
         "mitre_techniques": ["T1110"], "auth_attempt_count": 3, "unique_usernames_tried": 2,
-        "top_username": "root",
+        "top_username": "root", "build_sha": "abc1234-dirty",
     }
     out = session_record(row, _geo, ip_salt=None)
     assert out["client_ip"] == "198.51.100.7"
+    assert out["build_sha"] == "abc1234-dirty"  # schema 1.2: which build wrote the row
     assert (out["asn"], out["asn_name"], out["country"]) == ("AS64500", "Example Net", "DE")
     assert out["mitre_techniques"] == ["T1110"]
     hashed = session_record(row, _geo, ip_salt="salt")
@@ -227,6 +228,7 @@ def test_end_to_end_incremental_export():
     _fresh_schema(conn)
     w42, w43 = ms(2026, 10, 14, 10), ms(2026, 10, 21, 10)
     _seed_session(conn, "ssh-42", "ssh", w42, "198.51.100.7")
+    conn.execute("UPDATE sessions SET build_sha = 'abc1234-dirty' WHERE session_id = 'ssh-42'")
     _seed_command(conn, "ssh-42", "e-42", w42 + 10, "uname -a")
     conn.execute("INSERT INTO auth_attempts (session_id, timestamp_ms, method, username, credential, success)"
                  " VALUES ('ssh-42', %s, 'password', 'root', 'x', false)", (w42,))
@@ -252,10 +254,12 @@ def test_end_to_end_incremental_export():
         assert [s["session_id"] for s in sessions] == ["ssh-42"]
         assert sessions[0]["country"] == "DE" and sessions[0]["auth_attempt_count"] == 1
         assert sessions[0]["mitre_techniques"] == ["T1110"]
+        assert sessions[0]["build_sha"] == "abc1234-dirty"
         cmds = pq.read_table(Path(d) / "bucket" / "commands/protocol=ssh/week=2026-W42.parquet").to_pylist()
         assert [c["raw_command"] for c in cmds] == ["uname -a"] and cmds[0]["client_ip"].startswith("anon_")
         edge = pq.read_table(Path(d) / "bucket" / "sessions/protocol=telnet/week=2026-W43.parquet").to_pylist()
         assert [s["session_id"] for s in edge] == ["tel-43-edge"]
+        assert edge[0]["build_sha"] == ""  # written before schema 1.2: empty, not unknown
 
         # Same day again: nothing new, nothing re-exported.
         again = run(db, store, now_ms=ms(2026, 10, 27, 2), **kwargs)

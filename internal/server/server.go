@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/mirage-source/mirage-core/internal/buildinfo"
 	"github.com/mirage-source/mirage-core/internal/deception"
 	"github.com/mirage-source/mirage-core/internal/fleet"
 	"github.com/mirage-source/mirage-core/internal/proxyproto"
@@ -292,6 +293,7 @@ func (g *sessionGuard) finalize(db *sql.DB, fleetClient *fleet.Client) {
 }
 
 func Start(addr string) {
+	log.Printf("mirage ssh sensor build=%s schema_version=%s", buildinfo.Commit, session.SchemaVersion)
 	hostKeys := loadHostKeys("config/hostkey")
 
 	credPath := os.Getenv("WEAK_CREDENTIALS_FILE")
@@ -405,17 +407,7 @@ func Start(addr string) {
 		handlerConn := proxyTrust.wrap(conn)
 		pp, _ := handlerConn.(*proxyproto.Conn)
 
-		sess := session.Session{
-			SessionID:     uuid.New().String(),
-			SchemaVersion: "1.1",
-			NodeID:        "Ubuntu",
-			Protocol:      session.ProtocolSSH,
-			Outcome:       session.OutcomeActive,
-			BaitEvents:    []session.BaitEvent{},
-			Timing: session.Timing{
-				StartMS: time.Now().UnixMilli(),
-			},
-		}
+		sess := newSSHSession()
 
 		config := newSSHServerConfig(&sess, pp, sshAuthConfig{
 			weakCreds:           weakCreds,
@@ -780,6 +772,14 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGua
 
 	log.Printf("New connection from %v", conn.RemoteAddr())
 
+	// Recorded before the handshake so every session has it. It used to be set only after a
+	// successful handshake, which made server_port 0 on exactly the auth_failed sessions.
+	// It is this listener's own port (2222 in the container), not the port the client dialed;
+	// that is Network.TargetPort, known only behind a PROXY-protocol relay.
+	if tcpAddr, ok := conn.LocalAddr().(*net.TCPAddr); ok {
+		guard.sess.Network.ServerPort = tcpAddr.Port
+	}
+
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	// The client's KEXINIT is read inside NewServerConn, before any auth
 	// callback, so the fingerprint is known on every path below.
@@ -812,9 +812,6 @@ func handleConnection(conn net.Conn, config *ssh.ServerConfig, guard *sessionGua
 
 	applyRemoteAddr(&guard.sess.Network, pp, remoteAddr)
 
-	if tcpAddr, ok := conn.LocalAddr().(*net.TCPAddr); ok {
-		guard.sess.Network.ServerPort = tcpAddr.Port
-	}
 	log.Printf("Client Version: %s", sshConn.ClientVersion())
 	go ssh.DiscardRequests(reqs)
 	handleChannels(conn, idleTimeout, chans, guard, db, deceptionRuntime, fleetClient)
@@ -1210,4 +1207,20 @@ func parseCommandLine(line string) (string, []string, []string) {
 		chain[i] = inv.Name
 	}
 	return invs[0].Name, invs[0].Args, chain
+}
+
+// newSSHSession returns the empty record every accepted SSH connection starts from.
+func newSSHSession() session.Session {
+	return session.Session{
+		SessionID:     uuid.New().String(),
+		SchemaVersion: session.SchemaVersion,
+		NodeID:        "Ubuntu",
+		BuildSHA:      buildinfo.Commit,
+		Protocol:      session.ProtocolSSH,
+		Outcome:       session.OutcomeActive,
+		BaitEvents:    []session.BaitEvent{},
+		Timing: session.Timing{
+			StartMS: time.Now().UnixMilli(),
+		},
+	}
 }

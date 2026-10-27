@@ -32,6 +32,7 @@ from geo_lookup import GeoLookup
 FIELDNAMES = [
     "session_id",
     "node_id",
+    "build_sha",
     "client_ip",
     "asn",
     "asn_name",

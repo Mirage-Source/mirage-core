@@ -14,6 +14,8 @@ import (
 
 	_ "github.com/lib/pq"
 	"golang.org/x/crypto/ssh"
+
+	"github.com/mirage-source/mirage-core/internal/buildinfo"
 )
 
 // TestEndToEndSSHSessionPersistsToDatabase drives the real thing end to end:
@@ -88,18 +90,20 @@ func TestEndToEndSSHSessionPersistsToDatabase(t *testing.T) {
 	// the connection has finished and the goroutine has had a chance to
 	// call SaveSession -- give that a moment to land rather than racing it.
 	var (
-		clientIP     string
-		commandCount int
+		clientIP      string
+		commandCount  int
+		schemaVersion string
+		buildSHA      string
 	)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		row := db.QueryRow(
-			`SELECT client_ip, command_count FROM sessions
+			`SELECT client_ip, command_count, schema_version, build_sha FROM sessions
 			 WHERE client_ip = '127.0.0.1' AND command_count > 0
 			   AND protocol = 'ssh' AND start_ms >= $1
 			 ORDER BY start_ms DESC LIMIT 1`, testStart,
 		)
-		err := row.Scan(&clientIP, &commandCount)
+		err := row.Scan(&clientIP, &commandCount, &schemaVersion, &buildSHA)
 		if err == nil {
 			break
 		}
@@ -114,6 +118,10 @@ func TestEndToEndSSHSessionPersistsToDatabase(t *testing.T) {
 	}
 	if commandCount < 2 {
 		t.Errorf("command_count = %d, want at least 2 (echo, whoami)", commandCount)
+	}
+	// A live sensor stamps the build it was linked with onto the stored row.
+	if schemaVersion != "1.2" || buildSHA != buildinfo.Commit {
+		t.Errorf("stored schema_version/build_sha = %q/%q, want 1.2/%q", schemaVersion, buildSHA, buildinfo.Commit)
 	}
 
 	var rawInputB64, parsedCommand string

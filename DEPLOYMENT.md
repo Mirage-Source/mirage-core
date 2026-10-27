@@ -132,6 +132,64 @@ file. They are all idempotent, so this only fills in what is missing.
 
 ---
 
+## 3b. Build stamp (`build_sha`, schema_version 1.2)
+
+Every session row records the commit its sensor binary was built from, because
+`node_id` (the emulated OS) and `schema_version` cannot tell builds apart.
+Deploy the sensors with the stamp:
+
+```sh
+BUILD_SHA=$(sh scripts/build_sha.sh) docker compose up -d --build mirage-core mirage-telnet
+```
+
+`scripts/build_sha.sh` prints the short sha, with `-dirty` if the tree differs
+from HEAD in any way (untracked files count, because `COPY . .` copies them).
+If `BUILD_SHA` is not set the image builds, runs, and writes `unknown`; the
+sensor logs `build=...` on startup, so `docker compose logs mirage-core | head`
+shows what is running. Rows written before this change keep `build_sha = ''`.
+
+Also from schema 1.2: `server_port` is recorded before the handshake, so it is the
+same on every SSH session (2222). Before, it was 0 on exactly the `auth_failed`
+sessions, which leaked the outcome into a feature. It is the listener's own port, the
+container's internal one, not the port the client dialed; that is `target_port`, set
+only behind a PROXY-protocol relay and NULL otherwise.
+Start a sensor (which applies migration 019) before running `dataset-export`,
+which now selects the column.
+
+---
+
+## 3c. Daily health check
+
+`scripts/daily_health_check.py` needs only `python3` and `psql`, and exits 1 on any
+finding, so it can run from cron or CI.
+
+```sh
+DATABASE_URL=postgresql://... python3 scripts/daily_health_check.py --protocol ssh --check-builds
+DATABASE_URL=postgresql://... python3 scripts/daily_health_check.py --protocol telnet
+```
+
+| Check | Finds | Why not a rate alone |
+|---|---|---|
+| accepted pairs | any accepted `user:pass` not on the sensor's accept list (`WEAK_CREDENTIALS_FILE`, `TELNET_WEAK_CREDENTIALS_FILE`) | catches accept-everything at any traffic level; Telnet's ~68% acceptance is policy |
+| heartbeats | a silence over 5 min on any sensor, or a latest heartbeat over 5 min old | a 2 h 34 min outage inside a busy day leaves the daily count looking normal |
+| hour coverage | a run of hours with no sessions that is unprecedented for the sensor (the quietest 5% of last week's hours had 5 or more) | a capture failure leaves the sensor up and beating (60 heartbeats, no sessions, seen once), and a database without a heartbeat table has no other outage detector |
+| build stamp (`--check-builds`) | `build_sha` of `unknown` (deployed without `BUILD_SHA`) or `''` (a pre-1.2 binary) | |
+| daily volume and acceptance rate | no-session days; a volume drop below 25% of the trailing median unless every hour of the day had sessions (then only below 5%); SSH acceptance under 1% or over 25% | |
+
+A missing accept list or an unreadable table is reported as a finding, never skipped.
+
+The defaults come from measurement on the two sensors so far: 123,650 heartbeat
+intervals had a median of 60.0 s and a largest normal value of 64.6 s, while the
+shortest real outage was 16 min; normal SSH days accepted 2.3% to 11.4%, reject-
+everything is 0% and accept-everything 61.6% to 100%; Telnet hours are bursty (17%
+under 10 sessions), which is why an empty hour is judged against the quietest 5% of
+the previous week and not against the median. A third sensor with different traffic
+may need `--max-gap-min`, `--max-age-min`, `--min-accept`, `--max-accept` or
+`--hour-floor`. Use `--check-builds` only once the sensors have been redeployed with
+schema 1.2. Where it runs and how it notifies are not decided here.
+
+---
+
 ## 3a. Telnet sensor (`mirage-telnet`, port 23)
 
 Order matters on an existing deployment:

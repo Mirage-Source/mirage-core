@@ -25,6 +25,16 @@ func stripAssignments(words []string) []string {
 	return words
 }
 
+// leadingAssignments is the NAME=value words stripAssignments would drop: `IFS=: read a b` sets IFS for that
+// one command.
+func leadingAssignments(words []string) []string {
+	n := 0
+	for n+1 < len(words) && isAssignmentOnly(words[n:n+1]) {
+		n++
+	}
+	return words[:n]
+}
+
 func splitFlags(args []string) (flags string, operands []string) {
 	for _, a := range args {
 		if len(a) > 1 && strings.HasPrefix(a, "-") {

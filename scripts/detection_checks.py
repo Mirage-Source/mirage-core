@@ -377,6 +377,23 @@ def sh_many_execs(sh):
     return True, "20 of 20 answered"
 
 
+def sh_case_in_substitution(sh):
+    # The botnet self-test seen on both Mirage sensors wraps a case statement in $( ). bash accepts it;
+    # a parser that miscounts the ")" ending a case pattern fails with a syntax error. None of the
+    # published checks above exercises it, so they score the regressed and the fixed shell alike.
+    out, err, code = sh.run('x=$(case a in a) echo sub;; esac); echo "[$x]"')
+    ok = out == b"[sub]\n" and err == b"" and code == 0
+    return ok, f"stdout {out[:40]!r}, stderr {err[:50]!r}, exit {code}"
+
+
+def sh_write_chmod_run(sh):
+    # The self-test also writes a small script, marks it executable and runs it.
+    out, err, code = sh.run("printf '#!/bin/bash\\necho hi\\n' > /tmp/.dc_script && chmod +x /tmp/.dc_script "
+                            "&& /tmp/.dc_script; rm -f /tmp/.dc_script")
+    ok = out == b"hi\n" and err == b"" and code == 0
+    return ok, f"stdout {out[:40]!r}, stderr {err[:50]!r}, exit {code}"
+
+
 def sh_own_sshd(sh):
     out, _, _ = sh.run("ps aux")
     return b"sshd" in out, f"{out.count(b'sshd')} sshd lines"
@@ -400,6 +417,8 @@ SHELL_CHECKS = [
     ("unknown command: not found on stderr, exit 127", "consistency", sh_not_found),
     ("file written in one exec is there in the next", "consistency", sh_persist_across_channels),
     ("ps shows sshd", "consistency", sh_own_sshd),
+    ("case statement inside $( )", "botnet self-test (Mirage logs)", sh_case_in_substitution),
+    ("write, chmod +x and run a script", "botnet self-test (Mirage logs)", sh_write_chmod_run),
     ("echo $0 $SHELL under exec", "consistency", sh_shell_vars),
     ("20 sequential execs on one connection", "consistency", sh_many_execs),
 ]

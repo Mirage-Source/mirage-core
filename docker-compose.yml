@@ -27,6 +27,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        BUILD_SHA: ${BUILD_SHA:-unknown}
     depends_on:
       postgres:
         condition: service_healthy
@@ -201,6 +203,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.telnet
+      args:
+        BUILD_SHA: ${BUILD_SHA:-unknown}
     depends_on:
       postgres:
         condition: service_healthy
