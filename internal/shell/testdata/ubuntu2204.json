@@ -864,6 +864,90 @@
    "code": 0,
    "stderr": "",
    "stdout": "[hi]\n"
+  },
+  {
+   "cmd": "false || \\\n  echo yes",
+   "code": 0,
+   "stderr": "",
+   "stdout": "yes\n"
+  },
+  {
+   "cmd": "echo a \\\n  b",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a b\n"
+  },
+  {
+   "cmd": "for n in a \\\n   b; do echo $n; done",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\nb\n"
+  },
+  {
+   "cmd": "echo \"a\\\nb\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ab\n"
+  },
+  {
+   "cmd": "echo 'a\\\nb'",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\\\nb\n"
+  },
+  {
+   "cmd": "ec\\\nho hi",
+   "code": 0,
+   "stderr": "",
+   "stdout": "hi\n"
+  },
+  {
+   "cmd": "echo a\\;b",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a;b\n"
+  },
+  {
+   "cmd": "echo a\\\\\necho b",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\\\nb\n"
+  },
+  {
+   "cmd": "# note \\\necho ran",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ran\n"
+  },
+  {
+   "cmd": "echo a \\\n # trailing comment\necho b",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\nb\n"
+  },
+  {
+   "cmd": "echo a \\\n b\nnosuchcmd_x",
+   "code": 127,
+   "stderr": "bash: line 3: nosuchcmd_x: command not found\n",
+   "stdout": "a b\n"
+  },
+  {
+   "cmd": "echo \"x; y\\\"; z\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "x; y\"; z\n"
+  },
+  {
+   "cmd": "echo x | cat -",
+   "code": 0,
+   "stderr": "",
+   "stdout": "x\n"
+  },
+  {
+   "cmd": "echo x | (cat -; echo y)",
+   "code": 0,
+   "stderr": "",
+   "stdout": "x\ny\n"
   }
  ],
  "image": "ubuntu:22.04",

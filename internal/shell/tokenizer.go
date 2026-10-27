@@ -47,10 +47,38 @@ func splitStatements(line string) []statement {
 		}
 
 		if quote != 0 {
+			if quote == '"' && c == '\\' && i+1 < len(runes) {
+				// Inside double quotes backslash-newline vanishes, and backslash keeps a following
+				// $ ` " or \ from acting as syntax. Any other backslash is an ordinary character.
+				if n := continuationLen(runes, i); n > 0 {
+					i += n - 1
+					continue
+				}
+				if strings.IndexByte("$`\"\\", runes[i+1]) >= 0 {
+					cur.WriteByte(c)
+					cur.WriteByte(runes[i+1])
+					i++
+					continue
+				}
+			}
 			cur.WriteByte(c)
 			if c == quote {
 				quote = 0
 			}
+			continue
+		}
+
+		// Outside quotes a backslash either continues the line (backslash-newline is deleted, which
+		// joins `a \` + newline + `b` and even splits of a word) or makes the next character an
+		// ordinary one: an escaped ; & | ( ) quote or space never separates or quotes anything.
+		if c == '\\' && i+1 < len(runes) {
+			if n := continuationLen(runes, i); n > 0 {
+				i += n - 1
+				continue
+			}
+			cur.WriteByte(c)
+			cur.WriteByte(runes[i+1])
+			i++
 			continue
 		}
 
@@ -442,4 +470,18 @@ func NeedsContinuation(line string) bool {
 		}
 	}
 	return quote != 0
+}
+
+// continuationLen is the length of a backslash-newline (or backslash-CRLF) starting at runes[i], else 0.
+func continuationLen(runes []byte, i int) int {
+	if runes[i] != '\\' || i+1 >= len(runes) {
+		return 0
+	}
+	if runes[i+1] == '\n' {
+		return 2
+	}
+	if runes[i+1] == '\r' && i+2 < len(runes) && runes[i+2] == '\n' {
+		return 3
+	}
+	return 0
 }

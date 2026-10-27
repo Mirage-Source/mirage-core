@@ -1246,6 +1246,13 @@ func (s *Interpreter) catBuiltin(args []string, bait *[]BaitHit, action string, 
 		}
 		return "cat: missing operand", 1
 	}
+	if len(args) == 1 && args[0] == "-" {
+		// A lone "-" is standard input. With nothing piped in, an exec session's stdin is at EOF.
+		if stdin != nil {
+			return s.textOut(norm(*stdin))
+		}
+		return "", 0
+	}
 	_, n := s.lookup(args[0])
 	if n == nil || n.Type != NodeFile {
 		return "cat: " + args[0] + ": No such file or directory", 1
