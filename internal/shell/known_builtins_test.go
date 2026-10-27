@@ -12,7 +12,7 @@ import "testing"
 var wantBuiltins = []string{
 	"", "echo", "whoami", "pwd", "hostname", "id", "uname", "export",
 	"test", "[", "cat", "ls", "cd", "grep", "egrep", "command", "sudo", "uptime", "readlink", "chattr", "break", "continue", "fgrep", "tr", "cut", "sort", "sed", "head", "tail", "wc",
-	"which", "find", "ps", "netstat", "crontab", "exit",
+	"which", "find", "ps", "netstat", "crontab", "exit", "local", "return", "shift", "set", "unset", "exec",
 	"chmod", "chown", "chgrp", "rm", "mkdir", "touch", "cp", "mv", "wget", "curl",
 	"sh", "bash", "nohup", "sleep", "kill", "pkill", "killall",
 	"true", ":", "false", "ping", "perl", "dd", "more", "read",

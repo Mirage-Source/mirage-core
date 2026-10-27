@@ -66,17 +66,21 @@ func splitParamName(inner string) (name, rest string) {
 	return inner[:1], inner[1:]
 }
 
-// paramSet reports whether NAME is set (not merely non-empty). There are no positional parameters yet,
-// so 1..9, ! and the like are unset.
+// paramSet reports whether NAME is set (not merely non-empty). Positional parameters are set only up to
+// the number a function was called with; ! is never set.
 func (s *Interpreter) paramSet(name string) bool {
 	switch name {
 	case "?", "$", "#", "-", "0":
 		return true
-	case "!", "@", "*":
+	case "!":
 		return false
+	case "@", "*":
+		return len(s.posArgs()) > 0
 	}
 	if name != "" && name[0] >= '0' && name[0] <= '9' {
-		return false
+		n, err := strconv.Atoi(name)
+		_, ok := s.positional(n)
+		return err == nil && ok
 	}
 	_, ok := s.Env[name]
 	return ok
@@ -290,6 +294,13 @@ func globRegexp(pat string) *regexp.Regexp {
 		return nil
 	}
 	return re
+}
+
+// globMatch reports whether text matches the shell pattern pat, as a case arm does: * crosses "/" and [!x]
+// negates a set.
+func globMatch(pat, text string) bool {
+	re := globRegexp(pat)
+	return re != nil && re.MatchString(text)
 }
 
 // trimGlob is ${v#pat} ${v##pat} (prefix) and ${v%pat} ${v%%pat} (suffix).

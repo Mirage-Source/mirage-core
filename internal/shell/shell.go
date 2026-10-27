@@ -8,6 +8,7 @@ package shell
 import (
 	"fmt"
 	"log"
+	"maps"
 	"math/rand"
 	"net/netip"
 	"path"
@@ -148,9 +149,13 @@ type Interpreter struct {
 	pipeStdin *string // stdin a ( ) group inherits from the pipe feeding it
 	blankEcho bool    // the statement was a bare `echo`: it prints an empty line
 
-	loopDepth int    // for/while/until loops being run
-	loopCtl   string // "break" or "continue" waiting for the innermost loop to take it
-	lastCode  int    // $?
+	funcs     map[string][]item // functions defined so far
+	frames    []funcFrame       // function calls in progress, innermost last
+	returning bool              // `return` is unwinding to the end of the function
+	retCode   int               // the status it returns
+	loopDepth int               // for/while/until loops being run
+	loopCtl   string            // "break" or "continue" waiting for the innermost loop to take it
+	lastCode  int               // $?
 
 	exported   map[string]bool // names `export`ed beyond the login environment
 	direct     bool            // statement is one bash would exec in place (see exportedEnv)
@@ -264,7 +269,7 @@ func (s *Interpreter) specialParam(c byte) (string, bool) {
 	case '$':
 		return strconv.Itoa(s.pids["bash"]), true
 	case '#':
-		return "0", true
+		return strconv.Itoa(len(s.posArgs())), true
 	case '0':
 		if s.Busybox {
 			return "-sh", true
@@ -278,7 +283,14 @@ func (s *Interpreter) specialParam(c byte) (string, bool) {
 			return "hBc", true
 		}
 		return "himBHs", true
-	case '!', '1', '2', '3', '4', '5', '6', '7', '8', '9', '@', '*':
+	case '1', '2', '3', '4', '5', '6', '7', '8', '9':
+		v, _ := s.positional(int(c - '0'))
+		return v, true
+	case '@':
+		return strings.Join(s.posArgs(), " "), true
+	case '*':
+		return strings.Join(s.posArgs(), s.ifsJoiner()), true
+	case '!':
 		return "", true
 	}
 	return "", false
@@ -293,6 +305,10 @@ func (s *Interpreter) param(name string) string {
 	}
 	if len(name) > 1 && name[0] == '#' {
 		return strconv.Itoa(len([]rune(s.param(name[1:]))))
+	}
+	if n, err := strconv.Atoi(name); err == nil && n > 9 {
+		v, _ := s.positional(n) // ${10} and up
+		return v
 	}
 	return s.Env[name]
 }
@@ -425,7 +441,9 @@ func (s *Interpreter) chunk(text string, stderr bool) outChunk {
 
 // addLine puts "line N:" on bash's own error lines when running as bash -c.
 // It is idempotent, and is also applied where 2>&1 sends such an error to
-// stdout, which bash prefixes the same way.
+// stdout, which bash prefixes the same way. While a function runs, bash calls
+// itself "environment" in these messages, so "bash: line 1: x: command not
+// found" becomes "environment: line 1: x: command not found".
 func (s *Interpreter) addLine(text string) string {
 	if !s.exec || s.line <= 0 || !strings.Contains(text, "bash: ") {
 		return text
@@ -433,7 +451,11 @@ func (s *Interpreter) addLine(text string) string {
 	lines := strings.Split(text, "\r\n")
 	for i, l := range lines {
 		if rest, ok := strings.CutPrefix(l, "bash: "); ok && !strings.HasPrefix(rest, "line ") {
-			lines[i] = fmt.Sprintf("bash: line %d: %s", s.line, rest)
+			name := "bash"
+			if len(s.frames) > 0 {
+				name = "environment"
+			}
+			lines[i] = fmt.Sprintf("%s: line %d: %s", name, s.line, rest)
 		}
 	}
 	return strings.Join(lines, "\r\n")
@@ -470,16 +492,18 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 	// NAME=value assignment only applies to a lone, non-piped statement --
 	// real bash treats `FOO=bar | baz` as a pipeline, not an assignment.
 	if len(stages) == 1 {
-		resolved := s.expandCommandWords(stages[0], depth, bait, action)
+		resolved := s.expandCommandWordsMasked(stages[0], depth, bait, action)
 		if s.halted { // ${v:?msg} failed while expanding the words: the statement does not run
 			return "", s.haltCode, false, false
 		}
 		if len(resolved) == 0 {
 			return "", 0, false, false
 		}
-		if isAssignmentOnly(resolved) {
-			for _, w := range resolved {
-				k, v, _ := strings.Cut(w, "=")
+		// `x=$(cmd) 2>/dev/null` is still an assignment; one that creates a file (`x=1 > f`) takes the path below
+		assigns, ared := extractRedirects(resolved)
+		if len(assigns) > 0 && isAssignmentOnly(assigns) && ared.stdoutFile == "" && ared.combinedFile == "" && (ared.stderrFile == "" || ared.stderrFile == "/dev/null") {
+			for _, w := range assigns {
+				k, v, _ := strings.Cut(unmaskRedir.Replace(w), "=")
 				s.Env[k] = v
 			}
 			if s.subRan {
@@ -489,8 +513,8 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 		}
 
 		cmdWords, red := extractRedirects(resolved)
-		prefix := leadingAssignments(cmdWords)
-		cmdWords = stripAssignments(cmdWords)
+		prefix := unmaskAll(leadingAssignments(cmdWords))
+		cmdWords = unmaskAll(stripAssignments(cmdWords))
 		if len(cmdWords) == 0 {
 			// `> FILE` alone creates or truncates FILE.
 			if red.stdoutFile == "" {
@@ -505,7 +529,7 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 		if red.stdinFile != "" {
 			in, ok := s.readStdinFile(red.stdinFile)
 			if !ok {
-				return red.stdinFile + ": No such file or directory", 1, true, true
+				return "bash: " + red.stdinFile + ": No such file or directory", 1, true, true
 			}
 			stdin = &in
 		} else if s.pipeStdin != nil {
@@ -514,14 +538,14 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 		restore := s.applyPrefix(prefix)
 		out, code := s.execBuiltin(cmdWords[0], cmdWords[1:], bait, action, stdin)
 		restore()
-		if red.mergeStderrToStdout && isErrorChannel(cmdWords[0], code) {
+		if red.mergeStderrToStdout && s.isErr(cmdWords[0], code) {
 			out = s.addLine(out)
 		}
 		if red.stdoutFile != "" || red.combinedFile != "" {
 			s.blankEcho = false
 		}
 		// A builtin that wrote its errors to pendingErr printed stdout.
-		errChan := isErrorChannel(cmdWords[0], code) && !red.mergeStderrToStdout && len(s.pendingErr) == 0
+		errChan := s.isErr(cmdWords[0], code) && !red.mergeStderrToStdout && len(s.pendingErr) == 0
 		out = s.routePendingErr(out, red)
 		out, ok := s.routeStageOutput(out, errChan, red, true)
 		if !ok {
@@ -569,9 +593,9 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 			pipedIn = &fwd
 			continue
 		}
-		resolved := s.expandCommandWords(stageText, depth, bait, action)
+		resolved := s.expandCommandWordsMasked(stageText, depth, bait, action)
 		cmdWords, red := extractRedirects(resolved)
-		cmdWords = stripAssignments(cmdWords)
+		cmdWords = unmaskAll(stripAssignments(cmdWords))
 		if len(cmdWords) == 0 {
 			stageOut, stageCode, pipedIn = "", 0, nil
 			continue
@@ -584,7 +608,7 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 		if red.stdinFile != "" {
 			in, ok := s.readStdinFile(red.stdinFile)
 			if !ok {
-				stageOut, stageCode, stageErr = red.stdinFile+": No such file or directory", 1, true
+				stageOut, stageCode, stageErr = "bash: "+red.stdinFile+": No such file or directory", 1, true
 				break
 			}
 			stdin = &in
@@ -592,15 +616,17 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 
 		s.direct = true // each stage is a forked subshell that execs in place
 		stageHalted, stageHaltCode := s.halted, s.haltCode
+		stageCwd, stageEnv := s.Cwd, maps.Clone(s.Env)
 		stageOut, stageCode = s.execBuiltin(cmdWords[0], cmdWords[1:], bait, action, stdin)
 		s.halted, s.haltCode = stageHalted, stageHaltCode // `exit` in a pipeline stage ends only that stage
-		if red.mergeStderrToStdout && isErrorChannel(cmdWords[0], stageCode) {
+		s.Cwd, s.Env = stageCwd, stageEnv                 // and so does anything else it changes
+		if red.mergeStderrToStdout && s.isErr(cmdWords[0], stageCode) {
 			stageOut = s.addLine(stageOut)
 		}
 		// Error-channel content (e.g. "command not found") is this
 		// shell's stand-in for stderr, which a plain `|` never captures
 		// -- unless this stage explicitly merged it with 2>&1.
-		errChan := isErrorChannel(cmdWords[0], stageCode) && !red.mergeStderrToStdout && len(s.pendingErr) == 0
+		errChan := s.isErr(cmdWords[0], stageCode) && !red.mergeStderrToStdout && len(s.pendingErr) == 0
 		stageOut = s.routePendingErr(stageOut, red)
 		if errChan {
 			pipedIn = nil
@@ -758,12 +784,16 @@ func (s *Interpreter) expandInto(word string, depth int, bait *[]BaitHit, action
 		c := word[i]
 
 		if strings.HasPrefix(word[i:], qOpen) {
-			e.quoted, e.has = true, true // a quoted "" is still one (empty) word
+			e.quoted, e.zeroAt = true, false
 			i += len(qOpen)
 			continue
 		}
 		if strings.HasPrefix(word[i:], qClose) {
 			e.quoted = false
+			if !e.zeroAt || e.has {
+				e.has = true // a quoted "" is still one (empty) word, but "$@" with no parameters is none
+			}
+			e.zeroAt = false
 			i += len(qClose)
 			continue
 		}
@@ -789,14 +819,23 @@ func (s *Interpreter) expandInto(word string, depth int, bait *[]BaitHit, action
 			if depth+1 <= maxSubstitutionDepth {
 				savedBase, savedLine, savedBlank := s.lineBase, s.line, s.blankEcho
 				s.lineBase = s.line - 1 // bash numbers lines inside $( ) by the script
-				var o string
+				var chunks []outChunk
 				s.subCode, s.subRan = s.asSubshell(func() int {
 					var c int
-					o, c = s.evalLine(inner, depth+1, bait, action)
+					chunks, c = s.evalChunks(inner, depth+1, bait, action)
 					return c
 				}), true
 				s.lineBase, s.line, s.blankEcho = savedBase, savedLine, savedBlank
-				resolved = strings.TrimRight(strings.ReplaceAll(o, "\r\n", "\n"), "\r\n")
+				// $( ) captures stdout; what its commands wrote to stderr still reaches the terminal
+				var stdout []outChunk
+				for _, c := range chunks {
+					if c.stderr {
+						s.pendingErr = append(s.pendingErr, c.text)
+					} else {
+						stdout = append(stdout, c)
+					}
+				}
+				resolved = strings.TrimRight(strings.ReplaceAll(joinChunks(stdout, "\r\n"), "\r\n", "\n"), "\r\n")
 			}
 			e.exp(resolved)
 			i = end + 1
@@ -811,12 +850,23 @@ func (s *Interpreter) expandInto(word string, depth int, bait *[]BaitHit, action
 				continue
 			}
 			inner := word[i+2 : end]
+			if inner == "@" || inner == "*" {
+				e.params(s.posArgs(), inner == "@", s.ifsJoiner())
+				i = end + 1
+				continue
+			}
 			if v, ok := s.expandBrace(inner, depth, bait, action); ok {
 				e.exp(v)
 			} else {
 				e.exp(s.param(inner)) // a form not implemented: what it always did
 			}
 			i = end + 1
+			continue
+		}
+
+		if c == '$' && i+1 < len(word) && (word[i+1] == '@' || word[i+1] == '*') {
+			e.params(s.posArgs(), word[i+1] == '@', s.ifsJoiner())
+			i += 2
 			continue
 		}
 
@@ -910,6 +960,9 @@ func matchingParen(s string, pos int) int {
 func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, action string, stdin *string) (string, int) {
 	s.noTrailingNewline = false
 	s.blankEcho = false
+	if body, ok := s.funcs[cmd]; ok {
+		return s.callFunction(body, args, bait, action, stdin)
+	}
 	if s.Busybox {
 		if out, code, ok := s.busyboxBuiltin(cmd, args, bait, action, stdin); ok {
 			return out, code
@@ -1088,13 +1141,31 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 		return out, code
 
 	case "unset":
+		fn := false
 		for _, a := range args {
-			if !strings.HasPrefix(a, "-") {
+			switch {
+			case a == "-f":
+				fn = true
+			case a == "-v":
+				fn = false
+			case strings.HasPrefix(a, "-"):
+			case fn:
+				delete(s.funcs, a)
+			default:
 				delete(s.Env, a)
 				delete(s.exported, a)
 			}
 		}
 		return "", 0
+
+	case "local":
+		return s.localBuiltin(args)
+
+	case "return":
+		return s.returnBuiltin(args)
+
+	case "shift":
+		return s.shiftBuiltin(args)
 
 	case "set":
 		return s.setBuiltin(args)
@@ -1136,7 +1207,7 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 		return s.moreBuiltin(args, stdin)
 
 	case "read":
-		return s.readBuiltin(args)
+		return s.readFromStdin(args, stdin)
 
 	case "true", ":":
 		return "", 0
@@ -1349,6 +1420,9 @@ func (s *Interpreter) catBuiltin(args []string, bait *[]BaitHit, action string, 
 		// "missing operand" error; only a piped/redirected cat reads stdin.
 		if stdin != nil {
 			return s.textOut(norm(*stdin))
+		}
+		if s.exec {
+			return "", 0 // no operand reads stdin, which at EOF gives nothing
 		}
 		return "cat: missing operand", 1
 	}
@@ -2132,13 +2206,15 @@ func groupStageBody(stage string) (string, bool) {
 // asSubshell runs f the way bash runs a subshell or a command substitution: an `exit`, or a command
 // that fails under `set -e`, ends only f. The result is f's status, or the exit status if it halted.
 func (s *Interpreter) asSubshell(f func() int) int {
-	savedHalted, savedCode := s.halted, s.haltCode
-	s.halted = false
+	savedHalted, savedCode, savedReturning := s.halted, s.haltCode, s.returning
+	s.halted, s.returning = false, false
 	code := f()
 	if s.halted {
 		code = s.haltCode
+	} else if s.returning {
+		code = s.retCode // `return` inside ( ) or $( ) ends only that subshell
 	}
-	s.halted, s.haltCode = savedHalted, savedCode
+	s.halted, s.haltCode, s.returning = savedHalted, savedCode, savedReturning
 	return code
 }
 

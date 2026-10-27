@@ -1596,6 +1596,384 @@
    "code": 0,
    "stderr": "",
    "stdout": "0\n"
+  },
+  {
+   "cmd": "f() { echo hi; }; f",
+   "code": 0,
+   "stderr": "",
+   "stdout": "hi\n"
+  },
+  {
+   "cmd": "f(){ echo 1; }; f () { echo 2; }; f",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2\n"
+  },
+  {
+   "cmd": "function f { echo fn; }; f",
+   "code": 0,
+   "stderr": "",
+   "stdout": "fn\n"
+  },
+  {
+   "cmd": "f() { echo \"$1-$2\"; }; f a b",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a-b\n"
+  },
+  {
+   "cmd": "f() { echo $#; }; f a b c; f",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3\n0\n"
+  },
+  {
+   "cmd": "f() { printf '[%s]\\n' \"$@\"; }; f a \"b c\" \"\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[a]\n[b c]\n[]\n"
+  },
+  {
+   "cmd": "f() { printf '[%s]\\n' $@; }; f a \"b c\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[a]\n[b]\n[c]\n"
+  },
+  {
+   "cmd": "f() { echo \"$*\"; }; f a b; IFS=,; f a b",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a b\na,b\n"
+  },
+  {
+   "cmd": "f() { return 3; }; f; echo $?",
+   "code": 0,
+   "stderr": "",
+   "stdout": "3\n"
+  },
+  {
+   "cmd": "f() { echo in; return; echo no; }; f; echo $?",
+   "code": 0,
+   "stderr": "",
+   "stdout": "in\n0\n"
+  },
+  {
+   "cmd": "f() { true; false; }; f; echo $?",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n"
+  },
+  {
+   "cmd": "f() { false; }; f && echo y || echo n",
+   "code": 0,
+   "stderr": "",
+   "stdout": "n\n"
+  },
+  {
+   "cmd": "f() { local x=1; echo $x; }; x=9; f; echo $x",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n9\n"
+  },
+  {
+   "cmd": "f() { local a; a=5; echo $a; }; f; echo \"[$a]\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "5\n[]\n"
+  },
+  {
+   "cmd": "f() { x=2; }; f; echo $x",
+   "code": 0,
+   "stderr": "",
+   "stdout": "2\n"
+  },
+  {
+   "cmd": "f() { echo \"$1\"; shift; echo \"$1\"; }; f a b",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\nb\n"
+  },
+  {
+   "cmd": "f() { echo \"${1:-def}\"; }; f; f z",
+   "code": 0,
+   "stderr": "",
+   "stdout": "def\nz\n"
+  },
+  {
+   "cmd": "f() { [ \"$1\" -gt 0 ] && { echo $1; f $(( $1 - 1 )); }; }; f 3",
+   "code": 1,
+   "stderr": "",
+   "stdout": "3\n2\n1\n"
+  },
+  {
+   "cmd": "f() { r=$(echo $1); echo \"[$r]\"; }; f z; v=$(f q); echo \"$v\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[z]\n[q]\n"
+  },
+  {
+   "cmd": "echo() { printf 'E:%s\\n' \"$1\"; }; echo x",
+   "code": 0,
+   "stderr": "",
+   "stdout": "E:x\n"
+  },
+  {
+   "cmd": "f() { while read -r l; do echo \"[$l]\"; done; }; printf 'a\\nb\\n' | f",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[a]\n[b]\n"
+  },
+  {
+   "cmd": "f() { while IFS= read -r s || [ -n \"$s\" ]; do printf '%s\\n' \"$s\"; done < \"$1\"; }; printf 'x\\ny' > t.txt; f t.txt",
+   "code": 0,
+   "stderr": "",
+   "stdout": "x\ny\n"
+  },
+  {
+   "cmd": "f() { exit 4; }; f; echo no",
+   "code": 4,
+   "stderr": "",
+   "stdout": ""
+  },
+  {
+   "cmd": "f() { echo \"$#:$1\"; g b; echo \"$#:$1\"; }; g() { echo \"g:$1\"; }; f a",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1:a\ng:b\n1:a\n"
+  },
+  {
+   "cmd": "f() {\n  echo one\n  echo two\n}\nf",
+   "code": 0,
+   "stderr": "",
+   "stdout": "one\ntwo\n"
+  },
+  {
+   "cmd": "f() { echo a; }; unset -f f; f",
+   "code": 127,
+   "stderr": "bash: line 1: f: command not found\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "case 1 in ''|*[!0-9]*) echo bad;; *) echo num;; esac",
+   "code": 0,
+   "stderr": "",
+   "stdout": "num\n"
+  },
+  {
+   "cmd": "case a1 in ''|*[!0-9]*) echo bad;; *) echo num;; esac",
+   "code": 0,
+   "stderr": "",
+   "stdout": "bad\n"
+  },
+  {
+   "cmd": "case a/b in a*) echo slash-ok;; esac",
+   "code": 0,
+   "stderr": "",
+   "stdout": "slash-ok\n"
+  },
+  {
+   "cmd": "case x in [!a-c]) echo notabc;; esac",
+   "code": 0,
+   "stderr": "",
+   "stdout": "notabc\n"
+  },
+  {
+   "cmd": "v=$(echo hi) 2>/dev/null; echo \"[$v]\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[hi]\n"
+  },
+  {
+   "cmd": "v=hello 2>/dev/null; echo \"[$v]\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[hello]\n"
+  },
+  {
+   "cmd": "printf 'a b\\nc\\n' > r.txt; read x y < r.txt; echo \"[$x][$y]\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[a][b]\n"
+  },
+  {
+   "cmd": "printf 'one\\ntwo\\n' | { read a; read b; echo \"$a+$b\"; }",
+   "code": 0,
+   "stderr": "",
+   "stdout": "one+two\n"
+  },
+  {
+   "cmd": "echo hi | read z; echo \"[$z]\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[]\n"
+  },
+  {
+   "cmd": "read q < /nonexistent 2>/dev/null; echo \"rc=$? [$q]\"",
+   "code": 0,
+   "stderr": "bash: line 1: /nonexistent: No such file or directory\n",
+   "stdout": "rc=1 []\n"
+  },
+  {
+   "cmd": "printf 'partial' | { read -r l || echo \"eof [$l]\"; }",
+   "code": 0,
+   "stderr": "",
+   "stdout": "eof [partial]\n"
+  },
+  {
+   "cmd": "printf '  lead\\n' > r2.txt; IFS= read -r v < r2.txt && echo \"[$v]\"; read w < r2.txt; echo \"[$w]\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[  lead]\n[lead]\n"
+  },
+  {
+   "cmd": "echo \"<a>\"; echo \"2>\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "<a>\n2>\n"
+  },
+  {
+   "cmd": "printf \"<%s>\" x; echo",
+   "code": 0,
+   "stderr": "",
+   "stdout": "<x>\n"
+  },
+  {
+   "cmd": "echo \\> \"\\<\" '>' 2>&1; echo ok",
+   "code": 0,
+   "stderr": "",
+   "stdout": "> \\< >\nok\n"
+  },
+  {
+   "cmd": "f() { return abc; }; f; echo \"rc=$?\"",
+   "code": 0,
+   "stderr": "environment: line 1: return: abc: numeric argument required\n",
+   "stdout": "rc=2\n"
+  },
+  {
+   "cmd": "f() { nosuchcmd; }; f",
+   "code": 127,
+   "stderr": "environment: line 1: nosuchcmd: command not found\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "f() { ./nosuch; }; f",
+   "code": 127,
+   "stderr": "environment: line 1: ./nosuch: No such file or directory\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "f() { cat /nonexistent; }; f",
+   "code": 1,
+   "stderr": "cat: /nonexistent: No such file or directory\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "f() { echo hi > /nonexistent/x; }; f",
+   "code": 1,
+   "stderr": "environment: line 1: /nonexistent/x: No such file or directory\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "f() { echo x < /nonexistent; }; f",
+   "code": 1,
+   "stderr": "environment: line 1: /nonexistent: No such file or directory\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "f() { cd /nonexistent; }; f",
+   "code": 1,
+   "stderr": "environment: line 1: cd: /nonexistent: No such file or directory\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "f() { [ a -eq 1 ]; }; f",
+   "code": 2,
+   "stderr": "environment: line 1: [: a: integer expression expected\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "f() { exit abc; }; f",
+   "code": 2,
+   "stderr": "environment: line 1: exit: abc: numeric argument required\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "f() { g; }; g() { nosuchcmd; }; f",
+   "code": 127,
+   "stderr": "environment: line 1: nosuchcmd: command not found\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "f() { echo $(nosuchcmd); }; f",
+   "code": 0,
+   "stderr": "environment: line 1: nosuchcmd: command not found\n",
+   "stdout": "\n"
+  },
+  {
+   "cmd": "f() { ( nosuchcmd ); }; f",
+   "code": 127,
+   "stderr": "environment: line 1: nosuchcmd: command not found\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "f() { { nosuchcmd; }; }; f",
+   "code": 127,
+   "stderr": "environment: line 1: nosuchcmd: command not found\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "f() { unknowncmd 2>&1; }; f",
+   "code": 127,
+   "stderr": "",
+   "stdout": "environment: line 1: unknowncmd: command not found\n"
+  },
+  {
+   "cmd": "nosuchcmd; echo top",
+   "code": 0,
+   "stderr": "bash: line 1: nosuchcmd: command not found\n",
+   "stdout": "top\n"
+  },
+  {
+   "cmd": "f() { x=$(cat); echo \"[$x]\"; }; f",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[]\n"
+  },
+  {
+   "cmd": "a=b; b=3; echo $((a + 1))",
+   "code": 0,
+   "stderr": "",
+   "stdout": "4\n"
+  },
+  {
+   "cmd": "n=ab; echo $((n - 1))",
+   "code": 0,
+   "stderr": "",
+   "stdout": "-1\n"
+  },
+  {
+   "cmd": "f() { echo ${1:?needs arg}; }; f",
+   "code": 127,
+   "stderr": "environment: line 1: 1: needs arg\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "echo $(nosuchcmd); echo after",
+   "code": 0,
+   "stderr": "bash: line 1: nosuchcmd: command not found\n",
+   "stdout": "\nafter\n"
+  },
+  {
+   "cmd": "v=$(nosuchcmd); echo \"rc=$? [$v]\"",
+   "code": 0,
+   "stderr": "bash: line 1: nosuchcmd: command not found\n",
+   "stdout": "rc=127 []\n"
+  },
+  {
+   "cmd": "v=$(nosuchcmd 2>&1); echo \"[$v]\"",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[bash: line 1: nosuchcmd: command not found]\n"
   }
  ],
  "image": "ubuntu:22.04",
@@ -1626,10 +2004,10 @@
    "stdout": "hi\n"
   },
   {
-   "cmd": "echo \"<a>\"; echo \"2>\"",
-   "code": 0,
-   "stderr": "",
-   "stdout": "<a>\n2>\n"
+   "cmd": "f() { x=$((1/0)); }; f",
+   "code": 1,
+   "stderr": "environment: line 1: 1/0: division by 0 (error token is \"0\")\n",
+   "stdout": ""
   }
  ]
 }

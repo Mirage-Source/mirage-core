@@ -2,7 +2,6 @@ package shell
 
 import (
 	"maps"
-	"path"
 	"strings"
 )
 
@@ -17,6 +16,7 @@ const (
 	kindWhile
 	kindUntil
 	kindSubshell
+	kindFunc
 )
 
 const maxLoopIterations = 1000
@@ -137,7 +137,7 @@ func (p *parser) advance(rest string) {
 		p.pos++
 		return
 	}
-	p.stmts[p.pos] = statement{Text: rest}
+	p.stmts[p.pos] = statement{Text: rest, Line: p.stmts[p.pos].Line}
 }
 
 func (p *parser) list(stops map[string]bool, stopAtDoubleSemi bool) ([]item, error) {
@@ -222,6 +222,13 @@ func (p *parser) itemInner() (item, error) {
 	}
 	if strings.HasPrefix(st.Text, "(") && !strings.HasPrefix(st.Text, "((") {
 		return p.subshellItem(st)
+	}
+	if m := funcHeader.FindStringSubmatch(st.Text); m != nil {
+		name := m[1]
+		if name == "" {
+			name = m[2]
+		}
+		return p.funcItem(st, name, m[3])
 	}
 	kw, rest := splitKeyword(st.Text)
 	switch kw {
@@ -473,6 +480,37 @@ func (p *parser) whileItem(sep string, until bool) (item, error) {
 
 // runWhile runs a while/until loop, capped like for at maxLoopIterations.
 // A `done < file` redirect becomes the lines `read` consumes.
+// feedText runs the producer of a pipeline whose last stage is a loop or group, and returns what it
+// printed: the stdin of that last stage. Its stderr passes through.
+func (s *Interpreter) feedText(feed string, depth int, bait *[]BaitHit, action string, outputs *[]outChunk) string {
+	chunks, _ := s.evalChunks(feed, depth, bait, action)
+	var stdout []outChunk
+	for _, c := range chunks {
+		if c.stderr {
+			*outputs = append(*outputs, c)
+		} else {
+			stdout = append(stdout, c)
+		}
+	}
+	text := strings.ReplaceAll(joinChunks(stdout, "\r\n"), "\r\n", "\n")
+	if text != "" && (len(stdout) == 0 || !stdout[len(stdout)-1].noNewline) {
+		text += "\n"
+	}
+	return text
+}
+
+// runFedGroup runs `producer | { ...; }`. The group is a pipeline stage, so it runs in a subshell and what
+// it assigns or `cd`s into does not outlive it; the producer's output is its stdin.
+func (s *Interpreter) runFedGroup(it item, depth int, bait *[]BaitHit, action string, outputs *[]outChunk) int {
+	cwd, env := s.Cwd, maps.Clone(s.Env)
+	defer func() { s.Cwd, s.Env = cwd, env }()
+	text := s.feedText(it.feed, depth, bait, action, outputs)
+	saved := s.pipeStdin
+	s.pipeStdin = &text
+	defer func() { s.pipeStdin = saved }()
+	return s.runItems(it.body, depth, bait, action, outputs)
+}
+
 func (s *Interpreter) runWhile(it item, depth int, bait *[]BaitHit, action string, outputs *[]outChunk) int {
 	saved, savedPartial := s.loopInput, s.loopPartial
 	defer func() { s.loopInput, s.loopPartial = saved, savedPartial }()
@@ -482,20 +520,7 @@ func (s *Interpreter) runWhile(it item, depth int, bait *[]BaitHit, action strin
 		// A pipeline stage runs in a subshell: nothing the loop assigns or `cd`s into outlives it.
 		cwd, env := s.Cwd, maps.Clone(s.Env)
 		defer func() { s.Cwd, s.Env = cwd, env }()
-		chunks, _ := s.evalChunks(it.feed, depth, bait, action)
-		var stdout []outChunk
-		for _, c := range chunks {
-			if c.stderr {
-				*outputs = append(*outputs, c)
-			} else {
-				stdout = append(stdout, c)
-			}
-		}
-		text := strings.ReplaceAll(joinChunks(stdout, "\r\n"), "\r\n", "\n")
-		if text != "" && (len(stdout) == 0 || !stdout[len(stdout)-1].noNewline) {
-			text += "\n"
-		}
-		lines, partial := readLines(text)
+		lines, partial := readLines(s.feedText(it.feed, depth, bait, action, outputs))
 		s.loopInput, s.loopPartial = &lines, partial
 	case it.input != "":
 		file := s.expandWord(it.input, depth, bait, action)
@@ -505,6 +530,10 @@ func (s *Interpreter) runWhile(it item, depth int, bait *[]BaitHit, action strin
 			return 1
 		}
 		lines, partial := readLines(text)
+		s.loopInput, s.loopPartial = &lines, partial
+	case s.pipeStdin != nil:
+		// no redirect of its own: the loop reads the stdin it inherited (a pipe into a function or group)
+		lines, partial := readLines(*s.pipeStdin)
 		s.loopInput, s.loopPartial = &lines, partial
 	default:
 		s.loopInput = nil
@@ -517,11 +546,11 @@ func (s *Interpreter) runWhile(it item, depth int, bait *[]BaitHit, action strin
 		s.errexitOff++
 		ok := s.runItems(it.conds[0], depth, bait, action, outputs) == 0
 		s.errexitOff--
-		if s.halted || ok == (it.kind == kindUntil) {
+		if s.halted || s.returning || ok == (it.kind == kindUntil) {
 			break
 		}
 		last = s.runItems(it.body, depth, bait, action, outputs)
-		if s.halted {
+		if s.halted || s.returning {
 			break
 		}
 		if s.loopCtl == "break" {
@@ -537,13 +566,6 @@ func (s *Interpreter) runWhile(it item, depth int, bait *[]BaitHit, action strin
 // input. With no such input it fails at once instead of blocking on a
 // terminal, which ends the loop.
 func (s *Interpreter) readBuiltin(args []string) (string, int) {
-	if s.loopInput == nil || len(*s.loopInput) == 0 {
-		return "", 1
-	}
-	line := (*s.loopInput)[0]
-	*s.loopInput = (*s.loopInput)[1:]
-	partial := s.loopPartial && len(*s.loopInput) == 0 // an unterminated last line is assigned, but read fails
-
 	var names []string
 	raw := false
 	for _, a := range args {
@@ -555,6 +577,21 @@ func (s *Interpreter) readBuiltin(args []string) (string, int) {
 			names = append(names, a)
 		}
 	}
+	if s.loopInput == nil || len(*s.loopInput) == 0 {
+		// At end of input bash still assigns: the variables become empty, which is what lets
+		// `while read -r l || [ -n "$l" ]` stop after an unterminated last line.
+		if len(names) == 0 {
+			s.Env["REPLY"] = ""
+		}
+		for _, n := range names {
+			s.Env[n] = ""
+		}
+		return "", 1
+	}
+	line := (*s.loopInput)[0]
+	*s.loopInput = (*s.loopInput)[1:]
+	partial := s.loopPartial && len(*s.loopInput) == 0 // an unterminated last line is assigned, but read fails
+
 	if !raw {
 		line = unescapeRead(line)
 	}
@@ -573,6 +610,28 @@ func (s *Interpreter) readBuiltin(args []string) (string, int) {
 		return "", 1
 	}
 	return "", 0
+}
+
+// readFromStdin is `read` outside a loop that redirects its input: it takes the first line of the stdin the
+// command was given (`read x < file`, or a pipe into a group or function) and, for a pipe, leaves the rest
+// for the next read.
+func (s *Interpreter) readFromStdin(args []string, stdin *string) (string, int) {
+	if s.loopInput != nil || stdin == nil {
+		return s.readBuiltin(args)
+	}
+	lines, partial := readLines(*stdin)
+	savedIn, savedPartial := s.loopInput, s.loopPartial
+	s.loopInput, s.loopPartial = &lines, partial
+	out, code := s.readBuiltin(args)
+	s.loopInput, s.loopPartial = savedIn, savedPartial
+	if stdin == s.pipeStdin {
+		rest := strings.Join(lines, "\n")
+		if rest != "" && !partial {
+			rest += "\n"
+		}
+		*s.pipeStdin = rest
+	}
+	return out, code
 }
 
 // unescapeRead drops the backslash `read` removes without -r, keeping the character after it.
@@ -606,7 +665,19 @@ func readLines(text string) (lines []string, partial bool) {
 	return lines, true
 }
 
-// splitFeed finds `producer | while ...` (or until): a loop that is the last stage of a pipeline. It
+// startsCompound reports whether the statement text opens a compound command, so that a pipe inside it is
+// not the one feeding a later group.
+func startsCompound(text string) bool {
+	kw, _ := splitKeyword(strings.TrimSpace(text))
+	switch kw {
+	case "{", "if", "while", "until", "for", "case":
+		return true
+	}
+	return strings.HasPrefix(strings.TrimSpace(text), "(")
+}
+
+// splitFeed finds `producer | while ...` (or until) and `producer | { ...; }`: a loop or group that is the
+// last stage of a pipeline. It
 // returns the producer and the loop's first statement, splitting at the last top-level pipe whose
 // right-hand side starts with while or until.
 func splitFeed(text string) (feed, loop string, ok bool) {
@@ -637,7 +708,8 @@ func splitFeed(text string) (feed, loop string, ok bool) {
 				i++
 				continue
 			}
-			if kw, _ := splitKeyword(strings.TrimSpace(text[i+1:])); kw == "while" || kw == "until" {
+			kw, _ := splitKeyword(strings.TrimSpace(text[i+1:]))
+			if kw == "while" || kw == "until" || (kw == "{" && !startsCompound(text)) {
 				cut = i
 			}
 		}
@@ -659,7 +731,7 @@ func (s *Interpreter) expandWord(raw string, depth int, bait *[]BaitHit, action 
 func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action string, outputs *[]outChunk) int {
 	last := 0
 	for i, it := range items {
-		if s.loopCtl != "" || s.halted {
+		if s.loopCtl != "" || s.halted || s.returning {
 			return last
 		}
 		if i > 0 && ((it.sep == "&&" && last != 0) || (it.sep == "||" && last == 0)) {
@@ -699,7 +771,17 @@ func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action 
 			s.lastCode = code
 			s.errexitCheck(items, i, code)
 		case kindGroup:
-			last = s.runItems(it.body, depth, bait, action, outputs)
+			if it.feed != "" {
+				last = s.asSubshell(func() int { return s.runFedGroup(it, depth, bait, action, outputs) })
+			} else {
+				last = s.runItems(it.body, depth, bait, action, outputs)
+			}
+		case kindFunc:
+			if s.funcs == nil {
+				s.funcs = map[string][]item{}
+			}
+			s.funcs[it.word] = it.body
+			last = 0
 		case kindIf:
 			last = 0
 			taken := false
@@ -729,7 +811,7 @@ func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action 
 				}
 				s.Env[it.word] = v
 				last = s.runItems(it.body, depth, bait, action, outputs)
-				if s.halted {
+				if s.halted || s.returning {
 					break
 				}
 				if s.loopCtl == "break" {
@@ -755,7 +837,7 @@ func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action 
 		arms:
 			for _, arm := range it.arms {
 				for _, pat := range arm.patterns {
-					if ok, _ := path.Match(s.expandWord(pat, depth, bait, action), word); ok {
+					if globMatch(s.expandWord(pat, depth, bait, action), word) {
 						last = s.runItems(arm.body, depth, bait, action, outputs)
 						break arms
 					}

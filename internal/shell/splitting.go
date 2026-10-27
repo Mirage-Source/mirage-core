@@ -16,6 +16,8 @@ type expansion struct {
 	cur    strings.Builder
 	has    bool // cur holds a field, even an empty one (a quoted "")
 	quoted bool
+	zeroAt bool // inside quotes, "$@" expanded to no words at all
+	mask   bool // hide quoted < and > from extractRedirects (see litLT)
 }
 
 // newExpansion starts an expansion that splits on the interpreter's IFS (" \t\n" when it is unset).
@@ -28,6 +30,9 @@ func (s *Interpreter) newExpansion(split bool) *expansion {
 }
 
 func (e *expansion) lit(text string) {
+	if e.mask && e.quoted {
+		text = maskRedir.Replace(text)
+	}
 	if text != "" {
 		e.cur.WriteString(text)
 		e.has = true
@@ -76,6 +81,42 @@ func (e *expansion) exp(text string) {
 	}
 }
 
+// params expands $@ or $* (at tells which) over the positional parameters args. Quoted, "$@" is one word
+// per parameter, and no word at all when there are none; "$*" is one word joined by the first IFS
+// character. Unquoted, each parameter is split like any other expansion. Where nothing is split (the right
+// side of an assignment) both give one string.
+func (e *expansion) params(args []string, at bool, join string) {
+	switch {
+	case !e.split:
+		sep := join
+		if at {
+			sep = " "
+		}
+		e.lit(strings.Join(args, sep))
+	case e.quoted && at:
+		if len(args) == 0 {
+			e.zeroAt = true
+			return
+		}
+		for i, a := range args {
+			if i > 0 {
+				e.flush()
+			}
+			e.lit(a)
+			e.has = true
+		}
+	case e.quoted:
+		e.lit(strings.Join(args, join))
+	default:
+		for i, a := range args {
+			if i > 0 && e.has {
+				e.flush()
+			}
+			e.exp(a)
+		}
+	}
+}
+
 // result returns the fields, with the literal-dollar marks turned back into "$". Without splitting it is
 // always exactly one string, empty or not.
 func (e *expansion) result() []string {
@@ -100,13 +141,20 @@ var declarers = map[string]bool{"export": true, "local": true, "readonly": true,
 // substitutions of substitute, then word splitting of what unquoted expansions produced.
 func (s *Interpreter) substituteFields(word string, split bool, depth int, bait *[]BaitHit, action string) []string {
 	e := s.newExpansion(split)
+	e.mask = true
 	s.expandInto(word, depth, bait, action, e)
 	return e.result()
 }
 
-// expandCommandWords tokenizes and expands the words of one simple command. NAME=value words in front of
-// the command, or after export/local/readonly/declare, keep their value whole, as bash does.
+// expandCommandWords is expandCommandWordsMasked for a caller with no redirects to look for.
 func (s *Interpreter) expandCommandWords(text string, depth int, bait *[]BaitHit, action string) []string {
+	return unmaskAll(s.expandCommandWordsMasked(text, depth, bait, action))
+}
+
+// expandCommandWordsMasked tokenizes and expands the words of one simple command. NAME=value words in
+// front of the command, or after export/local/readonly/declare, keep their value whole, as bash does. A
+// quoted < or > comes back masked: run extractRedirects, then unmaskAll what is left.
+func (s *Interpreter) expandCommandWordsMasked(text string, depth int, bait *[]BaitHit, action string) []string {
 	var out []string
 	leading, declaring := true, false
 	for _, w := range tokenizeWordsMarked(text) {

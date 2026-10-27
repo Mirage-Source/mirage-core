@@ -16,9 +16,10 @@ func (s *Interpreter) evalArith(expr string) (int64, bool) {
 }
 
 type shArith struct {
-	s   *Interpreter
-	src string
-	pos int
+	s     *Interpreter
+	src   string
+	pos   int
+	depth int // expressions nested through variable values
 }
 
 func (a *shArith) skip() {
@@ -159,6 +160,21 @@ func (a *shArith) unary() (int64, bool) {
 		}
 		n, err := strconv.ParseInt(a.src[start:a.pos], 0, 64)
 		return n, err == nil
+	case start != nameStart && a.pos < len(a.src) && (a.src[a.pos] == '#' || a.src[a.pos] == '?' || (a.src[a.pos] >= '0' && a.src[a.pos] <= '9')):
+		// $1, $#, $?: positional and special parameters
+		if a.src[a.pos] >= '0' && a.src[a.pos] <= '9' {
+			for a.pos < len(a.src) && a.src[a.pos] >= '0' && a.src[a.pos] <= '9' {
+				a.pos++
+			}
+		} else {
+			a.pos++
+		}
+		v := strings.TrimSpace(a.s.param(a.src[nameStart:a.pos]))
+		if v == "" {
+			return 0, true
+		}
+		n, err := strconv.ParseInt(v, 0, 64)
+		return n, err == nil
 	case a.pos < len(a.src) && isIdentStart(a.src[a.pos]):
 		for a.pos < len(a.src) && isIdentPart(a.src[a.pos]) {
 			a.pos++
@@ -168,6 +184,13 @@ func (a *shArith) unary() (int64, bool) {
 			return 0, true
 		}
 		n, err := strconv.ParseInt(v, 0, 64)
+		if err != nil && a.depth < 16 {
+			// bash evaluates a variable's text as an expression of its own (a=b, b=3 gives a=3)
+			inner := &shArith{s: a.s, src: v, depth: a.depth + 1}
+			n, ok := inner.or()
+			inner.skip()
+			return n, ok && inner.pos == len(inner.src)
+		}
 		return n, err == nil
 	}
 	return 0, false

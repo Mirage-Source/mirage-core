@@ -277,7 +277,23 @@ const litDollar = "\uE000"
 const (
 	qOpen  = "\uE001"
 	qClose = "\uE002"
+	// litLT and litGT stand for a quoted or escaped < or >, so that extractRedirects, which looks at words
+	// after their quotes are gone, does not take `"<a>"` or `"2>"` for a redirect.
+	litLT = "\uE003"
+	litGT = "\uE004"
 )
+
+var (
+	maskRedir   = strings.NewReplacer("<", litLT, ">", litGT)
+	unmaskRedir = strings.NewReplacer(litLT, "<", litGT, ">")
+)
+
+func unmaskAll(words []string) []string {
+	for i, w := range words {
+		words[i] = unmaskRedir.Replace(w)
+	}
+	return words
+}
 
 func tokenizeWords(text string) []string { return tokenize(text, false) }
 
@@ -358,6 +374,8 @@ func tokenize(text string, mark bool) []string {
 			i++
 			if runes[i] == '$' {
 				cur.WriteString(litDollar)
+			} else if mark && (runes[i] == '<' || runes[i] == '>') {
+				cur.WriteString(maskRedir.Replace(string(runes[i])))
 			} else {
 				cur.WriteByte(runes[i])
 			}
@@ -452,7 +470,7 @@ func statementTexts(items []item, out []string) []string {
 		switch it.kind {
 		case kindSimple:
 			out = append(out, it.text)
-		case kindGroup, kindFor, kindSubshell:
+		case kindGroup, kindFor, kindSubshell, kindFunc:
 			out = statementTexts(it.body, out)
 		case kindWhile, kindUntil:
 			out = statementTexts(it.conds[0], out)
