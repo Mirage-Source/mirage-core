@@ -130,6 +130,12 @@ type Interpreter struct {
 	HomeDir  string
 
 	nesting     int
+	halted      bool      // the shell is exiting: `exit`, `exec`, or a command that failed under `set -e`
+	haltCode    int       // the exit status it exits with
+	errexit     bool      // set -e
+	errexitOff  int       // above 0 inside an if/while condition, where set -e does not apply
+	subCode     int       // status of the last $( ) run by the statement in progress
+	subRan      bool      // a $( ) ran in that statement, so an assignment takes its status
 	loopInput   *[]string // lines left for `read` in a `done < file` or `cmd | while` loop
 	loopPartial bool      // the last of those lines had no trailing newline, so `read` fails on it
 
@@ -333,6 +339,7 @@ func (s *Interpreter) RunWithDeception(line, action string) (output string, code
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out, code := s.evalLine(line, 0, &bait, action)
+	s.halted = false // a failure under set -e ends this line, not the login shell
 	return out, code, bait
 }
 
@@ -352,6 +359,9 @@ func (s *Interpreter) RunExecWithDeception(command, action string, pty bool) (st
 	defer s.mu.Unlock()
 	s.exec, s.tty = true, pty
 	chunks, code := s.evalChunks(command, 0, &bait, action)
+	if s.halted {
+		code, s.halted = s.haltCode, false
+	}
 	var out, errOut strings.Builder
 	for _, c := range chunks {
 		text := strings.ReplaceAll(c.text, "\r\n", "\n")
@@ -453,6 +463,7 @@ func (s *Interpreter) evalChunks(line string, depth int, bait *[]BaitHit, action
 // the statement had no words, which leaves the previous exit status alone.
 // isErr reports that out is stderr content (see isErrorChannel).
 func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, action string) (out string, code int, ran, isErr bool) {
+	s.subRan = false
 	stages := splitPipeline(text)
 
 	// NAME=value assignment only applies to a lone, non-piped statement --
@@ -470,6 +481,9 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 			for _, w := range resolved {
 				k, v, _ := strings.Cut(w, "=")
 				s.Env[k] = v
+			}
+			if s.subRan {
+				return "", s.subCode, true, false // x=$(false) is a failure
 			}
 			return "", 0, true, false
 		}
@@ -527,7 +541,12 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 			if i > 0 {
 				s.pipeStdin = pipedIn
 			}
-			chunks, c := s.evalChunks(inner, depth, bait, action)
+			var chunks []outChunk
+			c := s.asSubshell(func() int {
+				var cc int
+				chunks, cc = s.evalChunks(inner, depth, bait, action)
+				return cc
+			})
 			s.pipeStdin = saved
 			var outs []outChunk
 			for _, ch := range chunks {
@@ -573,7 +592,9 @@ func (s *Interpreter) execStatement(text string, depth int, bait *[]BaitHit, act
 		}
 
 		s.direct = true // each stage is a forked subshell that execs in place
+		stageHalted, stageHaltCode := s.halted, s.haltCode
 		stageOut, stageCode = s.execBuiltin(cmdWords[0], cmdWords[1:], bait, action, stdin)
+		s.halted, s.haltCode = stageHalted, stageHaltCode // `exit` in a pipeline stage ends only that stage
 		if red.mergeStderrToStdout && isErrorChannel(cmdWords[0], stageCode) {
 			stageOut = s.addLine(stageOut)
 		}
@@ -751,7 +772,12 @@ func (s *Interpreter) substitute(word string, depth int, bait *[]BaitHit, action
 			if depth+1 <= maxSubstitutionDepth {
 				savedBase, savedLine, savedBlank := s.lineBase, s.line, s.blankEcho
 				s.lineBase = s.line - 1 // bash numbers lines inside $( ) by the script
-				o, _ := s.evalLine(inner, depth+1, bait, action)
+				var o string
+				s.subCode, s.subRan = s.asSubshell(func() int {
+					var c int
+					o, c = s.evalLine(inner, depth+1, bait, action)
+					return c
+				}), true
 				s.lineBase, s.line, s.blankEcho = savedBase, savedLine, savedBlank
 				resolved = strings.TrimRight(o, "\r\n")
 			}
@@ -1013,7 +1039,45 @@ func (s *Interpreter) execBuiltin(cmd string, args []string, bait *[]BaitHit, ac
 		return crontabBuiltin(args)
 
 	case "exit":
-		return "", ExitRequested
+		if !s.exec {
+			return "", ExitRequested // a login shell: close the session
+		}
+		code := s.lastCode
+		if len(args) > 0 {
+			n, err := strconv.Atoi(args[0])
+			if err != nil {
+				s.halted, s.haltCode = true, 2
+				return "bash: exit: " + args[0] + ": numeric argument required", 2
+			}
+			code = n
+		}
+		s.halted, s.haltCode = true, code&0xff
+		return "", code & 0xff
+
+	case "exec":
+		if len(args) == 0 {
+			return "", 0 // only redirects: the shell stays
+		}
+		out, code := s.execBuiltin(args[0], args[1:], bait, action, stdin)
+		if code == 127 && out == s.shellMsg(s.profile.msgs.notFound, args[0]) {
+			out = "bash: exec: " + args[0] + ": not found"
+		}
+		if s.exec {
+			s.halted, s.haltCode = true, code
+		}
+		return out, code
+
+	case "unset":
+		for _, a := range args {
+			if !strings.HasPrefix(a, "-") {
+				delete(s.Env, a)
+				delete(s.exported, a)
+			}
+		}
+		return "", 0
+
+	case "set":
+		return s.setBuiltin(args)
 
 	case "chmod":
 		return s.chmodBuiltin(args)
@@ -2022,4 +2086,48 @@ func groupStageBody(stage string) (string, bool) {
 		return t[1:end], true
 	}
 	return "", false
+}
+
+// asSubshell runs f the way bash runs a subshell or a command substitution: an `exit`, or a command
+// that fails under `set -e`, ends only f. The result is f's status, or the exit status if it halted.
+func (s *Interpreter) asSubshell(f func() int) int {
+	savedHalted, savedCode := s.halted, s.haltCode
+	s.halted = false
+	code := f()
+	if s.halted {
+		code = s.haltCode
+	}
+	s.halted, s.haltCode = savedHalted, savedCode
+	return code
+}
+
+// setBuiltin handles the options of `set`. -e is enforced (see runItems). The other letters bash accepts
+// are accepted and ignored: -u, -x and pipefail change behaviour here that is not emulated yet, and
+// positional parameters (`set -- a b`) are not supported; ubuntu2204.json lists those as known gaps.
+func (s *Interpreter) setBuiltin(args []string) (string, int) {
+	const valid = "abefhkmnptuvxBCEHPT"
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if len(a) < 2 || (a[0] != '-' && a[0] != '+') || a == "--" {
+			break
+		}
+		on := a[0] == '-'
+		for _, ch := range a[1:] {
+			switch {
+			case ch == 'e':
+				s.errexit = on
+			case ch == 'o':
+				if i+1 < len(args) {
+					i++
+					if args[i] == "errexit" {
+						s.errexit = on
+					}
+				}
+			case strings.ContainsRune(valid, ch):
+			default:
+				return "bash: set: " + a[:2] + ": invalid option\nset: usage: set [-abefhkmnptuvxBCHP] [-o option-name] [--] [arg ...]", 2
+			}
+		}
+	}
+	return "", 0
 }

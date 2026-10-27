@@ -1038,9 +1038,232 @@
    "code": 0,
    "stderr": "",
    "stdout": "b a\n"
+  },
+  {
+   "cmd": "echo a; exit; echo b",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\n"
+  },
+  {
+   "cmd": "echo a; exit 3; echo b",
+   "code": 3,
+   "stderr": "",
+   "stdout": "a\n"
+  },
+  {
+   "cmd": "false; exit",
+   "code": 1,
+   "stderr": "",
+   "stdout": ""
+  },
+  {
+   "cmd": "for i in 1 2 3; do echo $i; exit 5; done; echo after",
+   "code": 5,
+   "stderr": "",
+   "stdout": "1\n"
+  },
+  {
+   "cmd": "if true; then echo in; exit 2; fi; echo after",
+   "code": 2,
+   "stderr": "",
+   "stdout": "in\n"
+  },
+  {
+   "cmd": "(echo in; exit 4); echo after $?",
+   "code": 0,
+   "stderr": "",
+   "stdout": "in\nafter 4\n"
+  },
+  {
+   "cmd": "echo x | (cat; exit 3); echo $?",
+   "code": 0,
+   "stderr": "",
+   "stdout": "x\n3\n"
+  },
+  {
+   "cmd": "x=$(echo in; exit 4); echo [$x] $?",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[in] 4\n"
+  },
+  {
+   "cmd": "exit 257",
+   "code": 1,
+   "stderr": "",
+   "stdout": ""
+  },
+  {
+   "cmd": "exit abc; echo no",
+   "code": 2,
+   "stderr": "bash: line 1: exit: abc: numeric argument required\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "{ echo g; exit 6; }; echo after",
+   "code": 6,
+   "stderr": "",
+   "stdout": "g\n"
+  },
+  {
+   "cmd": "false || exit 7; echo no",
+   "code": 7,
+   "stderr": "",
+   "stdout": ""
+  },
+  {
+   "cmd": "true && exit 8; echo no",
+   "code": 8,
+   "stderr": "",
+   "stdout": ""
+  },
+  {
+   "cmd": "exec echo hi; echo not reached",
+   "code": 0,
+   "stderr": "",
+   "stdout": "hi\n"
+  },
+  {
+   "cmd": "exec nosuchcmd_x; echo not reached",
+   "code": 127,
+   "stderr": "bash: line 1: exec: nosuchcmd_x: not found\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "exec false; echo not reached",
+   "code": 1,
+   "stderr": "",
+   "stdout": ""
+  },
+  {
+   "cmd": "(exec echo sub); echo after",
+   "code": 0,
+   "stderr": "",
+   "stdout": "sub\nafter\n"
+  },
+  {
+   "cmd": "exec 2>/dev/null; echo kept",
+   "code": 0,
+   "stderr": "",
+   "stdout": "kept\n"
+  },
+  {
+   "cmd": "set -e; false; echo not reached",
+   "code": 1,
+   "stderr": "",
+   "stdout": ""
+  },
+  {
+   "cmd": "set -e; echo a; true; echo b",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a\nb\n"
+  },
+  {
+   "cmd": "set -e; set +e; false; echo reached",
+   "code": 0,
+   "stderr": "",
+   "stdout": "reached\n"
+  },
+  {
+   "cmd": "set -e; false || echo recovered",
+   "code": 0,
+   "stderr": "",
+   "stdout": "recovered\n"
+  },
+  {
+   "cmd": "set -e; false && echo x; echo after",
+   "code": 0,
+   "stderr": "",
+   "stdout": "after\n"
+  },
+  {
+   "cmd": "set -e; if false; then echo no; fi; echo fine",
+   "code": 0,
+   "stderr": "",
+   "stdout": "fine\n"
+  },
+  {
+   "cmd": "set -e; while false; do :; done; echo fine",
+   "code": 0,
+   "stderr": "",
+   "stdout": "fine\n"
+  },
+  {
+   "cmd": "set -e; true && false; echo not reached",
+   "code": 1,
+   "stderr": "",
+   "stdout": ""
+  },
+  {
+   "cmd": "set -e; (false); echo not reached",
+   "code": 1,
+   "stderr": "",
+   "stdout": ""
+  },
+  {
+   "cmd": "set -eu; echo ok",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ok\n"
+  },
+  {
+   "cmd": "set -o pipefail; echo ok",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ok\n"
+  },
+  {
+   "cmd": "set -Z",
+   "code": 2,
+   "stderr": "bash: line 1: set: -Z: invalid option\nset: usage: set [-abefhkmnptuvxBCHP] [-o option-name] [--] [arg ...]\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "FOO=1; unset FOO; echo [$FOO]",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[]\n"
+  },
+  {
+   "cmd": "unset NOSUCH_X; echo ok",
+   "code": 0,
+   "stderr": "",
+   "stdout": "ok\n"
+  },
+  {
+   "cmd": "FOO=1; unset -v FOO; echo [$FOO]",
+   "code": 0,
+   "stderr": "",
+   "stdout": "[]\n"
   }
  ],
  "image": "ubuntu:22.04",
  "image_id": "sha256:e0f80c829509ef4df9e76bd8944eb7b8ec25cbb379b112a7f9448b2c77a77c9b",
- "known_gaps": []
+ "known_gaps": [
+  {
+   "cmd": "set -u; echo $nosuchvar_x; echo after",
+   "code": 127,
+   "stderr": "bash: line 1: nosuchvar_x: unbound variable\n",
+   "stdout": ""
+  },
+  {
+   "cmd": "set -o pipefail; false | true; echo $?",
+   "code": 0,
+   "stderr": "",
+   "stdout": "1\n"
+  },
+  {
+   "cmd": "set -- a b c; echo $1 $# $@",
+   "code": 0,
+   "stderr": "",
+   "stdout": "a 3 a b c\n"
+  },
+  {
+   "cmd": "set -x; echo hi",
+   "code": 0,
+   "stderr": "+ echo hi\n",
+   "stdout": "hi\n"
+  }
+ ]
 }

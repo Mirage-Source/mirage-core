@@ -401,7 +401,7 @@ func (s *Interpreter) runSubshell(it item, depth int, bait *[]BaitHit, action st
 	var inner []outChunk
 	savedBase := s.lineBase
 	s.lineBase += it.line - 1 // the group's text was split again: keep script line numbers
-	code := s.runItems(it.body, depth, bait, action, &inner)
+	code := s.asSubshell(func() int { return s.runItems(it.body, depth, bait, action, &inner) })
 	s.lineBase = savedBase
 	s.Cwd, s.Env = cwd, env
 
@@ -514,11 +514,16 @@ func (s *Interpreter) runWhile(it item, depth int, bait *[]BaitHit, action strin
 	s.loopDepth++
 	defer func() { s.loopDepth-- }()
 	for n := 0; n < maxLoopIterations; n++ {
+		s.errexitOff++
 		ok := s.runItems(it.conds[0], depth, bait, action, outputs) == 0
-		if ok == (it.kind == kindUntil) {
+		s.errexitOff--
+		if s.halted || ok == (it.kind == kindUntil) {
 			break
 		}
 		last = s.runItems(it.body, depth, bait, action, outputs)
+		if s.halted {
+			break
+		}
 		if s.loopCtl == "break" {
 			s.loopCtl = ""
 			break
@@ -661,7 +666,7 @@ func (s *Interpreter) expandWord(raw string, depth int, bait *[]BaitHit, action 
 func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action string, outputs *[]outChunk) int {
 	last := 0
 	for i, it := range items {
-		if s.loopCtl != "" {
+		if s.loopCtl != "" || s.halted {
 			return last
 		}
 		if i > 0 && ((it.sep == "&&" && last != 0) || (it.sep == "||" && last == 0)) {
@@ -699,13 +704,17 @@ func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action 
 			}
 			last = code
 			s.lastCode = code
+			s.errexitCheck(items, i, code)
 		case kindGroup:
 			last = s.runItems(it.body, depth, bait, action, outputs)
 		case kindIf:
 			last = 0
 			taken := false
 			for j, cond := range it.conds {
-				if s.runItems(cond, depth, bait, action, outputs) == 0 {
+				s.errexitOff++
+				condCode := s.runItems(cond, depth, bait, action, outputs)
+				s.errexitOff--
+				if condCode == 0 {
 					last = s.runItems(it.bodies[j], depth, bait, action, outputs)
 					taken = true
 					break
@@ -732,6 +741,9 @@ func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action 
 				}
 				s.Env[it.word] = v
 				last = s.runItems(it.body, depth, bait, action, outputs)
+				if s.halted {
+					break
+				}
 				if s.loopCtl == "break" {
 					s.loopCtl = ""
 					break
@@ -740,9 +752,15 @@ func (s *Interpreter) runItems(items []item, depth int, bait *[]BaitHit, action 
 			}
 			s.loopDepth--
 		case kindWhile, kindUntil:
-			last = s.runWhile(it, depth, bait, action, outputs)
+			if it.feed != "" {
+				last = s.asSubshell(func() int { return s.runWhile(it, depth, bait, action, outputs) })
+			} else {
+				last = s.runWhile(it, depth, bait, action, outputs)
+			}
 		case kindSubshell:
 			last = s.runSubshell(it, depth, bait, action, outputs)
+			s.lastCode = last
+			s.errexitCheck(items, i, last)
 		case kindCase:
 			last = 0
 			word := s.expandWord(it.word, depth, bait, action)
@@ -777,8 +795,26 @@ func (s *Interpreter) pipeInto(inner []outChunk, tail string, depth int, bait *[
 	}
 	saved := s.pipeStdin
 	s.pipeStdin = &fwd
-	chunks, c2 := s.evalChunks(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(tail), "|")), depth, bait, action)
+	var chunks []outChunk
+	c2 := s.asSubshell(func() int {
+		var cc int
+		chunks, cc = s.evalChunks(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(tail), "|")), depth, bait, action)
+		return cc
+	})
 	s.pipeStdin = saved
 	*outputs = append(*outputs, chunks...)
 	return c2
+}
+
+// errexitCheck ends the shell if set -e is on and the statement items[i] failed, except where bash
+// exempts it: a command followed by && or || (only the last of such a list counts) and anything inside
+// an if or while condition.
+func (s *Interpreter) errexitCheck(items []item, i, code int) {
+	if code == 0 || !s.errexit || s.errexitOff > 0 {
+		return
+	}
+	if i+1 < len(items) && (items[i+1].sep == "&&" || items[i+1].sep == "||") {
+		return
+	}
+	s.halted, s.haltCode = true, code
 }
