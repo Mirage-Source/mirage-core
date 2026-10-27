@@ -746,11 +746,18 @@ func isIdentPart(b byte) bool {
 // opened just before pos (pos is the index right after "$("), or -1.
 func matchingParen(s string, pos int) int {
 	depth := 1
+	var cs caseScope
 	for i := pos; i < len(s); i++ {
+		skip := cs.step(s, i)
 		switch s[i] {
 		case '(':
-			depth++
+			if !skip {
+				depth++
+			}
 		case ')':
+			if skip {
+				break
+			}
 			depth--
 			if depth == 0 {
 				return i

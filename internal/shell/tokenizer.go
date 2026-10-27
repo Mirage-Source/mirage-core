@@ -25,6 +25,7 @@ func splitStatements(line string) []statement {
 
 	var quote byte // 0, '\'', or '"'
 	parenDepth := 0
+	var cs caseScope
 
 	start := 0 // index in line where cur began
 	flush := func() {
@@ -53,14 +54,15 @@ func splitStatements(line string) []statement {
 			continue
 		}
 
+		skip := cs.step(line, i)
 		switch {
 		case c == '\'' || c == '"':
 			quote = c
 			cur.WriteByte(c)
-		case c == '(':
+		case c == '(' && !skip:
 			parenDepth++
 			cur.WriteByte(c)
-		case c == ')':
+		case c == ')' && !skip:
 			if parenDepth > 0 {
 				parenDepth--
 			}
@@ -108,6 +110,7 @@ func splitPipeline(text string) []string {
 
 	var quote byte
 	parenDepth := 0
+	var cs caseScope
 
 	runes := []byte(text)
 	for i := 0; i < len(runes); i++ {
@@ -121,14 +124,15 @@ func splitPipeline(text string) []string {
 			continue
 		}
 
+		skip := cs.step(text, i)
 		switch {
 		case c == '\'' || c == '"':
 			quote = c
 			cur.WriteByte(c)
-		case c == '(':
+		case c == '(' && !skip:
 			parenDepth++
 			cur.WriteByte(c)
-		case c == ')':
+		case c == ')' && !skip:
 			if parenDepth > 0 {
 				parenDepth--
 			}
@@ -242,6 +246,7 @@ func tokenizeWords(text string) []string {
 
 	var quote byte
 	parenDepth := 0
+	var cs caseScope
 
 	flush := func() {
 		if hasCur {
@@ -275,6 +280,7 @@ func tokenizeWords(text string) []string {
 			continue
 		}
 
+		skip := cs.step(text, i)
 		switch {
 		case c == '\\' && parenDepth == 0 && i+1 < len(runes):
 			i++
@@ -293,10 +299,10 @@ func tokenizeWords(text string) []string {
 			hasCur = true
 			parenDepth++
 			i++
-		case parenDepth > 0 && c == '(':
+		case parenDepth > 0 && c == '(' && !skip:
 			parenDepth++
 			cur.WriteByte(c)
-		case parenDepth > 0 && c == ')':
+		case parenDepth > 0 && c == ')' && !skip:
 			parenDepth--
 			cur.WriteByte(c)
 		case parenDepth == 0 && (c == ' ' || c == '\t'):

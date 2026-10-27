@@ -79,8 +79,10 @@ func splitKeyword(text string) (string, string) {
 func firstRawWord(text string) (string, string) {
 	var quote byte
 	depth := 0
+	var cs caseScope
 	for i := 0; i < len(text); i++ {
 		c := text[i]
+		skip := quote == 0 && cs.step(text, i)
 		switch {
 		case quote != 0:
 			if c == quote {
@@ -88,9 +90,9 @@ func firstRawWord(text string) (string, string) {
 			}
 		case c == '\'' || c == '"':
 			quote = c
-		case c == '(':
+		case c == '(' && !skip:
 			depth++
-		case c == ')' && depth > 0:
+		case c == ')' && depth > 0 && !skip:
 			depth--
 		case depth == 0 && (c == ' ' || c == '\t'):
 			return text[:i], strings.TrimSpace(text[i+1:])
@@ -342,8 +344,10 @@ func (p *parser) subshellItem(st statement) (item, error) {
 func closingParen(text string) int {
 	depth := 0
 	var quote byte
+	var cs caseScope
 	for i := 0; i < len(text); i++ {
 		c := text[i]
+		skip := quote == 0 && cs.step(text, i)
 		switch {
 		case quote != 0:
 			if c == quote {
@@ -351,9 +355,9 @@ func closingParen(text string) int {
 			}
 		case c == '\'' || c == '"':
 			quote = c
-		case c == '(':
+		case c == '(' && !skip:
 			depth++
-		case c == ')':
+		case c == ')' && !skip:
 			depth--
 			if depth == 0 {
 				return i
