@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/mirage-source/mirage-core/internal/buildinfo"
 	"github.com/mirage-source/mirage-core/internal/fleet"
 	"github.com/mirage-source/mirage-core/internal/proxyproto"
 	"github.com/mirage-source/mirage-core/internal/session"
@@ -66,6 +67,7 @@ type telnetConfig struct {
 }
 
 func StartTelnet(addr string) {
+	log.Printf("mirage telnet sensor build=%s schema_version=%s", buildinfo.Commit, session.SchemaVersion)
 	credPath := os.Getenv("TELNET_WEAK_CREDENTIALS_FILE")
 	if credPath == "" {
 		credPath = "config/telnet_weak_credentials.txt"
@@ -146,8 +148,9 @@ func StartTelnet(addr string) {
 func newTelnetSession() *session.Session {
 	return &session.Session{
 		SessionID:     uuid.New().String(),
-		SchemaVersion: "1.1",
+		SchemaVersion: session.SchemaVersion,
 		NodeID:        "Ubuntu",
+		BuildSHA:      buildinfo.Commit,
 		Protocol:      session.ProtocolTelnet,
 		Outcome:       session.OutcomeActive,
 		Network:       session.Network{IngressSource: session.IngressSourceDirect},

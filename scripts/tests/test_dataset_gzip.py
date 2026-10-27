@@ -56,6 +56,20 @@ def test_write_csv_gz_round_trips():
         assert rows[1]["command_count"] == "2"
 
 
+def test_csv_carries_build_sha_and_tolerates_an_older_api():
+    stamped = _row(1)
+    stamped["build_sha"] = "abc1234-dirty"
+    old_api = {k: v for k, v in _row(2).items() if k != "build_sha"}  # API from before schema 1.2
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / SESSIONS_CSV
+        write_csv([stamped, old_api], path)
+        with gzip.open(path, "rt", newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+    assert rows[0]["build_sha"] == "abc1234-dirty"
+    assert rows[1]["build_sha"] == ""
+    assert FIELDNAMES.index("build_sha") == FIELDNAMES.index("node_id") + 1
+
+
 def test_write_json_gz_round_trips():
     raw = [{"session_id": "s1", "client_ip": "real", "mitre_techniques": ["T1059"]}]
     enriched = [{"client_ip": "anon", "asn": 64500, "asn_name": "TEST", "country": "DE"}]

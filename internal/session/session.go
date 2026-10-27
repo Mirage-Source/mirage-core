@@ -60,10 +60,19 @@ const (
 	AccessTypeExfilAttempt AccessType = "exfil_attempt"
 )
 
+// SchemaVersion is the version of the session document and of the exports built
+// from it. 1.2 added BuildSHA.
+const SchemaVersion = "1.2"
+
+// Session is one attacker connection. BuildSHA is the commit the sensor binary
+// was built from (internal/buildinfo): "unknown" if unstamped, empty on rows
+// written before schema 1.2. node_id is the emulated OS and never changes, so
+// BuildSHA is the only per-row record of which code produced a session.
 type Session struct {
 	SessionID     string          `json:"session_id"`
 	SchemaVersion string          `json:"schema_version"`
 	NodeID        string          `json:"node_id"`
+	BuildSHA      string          `json:"build_sha"`
 	Protocol      Protocol        `json:"protocol"`
 	Network       Network         `json:"network"`
 	Timing        Timing          `json:"timing"`

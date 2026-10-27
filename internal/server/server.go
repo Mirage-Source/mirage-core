@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/mirage-source/mirage-core/internal/buildinfo"
 	"github.com/mirage-source/mirage-core/internal/deception"
 	"github.com/mirage-source/mirage-core/internal/fleet"
 	"github.com/mirage-source/mirage-core/internal/proxyproto"
@@ -292,6 +293,7 @@ func (g *sessionGuard) finalize(db *sql.DB, fleetClient *fleet.Client) {
 }
 
 func Start(addr string) {
+	log.Printf("mirage ssh sensor build=%s schema_version=%s", buildinfo.Commit, session.SchemaVersion)
 	hostKeys := loadHostKeys("config/hostkey")
 
 	credPath := os.Getenv("WEAK_CREDENTIALS_FILE")
@@ -405,17 +407,7 @@ func Start(addr string) {
 		handlerConn := proxyTrust.wrap(conn)
 		pp, _ := handlerConn.(*proxyproto.Conn)
 
-		sess := session.Session{
-			SessionID:     uuid.New().String(),
-			SchemaVersion: "1.1",
-			NodeID:        "Ubuntu",
-			Protocol:      session.ProtocolSSH,
-			Outcome:       session.OutcomeActive,
-			BaitEvents:    []session.BaitEvent{},
-			Timing: session.Timing{
-				StartMS: time.Now().UnixMilli(),
-			},
-		}
+		sess := newSSHSession()
 
 		config := newSSHServerConfig(&sess, pp, sshAuthConfig{
 			weakCreds:           weakCreds,
@@ -1210,4 +1202,20 @@ func parseCommandLine(line string) (string, []string, []string) {
 		chain[i] = inv.Name
 	}
 	return invs[0].Name, invs[0].Args, chain
+}
+
+// newSSHSession returns the empty record every accepted SSH connection starts from.
+func newSSHSession() session.Session {
+	return session.Session{
+		SessionID:     uuid.New().String(),
+		SchemaVersion: session.SchemaVersion,
+		NodeID:        "Ubuntu",
+		BuildSHA:      buildinfo.Commit,
+		Protocol:      session.ProtocolSSH,
+		Outcome:       session.OutcomeActive,
+		BaitEvents:    []session.BaitEvent{},
+		Timing: session.Timing{
+			StartMS: time.Now().UnixMilli(),
+		},
+	}
 }

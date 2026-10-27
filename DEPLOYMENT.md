@@ -132,6 +132,26 @@ file. They are all idempotent, so this only fills in what is missing.
 
 ---
 
+## 3b. Build stamp (`build_sha`, schema_version 1.2)
+
+Every session row records the commit its sensor binary was built from, because
+`node_id` (the emulated OS) and `schema_version` cannot tell builds apart.
+Deploy the sensors with the stamp:
+
+```sh
+BUILD_SHA=$(sh scripts/build_sha.sh) docker compose up -d --build mirage-core mirage-telnet
+```
+
+`scripts/build_sha.sh` prints the short sha, with `-dirty` if the tree differs
+from HEAD in any way (untracked files count, because `COPY . .` copies them).
+If `BUILD_SHA` is not set the image builds, runs, and writes `unknown`; the
+sensor logs `build=...` on startup, so `docker compose logs mirage-core | head`
+shows what is running. Rows written before this change keep `build_sha = ''`.
+Start a sensor (which applies migration 019) before running `dataset-export`,
+which now selects the column.
+
+---
+
 ## 3a. Telnet sensor (`mirage-telnet`, port 23)
 
 Order matters on an existing deployment:

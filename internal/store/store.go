@@ -185,7 +185,7 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 			command_count, bait_hit_count,
 			attacker_class, classifier_confidence, cluster_id,
 			mitre_techniques, session_summary,
-			session_document
+			session_document, build_sha
 		) VALUES (
 			$1, $2, $3, $4,
 			$5, $6, $7, $8,
@@ -195,7 +195,7 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 			$18, $19,
 			$20, $21, $22,
 			$23, $24,
-			$25
+			$25, $26
 		)
 	`, pgArgs([]any{sess.SessionID, sess.SchemaVersion, sess.NodeID, sess.Protocol,
 		sess.Network.ClientIP, sess.Network.ClientPort, sess.Network.ServerPort, sess.Network.SSHClientBanner,
@@ -205,7 +205,7 @@ func SaveSession(db *sql.DB, sess *session.Session) error {
 		len(sess.Commands), len(sess.BaitEvents),
 		sess.Intelligence.AttackerClass, sess.Intelligence.ClassifierConfidence, sess.Intelligence.ClusterID,
 		mitreBytes, sess.Intelligence.SessionSummary,
-		docBytes,
+		docBytes, sess.BuildSHA,
 	})...)
 	if err != nil {
 		return fmt.Errorf("inserting session: %w", err)
@@ -307,6 +307,7 @@ const exportPageSQL = `
 	SELECT
 		s.session_id,
 		s.node_id,
+		s.build_sha,
 		s.client_ip,
 		s.ssh_client_banner,
 		s.start_ms,
@@ -394,6 +395,7 @@ func GetExportPage(db *sql.DB, protocol session.Protocol, after string, limit in
 		if err := rows.Scan(
 			&item.SessionID,
 			&item.NodeID,
+			&item.BuildSHA,
 			&item.ClientIP,
 			&item.SSHClientBanner,
 			&item.StartMS,

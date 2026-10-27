@@ -230,6 +230,7 @@ SESSION_SCHEMA = pa.schema([
     ("session_id", pa.string()),
     ("protocol", pa.string()),
     ("node_id", pa.string()),
+    ("build_sha", pa.string()),
     ("client_ip", pa.string()),
     ("asn", pa.string()),
     ("asn_name", pa.string()),
@@ -306,7 +307,7 @@ def command_record(row: dict, ip_salt: str | None) -> dict:
 # (protocol, start_ms) index for telnet, idx_sessions_start_ms for SSH.
 SESSIONS_SQL = """
     SELECT
-        s.session_id, s.protocol, s.node_id, s.client_ip, s.ssh_client_banner,
+        s.session_id, s.protocol, s.node_id, s.build_sha, s.client_ip, s.ssh_client_banner,
         s.start_ms, s.end_ms, s.duration_ms, s.outcome,
         s.command_count, s.bait_hit_count,
         s.attacker_class, s.classifier_confidence, s.cluster_id, s.mitre_techniques,
