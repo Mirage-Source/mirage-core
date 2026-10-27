@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import daily_health_check  # noqa: E402
 from daily_health_check import (  # noqa: E402
-    Thresholds, check_accepted_pairs, check_builds, check_heartbeats, evaluate, main,
+    Thresholds, check_accepted_pairs, check_builds, check_heartbeats, check_hour_coverage, evaluate, main,
     parse_accept_list, parse_ts,
 )
 
@@ -315,19 +315,28 @@ def test_database_mode_against_the_real_schema():
     sql("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
     for f in sorted((Path(__file__).resolve().parent.parent.parent / "internal/store/migrations").glob("*.sql")):
         subprocess.run(["psql", dsn, "-q", "-v", "ON_ERROR_STOP=1", "-f", str(f)], check=True, capture_output=True)
-    # nine full days ending yesterday, 1000 sessions a day, 5% of password attempts accepted (all listed pairs)
-    sql("""INSERT INTO sessions (session_id, schema_version, node_id, protocol, client_ip, client_port, server_port,
+    # nine full days ending yesterday, 1000 sessions a day spread over all 24 hours, 5% of password attempts
+    # accepted (all listed pairs); plus today's complete hours so "now" finds no outage in progress
+    day_start = "(extract(epoch FROM date_trunc('day', now()) - (d || ' days')::interval) * 1000)::bigint"
+    sql(f"""INSERT INTO sessions (session_id, schema_version, node_id, protocol, client_ip, client_port, server_port,
              ssh_client_banner, start_ms, outcome, build_sha, session_document)
            SELECT 's' || d || '-' || i, '1.2', 'Ubuntu', 'ssh', '198.51.100.1', 1, 2222, 'SSH-2.0-Go',
-                  (extract(epoch FROM date_trunc('day', now()) - (d || ' days')::interval) * 1000)::bigint + i * 1000,
-                  'auth_failed', CASE WHEN d = 1 AND i < 4 THEN 'unknown' ELSE 'abc1234' END, '{}'::jsonb
+                  {day_start} + (i - 1) * 86400 + 1000,
+                  'auth_failed', CASE WHEN d = 1 AND i < 4 THEN 'unknown' ELSE 'abc1234' END, '{{}}'::jsonb
            FROM generate_series(1, 9) d, generate_series(1, 1000) i""")
+    sql("""INSERT INTO sessions (session_id, schema_version, node_id, protocol, client_ip, client_port, server_port,
+             ssh_client_banner, start_ms, outcome, build_sha, session_document)
+           SELECT 'today-' || n, '1.2', 'Ubuntu', 'ssh', '198.51.100.1', 1, 2222, 'SSH-2.0-Go',
+                  (extract(epoch FROM g) * 1000)::bigint, 'auth_failed', 'abc1234', '{}'::jsonb
+           FROM generate_series(date_trunc('day', now()), now(), interval '5 minutes') WITH ORDINALITY AS t(g, n)""")
+    # the injected hole: roughly hours 9-13 of the day four days ago, with the sensor still "up"
+    sql("DELETE FROM sessions WHERE session_id LIKE 's4-%' AND split_part(session_id, '-', 2)::int BETWEEN 400 AND 560")
     sql("""INSERT INTO auth_attempts (session_id, timestamp_ms, method, username, credential, success)
            SELECT session_id, start_ms, 'password',
                   CASE WHEN session_id = 's1-500' THEN 'bob' ELSE 'root' END,
                   CASE WHEN session_id = 's1-500' THEN 'hunter2' ELSE '123456' END,
-                  (right(session_id, 2) = '50') OR session_id = 's1-500'
-           FROM sessions""")
+                  (split_part(session_id, '-', 2)::int % 20 = 0 AND session_id NOT LIKE 'today-%') OR session_id = 's1-500'
+           FROM sessions WHERE session_id NOT LIKE 'today-%'""")
     # heartbeats every minute for the last 6 hours, with a 3 hour hole starting 5 hours ago... plus a live tail
     sql("""INSERT INTO sensor_heartbeats (sensor_id, ts)
            SELECT 'default', g FROM generate_series(now() - interval '8 hours', now() - interval '5 hours', interval '1 minute') g
@@ -342,8 +351,122 @@ def test_database_mode_against_the_real_schema():
     assert code == 1
     for kind in ("accepted_pair_not_listed", "heartbeat_gap", "build_unknown"):
         assert kind in text, (kind, text)
+    hole_day = subprocess.run(["psql", dsn, "-Atc", "SELECT (date_trunc('day', now()) - interval '4 days')::date"],
+                              capture_output=True, text=True, check=True).stdout.strip()
+    assert any(l.split()[:2] == [hole_day, "empty_hours"] for l in text.splitlines()), (hole_day, text)
     assert "heartbeat_stale" not in text and "check_failed" not in text, text  # live tail, every table present
     assert "acceptance_too" not in text and "no_sessions" not in text, text    # the healthy parts stay quiet
+    assert text.count("empty_hours") == 1, text                                  # only the injected hole
+
+
+# --- hour coverage -------------------------------------------------------------
+# A capture failure leaves the sensor up and beating (60 heartbeats in an hour with no sessions
+# was seen in the Nuremberg data), so heartbeats cannot see it; and Frankfurt has no heartbeats
+# at all. An hour with no sessions is implausible when the typical hour has dozens.
+
+def hourly(start, hours, rate=100, skip=()):
+    return [(start + timedelta(hours=i), rate) for i in range(hours) if i not in skip]
+
+
+H0 = datetime(2026, 10, 1, 0, 0, tzinfo=timezone.utc)
+
+
+def test_steady_hours_have_no_empty_hours():
+    assert check_hour_coverage(hourly(H0, 24 * 8)) == []
+
+
+def test_a_single_empty_hour_in_busy_traffic_is_flagged():
+    # the Nuremberg 2026-09-01 00:00 UTC case: neighbours ~150 sessions/hour, this hour none
+    (f,) = check_hour_coverage(hourly(H0, 24 * 8, rate=150, skip={24 * 5 + 3}))
+    assert f["kind"] == "empty_hours" and f["date"] == "2026-10-06", f
+    assert "1 empty hour" in f["detail"] and "03:00" in f["detail"], f
+
+
+def test_consecutive_empty_hours_are_one_finding_and_separate_runs_are_two():
+    one = check_hour_coverage(hourly(H0, 24 * 8, skip={100, 101, 102}))
+    assert len(one) == 1 and "3 empty hour" in one[0]["detail"], one
+    two = check_hour_coverage(hourly(H0, 24 * 8, skip={100, 101, 150}))
+    assert len(two) == 2, two
+
+
+def test_quiet_sensor_empty_hours_are_not_flagged():
+    # at 3 sessions an hour an empty hour is ordinary (about 5% of hours)
+    assert check_hour_coverage(hourly(H0, 24 * 8, rate=3, skip={100, 101})) == []
+
+
+def test_bursty_traffic_empty_hours_are_not_flagged():
+    # Telnet-like: a typical hour of 40 but a long tail of 1-3 session lulls (17% of Nuremberg's
+    # Telnet hours had under 10 sessions), so an empty hour is not unprecedented
+    series = [(H0 + timedelta(hours=i), (2 if i % 6 == 0 else 3 if i % 6 == 1 else 60)) for i in range(24 * 8) if i != 150]
+    assert check_hour_coverage(series) == []
+
+
+def test_the_same_traffic_without_lulls_does_flag_an_empty_hour():
+    series = [(H0 + timedelta(hours=i), 60) for i in range(24 * 8) if i != 150]
+    assert len(check_hour_coverage(series)) == 1
+
+
+def test_not_enough_history_means_no_verdict():
+    assert check_hour_coverage(hourly(H0, 10, skip={5})) == []
+
+
+def test_a_trailing_outage_is_found_only_when_now_is_known():
+    beats = hourly(H0, 24 * 8)                       # last populated hour is H0 + 191 h
+    now = H0 + timedelta(hours=191 + 4, minutes=20)  # three complete empty hours since, plus a partial one
+    assert check_hour_coverage(beats) == []
+    (f,) = check_hour_coverage(beats, now=now)
+    assert "3 empty hour" in f["detail"], f
+
+
+def test_a_whole_missing_day_is_one_run():
+    skip = set(range(24 * 3, 24 * 5))
+    (f,) = check_hour_coverage(hourly(H0, 24 * 8, skip=skip))
+    assert "48 empty hour" in f["detail"], f
+
+
+# --- a lower day total is not a failure if every hour was populated -------------
+
+def test_volume_drop_is_ignored_when_every_hour_was_populated():
+    # Nuremberg 2026-09-21: 15% of the median, sessions in all 24 hours, heartbeats intact
+    quiet = dict(day("2026-10-08", 300, accepted=15), active_hours=24)
+    assert "volume_drop" not in kinds(evaluate(normal_week() + [quiet]))
+
+
+def test_volume_drop_with_missing_hours_is_still_flagged():
+    partial = dict(day("2026-10-08", 300, accepted=15), active_hours=15)
+    assert "volume_drop" in kinds(evaluate(normal_week() + [partial]))
+
+
+def test_a_severe_drop_is_flagged_even_with_every_hour_populated():
+    trickle = dict(day("2026-10-08", 40, accepted=2), active_hours=24)   # 2% of the median
+    assert "volume_drop" in kinds(evaluate(normal_week() + [trickle]))
+
+
+def test_without_hour_data_the_old_volume_rule_applies():
+    assert "volume_drop" in kinds(evaluate(normal_week() + [day("2026-10-08", 300, accepted=15)]))
+
+
+# --- defaults come from measured data ---------------------------------------------
+
+def test_defaults_sit_between_the_measured_normal_and_the_measured_failures():
+    t = Thresholds()
+    # heartbeats: normal max 64.6 s over 123,650 intervals; the shortest real outage was 15 min 51 s
+    assert 120 < t.max_heartbeat_gap_min * 60 < 15 * 60
+    assert 120 < t.max_heartbeat_age_min * 60 < 15 * 60
+    # SSH acceptance: normal days 2.3% to 11.4%; reject-everything 0%; accept-everything 61.6% to 100%
+    assert 0 < t.min_accept < 0.023 and 0.114 < t.max_accept < 0.616
+
+
+def test_hour_coverage_through_main_fails_the_run():
+    with tempfile.TemporaryDirectory() as tmp:
+        hrs = Path(tmp) / "hours.csv"
+        rows = [(t.isoformat(), n) for t, n in hourly(H0, 24 * 8, skip={100, 101, 102})]
+        _write(hrs, ["hour", "sessions"], rows)
+        assert _run(tmp, "--hours-csv", str(hrs)) == 0              # 10-05 is outside the default 2-day window
+        assert _run(tmp, "--hours-csv", str(hrs), "--all") == 1
+        ok = Path(tmp) / "ok.csv"
+        _write(ok, ["hour", "sessions"], [(t.isoformat(), n) for t, n in hourly(H0, 24 * 8)])
+        assert _run(tmp, "--hours-csv", str(ok), "--all") == 0
 
 
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

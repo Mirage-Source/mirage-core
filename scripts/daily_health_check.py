@@ -17,6 +17,10 @@ on a rate threshold:
   - heartbeats: any silent gap longer than --max-gap-min on any sensor, and a
     latest heartbeat older than --max-age-min. Daily counts miss a 2 h 34 min
     outage inside a busy day;
+  - hour coverage: runs of hours with no sessions that are unprecedented for the sensor (in
+    the last week even the quietest 5% of hours had >= --hour-floor sessions). A capture failure leaves the sensor up and beating (60
+    heartbeats in an hour with no sessions occurred in the Nuremberg data), and a
+    sensor without a heartbeat table (Frankfurt) has no other outage detector;
   - build stamp (--check-builds): sessions written with build_sha 'unknown' (an
     unstamped build) or '' (an old binary).
 A missing accept list is itself a finding: skipping the check silently is the
@@ -28,9 +32,14 @@ it can run from cron or CI and page on failure.
     # offline extras: --accepted-csv date,username,credential  --heartbeats-csv sensor_id,ts
     #                 --builds-csv date,build_sha,sessions  --accept-list FILE  --now ISO
 
-The default bounds are set from two datasets (Frankfurt post-fix acceptance
-2.3-6% per day, Nuremberg 5.1% overall) and are meant to be reviewed, not
-trusted; pass --min-accept / --max-accept to change them.
+Defaults come from measurement, and each has the figure it rests on:
+  heartbeat gap/age 5 min   123,650 heartbeat intervals: median 60.0 s, largest normal 64.6 s;
+                            the only two over 90 s were real outages (16 min, 2 h 34 min)
+  acceptance 1% - 25%       normal SSH days 2.3% (Frankfurt, post-fix) to 11.4% (Nuremberg);
+                            reject-everything is 0%, accept-everything 61.6% - 100%
+  empty hour, floor 5       Telnet is bursty (17% of hours under 10 sessions, 5th percentile 4), so a
+                            median is not enough; SSH's quietest 5% of hours stay far above 5
+They rest on two sensors, so review them for a third; every one has a flag.
 """
 from __future__ import annotations
 
@@ -51,13 +60,17 @@ from pathlib import Path
 class Thresholds:
     min_sessions: int = 1          # fewer sessions than this counts as no data
     min_attempts_for_rate: int = 100
-    min_accept: float = 0.002      # below: looks like reject-everything
-    max_accept: float = 0.5        # above: looks like accept-everything
-    drop_frac: float = 0.25        # volume below this fraction of the median
+    min_accept: float = 0.01       # below: looks like reject-everything (lowest normal day: 2.3%)
+    max_accept: float = 0.25       # above: looks like accept-everything (highest normal day: 11.4%)
+    drop_frac: float = 0.25        # volume below this fraction of the median ...
+    hard_drop_frac: float = 0.05   # ... counts only if an hour was empty, or it is below this
+    hour_floor: int = 5            # an empty hour is judged only if the quietest 5% of last week's hours had this many
+    hour_history: int = 168        # hours of history behind "typical"
+    min_hour_history: int = 12     # populated hours needed before judging
     history_days: int = 14
     min_history: int = 7           # prior days needed before the volume check applies
-    max_heartbeat_gap_min: int = 10   # heartbeats are ~60 s apart; both real outages were longer
-    max_heartbeat_age_min: int = 10   # latest heartbeat older than this: the sensor is down now
+    max_heartbeat_gap_min: int = 5    # heartbeats are 60 s apart (largest normal: 64.6 s); outages were 16+ min
+    max_heartbeat_age_min: int = 5    # latest heartbeat older than this: the sensor is down now
 
 
 def evaluate(rows, t: Thresholds | None = None):
@@ -83,7 +96,10 @@ def evaluate(rows, t: Thresholds | None = None):
             prior = history[-t.history_days:]
             if len(prior) >= t.min_history:
                 med = statistics.median(prior)
-                if r["sessions"] < t.drop_frac * med:
+                # A lower total with sessions in every hour means the sensor was receiving all day:
+                # traffic changed, capture did not fail (Nuremberg 2026-09-21: 15% of median, 24/24 hours).
+                full_day = r.get("active_hours") == 24
+                if r["sessions"] < t.drop_frac * med and (not full_day or r["sessions"] < t.hard_drop_frac * med):
                     findings.append({"date": iso, "kind": "volume_drop",
                                      "detail": f"{r['sessions']} sessions vs trailing median {med:.0f}"})
             if r["attempts"] >= t.min_attempts_for_rate:
@@ -152,6 +168,42 @@ def check_heartbeats(beats, now: datetime | None = None, t: Thresholds | None = 
     return findings
 
 
+def _hour(dt: datetime) -> datetime:
+    return dt.replace(minute=0, second=0, microsecond=0)
+
+
+def check_hour_coverage(hours, now: datetime | None = None, t: Thresholds | None = None):
+    """hours: (aware datetime, sessions) for hours that had any. Reports each run of empty hours
+    between the first populated hour and the last (or the last complete hour before `now`, which
+    is what exposes an outage still in progress), if it is unprecedented: in the preceding week
+    even the quietest 5% of populated hours had at least hour_floor sessions. A rate threshold
+    alone fails on bursty traffic (17% of Nuremberg's Telnet hours had under 10 sessions)."""
+    t = t or Thresholds()
+    counts = {_hour(h): n for h, n in hours}
+    if not counts:
+        return []
+    first, last = min(counts), max(counts)
+    if now is not None:
+        last = max(last, _hour(now) - timedelta(hours=1))
+    series = [first + timedelta(hours=i) for i in range(int((last - first).total_seconds() // 3600) + 1)]
+    findings, i = [], 0
+    while i < len(series):
+        if counts.get(series[i], 0) > 0:
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(series) and counts.get(series[j + 1], 0) == 0:
+            j += 1
+        past = sorted(counts[h] for h in series[max(0, i - t.hour_history):i] if counts.get(h, 0) > 0)
+        if len(past) >= t.min_hour_history and past[int(0.05 * len(past))] >= t.hour_floor:
+            n, a, b = j - i + 1, series[i], series[j]
+            findings.append({"date": a.date().isoformat(), "kind": "empty_hours",
+                             "detail": f"{n} empty hour(s), {a:%Y-%m-%d %H:%M} to {b:%H:59} UTC "
+                                       f"(typical hour has {statistics.median(past):.0f}, quietest 5% at least {past[int(0.05 * len(past))]})"})
+        i = j + 1
+    return findings
+
+
 def check_builds(rows):
     """rows: (date, build_sha, sessions). 'unknown' is an unstamped build, '' an old binary."""
     findings = []
@@ -167,7 +219,8 @@ def check_builds(rows):
 
 SQL = """
 WITH s AS (
-  SELECT (to_timestamp(start_ms/1000.0) AT TIME ZONE 'UTC')::date d, count(*) sessions
+  SELECT (to_timestamp(start_ms/1000.0) AT TIME ZONE 'UTC')::date d, count(*) sessions,
+         count(DISTINCT date_trunc('hour', to_timestamp(start_ms/1000.0) AT TIME ZONE 'UTC')) active_hours
   FROM sessions WHERE {proto_s} start_ms >= extract(epoch FROM now() - interval '{days} days')*1000 GROUP BY 1),
 a AS (
   SELECT (to_timestamp(a.timestamp_ms/1000.0) AT TIME ZONE 'UTC')::date d,
@@ -175,7 +228,7 @@ a AS (
   FROM auth_attempts a JOIN sessions USING (session_id)
   WHERE a.method = 'password' {proto_a}
     AND a.timestamp_ms >= extract(epoch FROM now() - interval '{days} days')*1000 GROUP BY 1)
-SELECT d, coalesce(sessions,0), coalesce(attempts,0), coalesce(accepted,0)
+SELECT d, coalesce(sessions,0), coalesce(attempts,0), coalesce(accepted,0), coalesce(active_hours,0)
 FROM s FULL JOIN a USING (d) ORDER BY d
 """
 
@@ -188,7 +241,7 @@ def load_db(dsn: str, days: int, protocol: str = "ssh"):
     out = subprocess.run(["psql", dsn, "-At", "-F", ",", "-c",
                           SQL.format(days=days, proto_s=proto_s, proto_a=proto_a)],
                          capture_output=True, text=True, check=True).stdout
-    return [dict(zip(("date", "sessions", "attempts", "accepted"), line.split(",")))
+    return [dict(zip(("date", "sessions", "attempts", "accepted", "active_hours"), line.split(",")))
             for line in out.splitlines() if line]
 
 
@@ -212,6 +265,12 @@ def load_accepted_db(dsn: str, days: int, protocol: str):
         a.username, a.credential FROM auth_attempts a JOIN sessions s USING (session_id)
         WHERE a.method = 'password' AND a.success {_proto(protocol, 's.')}
           AND a.timestamp_ms >= extract(epoch FROM now() - interval '{days} days')*1000""")
+
+
+def load_hours_db(dsn: str, days: int, protocol: str):
+    return _psql_csv(dsn, f"""SELECT to_char(date_trunc('hour', to_timestamp(start_ms/1000.0) AT TIME ZONE 'UTC'),
+        'YYYY-MM-DD HH24:00:00') AS hour, count(*) AS sessions FROM sessions WHERE true {_proto(protocol)}
+        AND start_ms >= extract(epoch FROM now() - interval '{days} days')*1000 GROUP BY 1""")
 
 
 def load_heartbeats_db(dsn: str, days: int):
@@ -268,6 +327,9 @@ def main(argv=None):
     ap.add_argument("--max-accept", type=float, default=Thresholds.max_accept)
     ap.add_argument("--max-gap-min", type=int, default=Thresholds.max_heartbeat_gap_min,
                     help="longest tolerated silence between heartbeats of one sensor")
+    ap.add_argument("--hour-floor", type=int, default=Thresholds.hour_floor,
+                    help="judge empty hours only if the quietest 5%% of last week's hours had at least this many sessions")
+    ap.add_argument("--hours-csv", help="offline: hour,sessions for every hour that had sessions")
     ap.add_argument("--max-age-min", type=int, default=Thresholds.max_heartbeat_age_min,
                     help="longest tolerated age of the latest heartbeat (needs the database or --now)")
     ap.add_argument("--accept-list", help="accept list file (default: the sensor's config, via its env var)")
@@ -286,7 +348,9 @@ def main(argv=None):
     else:
         ap.error("set DATABASE_URL, pass --dsn, or use --csv")
     rows = [{"date": r["date"], "sessions": int(r["sessions"]), "attempts": int(r["attempts"]),
-             "accepted": int(r["accepted"])} for r in raw]
+             "accepted": int(r["accepted"]),
+             "active_hours": int(r["active_hours"]) if r.get("active_hours") not in (None, "") else None}
+            for r in raw]
     if not a.csv:
         rows = [r for r in rows if date.fromisoformat(r["date"]) < date.today()]  # today is partial
     # Telnet accepts a decoded Mirai table (~68% of attempts) by design, so a high rate is not a
@@ -294,8 +358,10 @@ def main(argv=None):
     # everything still shows as a rate near 0.
     max_accept = 1.0 if a.protocol == "telnet" else a.max_accept
     t = Thresholds(min_accept=a.min_accept, max_accept=max_accept,
-                   max_heartbeat_gap_min=a.max_gap_min, max_heartbeat_age_min=a.max_age_min)
+                   max_heartbeat_gap_min=a.max_gap_min, max_heartbeat_age_min=a.max_age_min,
+                   hour_floor=a.hour_floor)
     findings = evaluate(rows, t)
+    now = parse_ts(a.now) if a.now else (None if a.csv else datetime.now(timezone.utc))
     always = []  # reported regardless of the report window
 
     # accepted-pairs invariant
@@ -318,10 +384,16 @@ def main(argv=None):
           _guarded("heartbeat check", lambda: load_heartbeats_db(a.dsn, a.lookback), always)
           if a.dsn and not a.csv else None)
     if hb is not None:
-        now = parse_ts(a.now) if a.now else (None if a.csv else datetime.now(timezone.utc))
         hb_findings = check_heartbeats([(r["sensor_id"], parse_ts(r["ts"])) for r in hb], now, t)
         findings += [f for f in hb_findings if f["kind"] != "heartbeat_stale"]
         always += [f for f in hb_findings if f["kind"] == "heartbeat_stale"]
+
+    # hour coverage
+    hours = (load_csv(a.hours_csv) if a.hours_csv else
+             _guarded("hour-coverage check", lambda: load_hours_db(a.dsn, a.lookback, a.protocol), always)
+             if a.dsn and not a.csv else None)
+    if hours is not None:
+        findings += check_hour_coverage([(parse_ts(r["hour"]), int(r["sessions"])) for r in hours], now, t)
 
     # build stamp
     if a.check_builds:
