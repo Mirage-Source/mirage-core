@@ -1,21 +1,81 @@
 name: Deploy MIRAGE
+
+# Manual deploy of the SSH and Telnet sensors.
+#
+# Differences from a plain "pull main and rebuild": it deploys the exact commit that was tested, only commits that are
+# on main, and it is refused during a freeze (deploy/FREEZE_UNTIL). Every deploy restarts every service, so it is a
+# research-era boundary: add a planned entry to the change ledger first and tick the box below.
+#
+# There is no automatic rollback: a rebuilt sensor may have applied a database migration. If the health check fails,
+# the job fails and prints the previous commit, so the decision to go back is made by a person.
+
 on:
   workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or SHA to deploy (default main)
+        default: main
+        required: true
+      ledger_ack:
+        description: I added a planned entry for this deploy to the change ledger
+        type: boolean
+        required: true
+      override_freeze:
+        description: Deploy even though a freeze is active (emergencies only)
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-core
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
-  deploy:
+  checks:
     runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Require the ledger acknowledgement
+        if: ${{ !inputs.ledger_ack }}
+        run: |
+          echo "Tick ledger_ack after adding the planned entry to the change ledger" >&2
+          exit 1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+      - id: sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Commit must be on main
+        run: |
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "refusing: $(git rev-parse HEAD) is not on main" >&2
+            exit 1
+          fi
+      - name: Freeze check
+        env:
+          OVERRIDE_FREEZE: ${{ inputs.override_freeze }}
+        run: bash scripts/check_freeze.sh deploy/FREEZE_UNTIL
+      - name: Freeze check tests
+        run: bash scripts/test_check_freeze.sh
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Build Go binary
-        working-directory: .
+      - name: Build
         run: go build ./...
-      - name: Deploy to VPS
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
+
+  deploy:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy ${{ needs.checks.outputs.sha }}
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -25,8 +85,27 @@ jobs:
           script: |
             set -euo pipefail
             cd /opt/mirage/mirage-core
-            git fetch origin main
-            git reset --hard origin/main
+            echo "previous=$(git rev-parse HEAD)"
+            git fetch origin
+            git reset --hard ${{ needs.checks.outputs.sha }}
             # the stamp on every session says which build handled it (scripts/build_sha.sh)
             BUILD_SHA=$(sh scripts/build_sha.sh) docker compose up --build -d
+            sleep 20
+            running="$(docker compose ps --status running --services)"
+            for svc in postgres mirage-core ml-worker mirage-deception mirage-api mirage-telnet; do
+              printf '%s\n' "$running" | grep -qx "$svc" || { echo "FAILED: $svc is not running; previous commit is above" >&2; docker compose ps; exit 1; }
+            done
             docker compose ps
+            echo "deployed $(git rev-parse HEAD)"
+      - name: Ledger row
+        env:
+          SHA: ${{ needs.checks.outputs.sha }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          {
+            echo "### Ledger row (fill in the actual UTC time)"
+            echo
+            echo "| Planned UTC | Actual UTC | Sensor | Change | Git SHA | By | Experiment / era |"
+            echo "|---|---|---|---|---|---|---|"
+            echo "| | $(date -u +'%Y-%m-%d %H:%M:%S') | mirage-core | deploy | ${SHA:0:7} | ${ACTOR} | |"
+          } >> "$GITHUB_STEP_SUMMARY"
