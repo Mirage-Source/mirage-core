@@ -21,6 +21,10 @@ const maxExportPages = 5000
 // which is the one response whose size grows with the corpus.
 const exportWriteTimeout = 5 * time.Minute
 
+// statsRefreshInterval is how often the cached /api/stats figures are
+// recomputed in the background.
+const statsRefreshInterval = 10 * time.Minute
+
 type pageFetcher func(after string, limit int) (*api.ExportResponse, error)
 
 // streamExport writes the whole session export as one JSON object, fetching it

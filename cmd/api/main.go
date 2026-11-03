@@ -106,6 +106,23 @@ func main() {
 		}
 	}()
 
+	scache := &statsCache{}
+	refreshStats := func() {
+		scache.refresh(func(p session.Protocol) (*api.HoneypotStats, error) {
+			return store.GetStats(db, p)
+		}, time.Now)
+	}
+	// Not awaited: the first run takes a minute on a large corpus, and until
+	// it finishes /api/stats answers 503 with Retry-After.
+	go func() {
+		refreshStats()
+		ticker := time.NewTicker(statsRefreshInterval)
+		defer ticker.Stop()
+		for range ticker.C {
+			refreshStats()
+		}
+	}()
+
 	// Read-only view onto the deception service for the dashboard's LLM
 	// panel. Built from the same env config the SSH server uses, but only
 	// its BaseURL/timeouts matter here -- this process never asks for a
@@ -160,7 +177,7 @@ func main() {
 
 	r.Group(func(r chi.Router) {
 		r.Use(gate(apiKey))
-		routes(r, db, apiKey, sensorNames, vcache, deceptionClient, dashboardPage)
+		routes(r, db, apiKey, sensorNames, vcache, scache, deceptionClient, dashboardPage)
 	})
 
 	srv := &http.Server{
@@ -184,6 +201,7 @@ func routes(
 	apiKey string,
 	sensorNames []string,
 	vcache *validityCache,
+	scache *statsCache,
 	deceptionClient *deception.Client,
 	dashboardPage []byte,
 ) {
@@ -358,21 +376,14 @@ func routes(
 		if !ok {
 			return
 		}
-		stats, err := store.GetStats(db, protocol)
-		if err != nil {
-			http.Error(
-				w,
-				"failed to retrieve stats",
-				http.StatusInternalServerError,
-			)
+		stats, at, ok := scache.get(protocol)
+		if !ok {
+			w.Header().Set("Retry-After", "30")
+			http.Error(w, "stats are still being computed", http.StatusServiceUnavailable)
 			return
 		}
-
-		w.Header().Set("Content-Type", "application/json")
-
-		if err := json.NewEncoder(w).Encode(stats); err != nil {
-			log.Printf("encoding stats response: %v", err)
-		}
+		w.Header().Set("X-Stats-Generated-At", at.UTC().Format(time.RFC3339))
+		writeJSON(w, stats)
 	})
 
 	r.Get("/api/sessions", func(w http.ResponseWriter, r *http.Request) {
