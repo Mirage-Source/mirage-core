@@ -1,8 +1,8 @@
 {
-  "total_sessions": 389286,
-  "unique_ips": 4557,
-  "sessions_last_24h": 3457,
-  "sessions_last_7d": 42504,
+  "total_sessions": 390259,
+  "unique_ips": 4580,
+  "sessions_last_24h": 973,
+  "sessions_last_7d": 37996,
   "top_ips": [
     {
       "ip": "223.241.31.107",
@@ -48,15 +48,15 @@
   "top_usernames": [
     {
       "username": "root",
-      "count": 125530
+      "count": 125871
     },
     {
       "username": "admin",
-      "count": 22319
+      "count": 22472
     },
     {
       "username": "ubuntu",
-      "count": 15378
+      "count": 15392
     },
     {
       "username": "nfc",
@@ -64,7 +64,7 @@
     },
     {
       "username": "user",
-      "count": 8324
+      "count": 8338
     },
     {
       "username": "wallet",
@@ -72,123 +72,123 @@
     },
     {
       "username": "deploy",
-      "count": 3979
+      "count": 3990
     },
     {
       "username": "test",
-      "count": 3350
+      "count": 3357
     },
     {
       "username": "support",
-      "count": 2288
+      "count": 2311
     },
     {
       "username": "postgres",
-      "count": 2153
+      "count": 2159
     }
   ],
   "top_passwords": [
     {
       "password": "123456",
-      "count": 16129
+      "count": 16201
     },
     {
       "password": "123",
-      "count": 8257
+      "count": 8278
     },
     {
       "password": "1234",
-      "count": 6138
+      "count": 6166
     },
     {
       "password": "12345678",
-      "count": 4679
+      "count": 4694
     },
     {
       "password": "password",
-      "count": 4216
+      "count": 4241
     },
     {
       "password": "12345",
-      "count": 3513
+      "count": 3529
     },
     {
       "password": "root",
-      "count": 3501
+      "count": 3507
     },
     {
       "password": "1",
-      "count": 3213
+      "count": 3219
     },
     {
       "password": "123456789",
-      "count": 2490
+      "count": 2499
     },
     {
       "password": "admin",
-      "count": 2153
+      "count": 2173
     }
   ],
   "top_credentials": [
     {
       "username": "support",
       "password": "support",
-      "count": 1735
+      "count": 1757
     },
     {
       "username": "root",
       "password": "root",
-      "count": 1223
+      "count": 1228
     },
     {
       "username": "root",
       "password": "123",
-      "count": 1034
+      "count": 1041
     },
     {
       "username": "root",
       "password": "12345",
-      "count": 884
-    },
-    {
-      "username": "root",
-      "password": "12345678",
-      "count": 872
+      "count": 893
     },
     {
       "username": "root",
       "password": "123456",
-      "count": 870
+      "count": 879
+    },
+    {
+      "username": "root",
+      "password": "12345678",
+      "count": 875
     },
     {
       "username": "admin",
       "password": "admin",
-      "count": 755
+      "count": 764
     },
     {
       "username": "postgres",
       "password": "postgres",
-      "count": 662
+      "count": 663
     },
     {
       "username": "root",
       "password": "123456789",
-      "count": 642
+      "count": 648
     },
     {
       "username": "root",
       "password": "passw0rd",
-      "count": 546
+      "count": 551
     }
   ],
   "ssh_banners": [
     {
       "banner": "SSH-2.0-Go",
-      "count": 307765
+      "count": 308366
     },
     {
       "banner": "SSH-2.0-libssh_0.9.6",
-      "count": 51023
+      "count": 51226
     },
     {
       "banner": "SSH-2.0-libssh_0.7.4",
@@ -196,15 +196,15 @@
     },
     {
       "banner": "SSH-2.0-libssh_0.11.1",
-      "count": 3953
+      "count": 3972
     },
     {
       "banner": "SSH-2.0-PuTTY_Release_0.84",
-      "count": 3578
+      "count": 3644
     },
     {
       "banner": "SSH-2.0-OpenSSH_8.9",
-      "count": 2689
+      "count": 2694
     },
     {
       "banner": "SSH-2.0-libssh_0.9.5",
@@ -212,15 +212,15 @@
     },
     {
       "banner": "SSH-2.0-libssh2_1.11.0",
-      "count": 1250
+      "count": 1292
     },
     {
       "banner": "SSH-2.0-libssh_0.12.0",
-      "count": 956
+      "count": 957
     },
     {
       "banner": "SSH-2.0-OpenSSH_8.4p1 Debian-5+deb11u3",
-      "count": 478
+      "count": 483
     }
   ],
   "coordinated_ips": [
@@ -558,101 +558,101 @@
   "hourly_distribution": [
     {
       "hour": 0,
-      "count": 12130
+      "count": 12158
     },
     {
       "hour": 1,
-      "count": 16240
+      "count": 16273
     },
     {
       "hour": 2,
-      "count": 14930
+      "count": 14990
     },
     {
       "hour": 3,
-      "count": 15806
+      "count": 15822
     },
     {
       "hour": 4,
-      "count": 13785
+      "count": 13800
     },
     {
       "hour": 5,
-      "count": 12893
+      "count": 12903
     },
     {
       "hour": 6,
-      "count": 10924
+      "count": 10937
     },
     {
       "hour": 7,
-      "count": 14472
+      "count": 14516
     },
     {
       "hour": 8,
-      "count": 18986
+      "count": 18995
     },
     {
       "hour": 9,
-      "count": 22012
+      "count": 22026
     },
     {
       "hour": 10,
-      "count": 16623
+      "count": 16629
     },
     {
       "hour": 11,
-      "count": 20703
+      "count": 20745
     },
     {
       "hour": 12,
-      "count": 16658
+      "count": 16791
     },
     {
       "hour": 13,
-      "count": 18088
+      "count": 18203
     },
     {
       "hour": 14,
-      "count": 17159
+      "count": 17218
     },
     {
       "hour": 15,
-      "count": 18576
+      "count": 18601
     },
     {
       "hour": 16,
-      "count": 17450
+      "count": 17463
     },
     {
       "hour": 17,
-      "count": 18610
+      "count": 18659
     },
     {
       "hour": 18,
-      "count": 15622
+      "count": 15666
     },
     {
       "hour": 19,
-      "count": 15353
+      "count": 15413
     },
     {
       "hour": 20,
-      "count": 13693
+      "count": 13764
     },
     {
       "hour": 21,
-      "count": 17129
+      "count": 17161
     },
     {
       "hour": 22,
-      "count": 15222
+      "count": 15266
     },
     {
       "hour": 23,
-      "count": 16222
+      "count": 16260
     }
   ],
-  "generated_at": "2026-11-05T04:15:11Z",
+  "generated_at": "2026-11-06T04:13:16Z",
   "sensor_generation": "g2"
 }
