@@ -1,3 +1,5 @@
 # Deploys are refused until this UTC time (see scripts/check_freeze.sh). Edit through a pull request.
-# 2026-11-10 22:23: the pre-registered SSH self-test window closes (experiments/selftest_intervention.md).
-2026-11-10T22:23:00Z
+# The SSH self-test window (experiments/selftest_intervention.md) closed early on 2026-11-15, not testable for lack of
+# exposure. The sensors are paused from then for about a month. A deploy restarts every service, so the freeze is kept
+# through the pause; lift it in the pull request that restarts the sensors.
+2026-12-15T00:00:00Z
